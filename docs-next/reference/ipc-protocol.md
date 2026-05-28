@@ -309,7 +309,7 @@ interface WsSendRequest {
 
 type WsSendResponse =
   | { ok: true; sent: number; bytes: number }
-  | { ok: false; error: 'bandwidthExceeded' | 'rateExceeded' | 'serializationFailed'; detail?: unknown };
+  | { ok: false; error: 'bandwidthExceeded' | 'rateExceeded' | 'serializationFailed' | 'targetInvalid' | 'targetNotConnected'; detail?: unknown };
 ```
 
 `serializationFailed` is returned synchronously by the child runner

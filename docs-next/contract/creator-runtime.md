@@ -99,11 +99,13 @@ direct usage. Deterministic test runs depend on this.
 
 `WsSendResponse` is `{ ok: true, sent: number, bytes: number }` or
 `{ ok: false, error: 'bandwidthExceeded' | 'rateExceeded' |
-'serializationFailed', detail?: unknown }`.
+'serializationFailed' | 'targetInvalid' | 'targetNotConnected',
+detail?: unknown }`.
 
 Bandwidth and rate errors come from compute budget enforcement;
 `serializationFailed` is returned synchronously if the body isn't JSON-safe
-(before IPC).
+(before IPC). `targetInvalid` and `targetNotConnected` are parent-side
+refusals; no frame is sent.
 
 ### Observability
 

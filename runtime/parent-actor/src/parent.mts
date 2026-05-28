@@ -2980,12 +2980,19 @@ function handleWsSend(
     return;
   }
   const sessions = Array.from(inst.sessions.values());
-  const targets: SessionRecord[] =
-    target === "all"
-      ? sessions
-      : Array.isArray(target)
-        ? sessions.filter((s) => (target as readonly string[]).includes(s.playerId))
-        : sessions.filter((s) => s.playerId === target);
+  const resolvedTargets = resolveWsSendTargets(target, sessions);
+  if (!resolvedTargets.ok) {
+    history("ws.send.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      error: resolvedTargets.response.error,
+      detail: resolvedTargets.response.detail,
+    });
+    respondWsSend(inst, requestId, resolvedTargets.response);
+    return;
+  }
+  const targets = resolvedTargets.targets;
   const frameBytes = Buffer.byteLength(text, "utf8");
   const prospectiveBytes = frameBytes * targets.length;
   const prospectiveMessages = targets.length;
@@ -3066,6 +3073,61 @@ function handleWsSend(
     sent,
     bytes: frameBytes * sent,
   });
+}
+
+type WsSendTargetResolution =
+  | { readonly ok: true; readonly targets: readonly SessionRecord[] }
+  | { readonly ok: false; readonly response: Extract<WsSendResponse, { readonly ok: false }> };
+
+function resolveWsSendTargets(
+  target: unknown,
+  sessions: readonly SessionRecord[],
+): WsSendTargetResolution {
+  if (target === "all") return { ok: true, targets: sessions };
+  if (typeof target === "string") {
+    if (target.length === 0) return wsSendTargetInvalid("target must be a non-empty string");
+    const targets = sessions.filter((session) => session.playerId === target);
+    if (targets.length === 0) return wsSendTargetNotConnected([target]);
+    return { ok: true, targets };
+  }
+  if (Array.isArray(target)) {
+    if (target.length === 0) return wsSendTargetInvalid("target array must be non-empty");
+    if (!target.every((entry) => typeof entry === "string" && entry.length > 0)) {
+      return wsSendTargetInvalid("target array entries must be non-empty strings");
+    }
+    const requestedTargets = Array.from(new Set(target as readonly string[]));
+    const requestedTargetSet = new Set(requestedTargets);
+    const connectedTargets = new Set(sessions.map((session) => session.playerId));
+    const missingTargets = requestedTargets.filter((playerId) => !connectedTargets.has(playerId));
+    if (missingTargets.length > 0) return wsSendTargetNotConnected(missingTargets);
+    return {
+      ok: true,
+      targets: sessions.filter((session) => requestedTargetSet.has(session.playerId)),
+    };
+  }
+  return wsSendTargetInvalid("target must be 'all', a playerId, or a playerId array");
+}
+
+function wsSendTargetInvalid(message: string): WsSendTargetResolution {
+  return {
+    ok: false,
+    response: {
+      ok: false,
+      error: "targetInvalid",
+      detail: { message },
+    },
+  };
+}
+
+function wsSendTargetNotConnected(missingTargets: readonly string[]): WsSendTargetResolution {
+  return {
+    ok: false,
+    response: {
+      ok: false,
+      error: "targetNotConnected",
+      detail: { missingTargets },
+    },
+  };
 }
 
 function respondWsSend(

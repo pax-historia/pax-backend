@@ -369,7 +369,12 @@ export interface WsSendPayload {
   readonly body: unknown;
 }
 
-export type WsSendError = "bandwidthExceeded" | "rateExceeded" | "serializationFailed";
+export type WsSendError =
+  | "bandwidthExceeded"
+  | "rateExceeded"
+  | "serializationFailed"
+  | "targetInvalid"
+  | "targetNotConnected";
 
 export type WsSendResponse =
   | {

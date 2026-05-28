@@ -31,7 +31,7 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `ChildHandlerErrorPayload`, `ChildHandlerCompletePayload`,
   `ChildUnknownMessagePayload`.
 - Parent-to-child response payload types for request/response channels,
-  including `WsSendResponsePayload` for typed bandwidth/rate rejections.
+  including `WsSendResponsePayload` for typed `c.ws.send` rejections.
 - API gateway handoff types, including `ApiGatewayInvokeResult`, which lets
   the gateway return the creator-facing response plus the wire-grain record
   the parent writes into history.

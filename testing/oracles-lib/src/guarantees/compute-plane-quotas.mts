@@ -14,6 +14,8 @@ const WS_ERRORS = new Set([
   "bandwidthExceeded",
   "rateExceeded",
   "serializationFailed",
+  "targetInvalid",
+  "targetNotConnected",
 ]);
 const HANDLER_ERROR_CODES = new Set(["handlerError", "handlerTimeout"]);
 const COMPUTE_BUDGETS = new Set([

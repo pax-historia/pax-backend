@@ -33,6 +33,8 @@ Returned to the bundle inside `{ ok: false, error: ... }`:
 |---|---|---|
 | `bandwidthExceeded` | `c.ws.send` | `bandwidth-bytes-per-sec` |
 | `rateExceeded` | `c.ws.send` | `ws-messages-per-sec` |
+| `targetInvalid` | `c.ws.send` | Target shape is not `'all'`, a player id, or a player-id array |
+| `targetNotConnected` | `c.ws.send` | Target player id is not currently connected to this game |
 | `sizeExceeded` | `c.state.write`, `c.blob.put` | `state-bytes` or `blob-bytes` |
 | `keyCountExceeded` | `c.blob.put` | `blob-keys` |
 | `apiRateExceeded` | `c.api.invoke` | `api-invocations-per-min` (also listed above) |
@@ -60,6 +62,8 @@ killing the child / handler):
 | `bandwidthExceeded` | `bandwidth-bytes-per-sec` budget |
 | `rateExceeded` | `ws-messages-per-sec` budget |
 | `serializationFailed` | `body` is not JSON-serializable (returned synchronously before IPC) |
+| `targetInvalid` | target is not `'all'`, a player id, or a player-id array |
+| `targetNotConnected` | one or more requested target player ids have no connected session |
 
 ## Admin REST
 

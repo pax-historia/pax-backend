@@ -67,6 +67,12 @@ importers:
         specifier: workspace:*
         version: link:../../../sdk/runtime-sdk
 
+  examples/bundles/hostile-ws-target:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
   examples/url-services/billing-mock.v1:
     dependencies:
       '@pax-backend/ipc-protocol':
