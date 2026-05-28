@@ -28,3 +28,27 @@ is generated). No substrate billing contract was added or changed.
 
 Verification: `pnpm --filter @pax-backend/example-url-service-billing-mock-v1
 check-types` and root `pnpm typecheck` both pass.
+
+## 2026-05-28 03:52 PDT
+
+Completed the local smoke pass. `scripts/dev/local-up.sh` initially brought the
+stack up, but the cached router binary under `.cache/router/router` was stale:
+placement responses missed `traceId`, `runtimeContractRequired`, and
+`runtimeContractsSupported`, so the parent rejected the placement token as
+missing required claims. Rebuilt with `pnpm build:router`, restarted the router,
+and confirmed the placement response now carries the current contract fields.
+
+Updated `scripts/dev/local-up.sh` so it rebuilds the cached placement-router
+binary when `orchestration/placement-router/src`, `Cargo.toml`, or `Cargo.lock`
+is newer than `.cache/router/router`.
+
+Verification: `bash -n scripts/dev/local-up.sh` passes, and `pnpm smoke` ran
+green against the local stack with no production `.env`:
+`PASS — vertical smoke green in 766ms` with session
+`ses_9b48723420f0843372482c8c4ae25942`.
+
+Codex tool note: background processes launched by `local-up.sh` from a
+non-interactive tool command were reaped after the command returned, so the
+successful smoke run used persistent tool sessions for engine, control plane,
+API gateway, parent actor, and router. This appears to be tool-session process
+lifetime behavior rather than a substrate runtime issue.

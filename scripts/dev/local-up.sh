@@ -42,8 +42,14 @@ ok "rivet-engine: $(readlink "$ENGINE_BIN" 2>/dev/null || echo "$ENGINE_BIN")"
 
 # Router binary present?
 ROUTER_BIN="$REPO_ROOT/.cache/router/router"
+ROUTER_DIR="$REPO_ROOT/orchestration/placement-router"
 if [[ ! -x "$ROUTER_BIN" ]]; then
-  err "placement-router not built. Run: ./scripts/build/build-router.sh"
+  warn "placement-router not built; running scripts/build/build-router.sh"
+  "$REPO_ROOT/scripts/build/build-router.sh"
+elif find "$ROUTER_DIR/src" "$ROUTER_DIR/Cargo.toml" "$ROUTER_DIR/Cargo.lock" \
+    -type f -newer "$ROUTER_BIN" | grep -q .; then
+  warn "placement-router cache is stale; running scripts/build/build-router.sh"
+  "$REPO_ROOT/scripts/build/build-router.sh"
 fi
 ok "router: $ROUTER_BIN"
 
