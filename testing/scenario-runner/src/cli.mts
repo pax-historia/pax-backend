@@ -57,6 +57,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     nemesisCatalogDir: values.get("nemeses-dir"),
     scenarioManifestPath: values.get("scenario-manifest"),
     nemesisProfilePath: values.get("nemesis-profile"),
+    workloadPath: values.get("workload"),
     oracleScope: oracles.scope,
     oracleNames: oracles.names,
     samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),

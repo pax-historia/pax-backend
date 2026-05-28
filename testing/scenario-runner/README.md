@@ -15,10 +15,11 @@ Current source pass provides the first runner shell:
 
 - reads a history JSONL file
 - loads scenario manifests and optional nemesis profiles
+- loads declarative scenario workload plans from `clients/workload.mts`
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list
 - emits a `result.json`-shaped object with oracle summaries, attribution
   placeholders, scenario metadata, nemesis metadata, and run metadata
 
-It does not yet drive clients, compose nemeses, shrink fuzz failures, or spin
-driver machines. Those stay as later source passes.
+It does not yet execute the workload phases, inject nemesis actions, shrink
+fuzz failures, or spin driver machines. Those stay as later source passes.

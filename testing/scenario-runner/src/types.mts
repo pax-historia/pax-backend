@@ -6,6 +6,7 @@ export type DeterminismLevel = "low" | "medium" | "high";
 export type OracleScope = "all" | "scenario" | "explicit";
 export type SamplingProfile = "ramp" | "cliff_hold" | "replay";
 export type NemesisKind = "no-faults" | "shard-death-every-5m";
+export type WorkloadFixtureKind = "allowed-players" | "initial-state" | "initial-blob";
 
 export interface ScenarioManifest {
   readonly scenarioId: string;
@@ -35,6 +36,72 @@ export type NemesisAction =
       readonly replacement: "let-orchestrator-replace";
     };
 
+export interface ScenarioWorkloadPlan {
+  readonly scenarioId: string;
+  readonly bundleName: string;
+  readonly gameIdPrefix: string;
+  readonly durationMs: number;
+  readonly maxGames: number;
+  readonly fixtures: readonly WorkloadFixture[];
+  readonly phases: readonly ScenarioWorkloadPhase[];
+}
+
+export interface WorkloadFixture {
+  readonly kind: WorkloadFixtureKind;
+  readonly path: string;
+}
+
+export type ScenarioWorkloadPhase =
+  | {
+      readonly type: "seed-fixtures";
+      readonly fixtureKinds: readonly WorkloadFixtureKind[];
+    }
+  | {
+      readonly type: "open-sessions";
+      readonly playerSource: "allowed-players";
+      readonly sessionsPerGame: number;
+      readonly rampMs: number;
+    }
+  | {
+      readonly type: "send-json";
+      readonly channel: "websocket";
+      readonly messagesPerSession: number;
+      readonly intervalMs: number;
+      readonly body: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly type: "invoke-api";
+      readonly kind: string;
+      readonly callsPerSession: number;
+      readonly intervalMs: number;
+      readonly args: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly type: "state-blob-churn";
+      readonly stateWritesPerMinute: number;
+      readonly blobWritesPerMinute: number;
+      readonly bytesPerWrite: number;
+    }
+  | {
+      readonly type: "sleep-wake";
+      readonly cycles: number;
+      readonly idleMsBetweenCycles: number;
+    }
+  | {
+      readonly type: "await-nemesis";
+      readonly action: "kill-shard";
+      readonly minimumOccurrences: number;
+    }
+  | {
+      readonly type: "expect-history-events";
+      readonly events: readonly string[];
+      readonly minimumPerGame: number;
+    }
+  | {
+      readonly type: "close-sessions";
+      readonly reason: string;
+    };
+
 export interface ScenarioRunnerInput {
   readonly scenarioId: string;
   readonly mode: ScenarioRunMode;
@@ -49,6 +116,8 @@ export interface ScenarioRunnerInput {
   readonly nemesisProfilePath?: string;
   readonly scenarioManifest?: ScenarioManifest;
   readonly nemesisManifest?: NemesisManifest;
+  readonly workloadPath?: string;
+  readonly workloadPlan?: ScenarioWorkloadPlan;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
   readonly samplingProfile?: SamplingProfile;
@@ -85,6 +154,14 @@ export interface ScenarioResult {
     readonly nemesis_id: NemesisKind;
     readonly description: string;
     readonly actions: readonly NemesisAction[];
+  };
+  readonly workload?: {
+    readonly bundle_name: string;
+    readonly game_id_prefix: string;
+    readonly duration_ms: number;
+    readonly max_games: number;
+    readonly fixtures: readonly WorkloadFixture[];
+    readonly phases: readonly ScenarioWorkloadPhase[];
   };
   readonly oracle_scope: OracleScope;
   readonly sampling_profile: SamplingProfile;

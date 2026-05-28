@@ -49,6 +49,16 @@ export function buildScenarioResult(
       description: nemesis.description,
       actions: nemesis.actions,
     },
+    workload: input.workloadPlan
+      ? {
+          bundle_name: input.workloadPlan.bundleName,
+          game_id_prefix: input.workloadPlan.gameIdPrefix,
+          duration_ms: input.workloadPlan.durationMs,
+          max_games: input.workloadPlan.maxGames,
+          fixtures: input.workloadPlan.fixtures,
+          phases: input.workloadPlan.phases,
+        }
+      : undefined,
     oracle_scope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     sampling_profile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
     started_at: new Date(startedAtMs).toISOString(),

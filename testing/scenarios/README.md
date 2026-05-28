@@ -21,7 +21,7 @@ for the broader rules about the `testing/` zone (kind-folders,
   manifest.ts            # PRNG seed, determinism level, etc.
 ```
 
-Current source pass adds the first scenario manifests, default nemesis
-selection, oracle selections, and inline fixtures for the three planned
-first-party scenarios. Client drivers and bundle wiring still land in later
-passes.
+Current source pass adds the first scenario manifests, declarative client
+workload plans, default nemesis selection, oracle selections, and inline
+fixtures for the three planned first-party scenarios. Workload execution and
+bundle wiring still land in later passes.

@@ -4,7 +4,11 @@ import {
   runNamedGuaranteeOracles,
 } from "@pax-backend/oracles-lib";
 
-import { loadNemesisManifest, loadScenarioManifest } from "./catalog.mjs";
+import {
+  loadNemesisManifest,
+  loadScenarioManifest,
+  loadScenarioWorkloadPlan,
+} from "./catalog.mjs";
 import { buildScenarioResult } from "./result.mjs";
 import type { ScenarioResult, ScenarioRunnerInput } from "./types.mjs";
 
@@ -23,12 +27,14 @@ export async function runReplayFromCatalog(
 ): Promise<ScenarioResult> {
   const scenarioManifest = await loadScenarioManifest(input);
   const nemesisManifest = await loadNemesisManifest(input, scenarioManifest);
+  const workloadPlan = await loadScenarioWorkloadPlan(input, scenarioManifest);
   const oracleNames =
     input.oracleScope === "scenario" ? scenarioManifest.oracleNames : input.oracleNames;
   return runReplayFromHistory({
     ...input,
     scenarioManifest,
     nemesisManifest,
+    workloadPlan,
     oracleNames,
     oracleScope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     samplingProfile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
