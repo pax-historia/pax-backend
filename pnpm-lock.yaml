@@ -72,6 +72,9 @@ importers:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
         version: link:../../shared/ipc-protocol
+      '@pax-backend/node-telemetry':
+        specifier: workspace:*
+        version: link:../../shared/node-telemetry
       '@pax-backend/url-services':
         specifier: workspace:*
         version: link:../url-services
@@ -87,6 +90,9 @@ importers:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
         version: link:../../shared/ipc-protocol
+      '@pax-backend/node-telemetry':
+        specifier: workspace:*
+        version: link:../../shared/node-telemetry
       ioredis:
         specifier: ^5.4.1
         version: 5.11.0
@@ -138,6 +144,9 @@ importers:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
         version: link:../../shared/ipc-protocol
+      '@pax-backend/node-telemetry':
+        specifier: workspace:*
+        version: link:../../shared/node-telemetry
       '@rivetkit/bare-ts':
         specifier: ^0.6.2
         version: 0.6.2
