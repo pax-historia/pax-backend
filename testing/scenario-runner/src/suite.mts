@@ -55,6 +55,7 @@ export async function runScenarioSuite(
           apiGatewayUrl: input.apiGatewayUrl,
           routerUrl: input.routerUrl,
           phaseTimeoutMs: input.phaseTimeoutMs,
+          metricsScrapeIntervalMs: input.metricsScrapeIntervalMs,
           oracleScope: input.oracleScope,
           oracleNames: input.oracleNames,
           samplingProfile: input.samplingProfile,

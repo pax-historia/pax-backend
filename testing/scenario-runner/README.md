@@ -31,7 +31,9 @@ Current source pass provides the first runner shell:
   production admin drain endpoint (`POST /admin/shards/:id/drain`), while
   `api-kind-partition-burst` temporarily rewires an API kind through
   `POST /admin/api-kinds`
-- summarizes `metrics.emit` and capacity warnings into a replay attribution sentence
+- scrapes live Prometheus metrics from router, control-plane, gateway, parent,
+  and vendored engine endpoints during non-replay runs; replay mode still
+  summarizes `metrics.emit` and capacity warnings from history
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list;
   CI uses `--oracles scenario` so adversarial negative scenarios only gate on the
@@ -107,3 +109,10 @@ nemesis set, sampling profile, attribution sentences, and per-case history and
 result paths. The runner applies the rung target to the scenario workload by
 overriding `maxGames`, `open-sessions` ramp/session count, and `send-json`
 message count derived from the target duration.
+
+For live runs, `sampling_profile` controls metric scrape cadence: `ramp` samples
+every 30 seconds and `cliff_hold` every second. The collector aggregates online
+instead of retaining raw scrape lines, and `cliff_hold` applies a small
+vendored-engine metric-family allowlist to keep 24-hour soaks bounded. Override
+cadence with `--metrics-scrape-interval-ms` when a short local run needs denser
+samples.

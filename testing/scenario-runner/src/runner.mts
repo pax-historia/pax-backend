@@ -13,9 +13,15 @@ import {
 } from "./catalog.mjs";
 import { appendArchivedHistory, appendControlPlaneHistory } from "./history-archive.mjs";
 import { executeLiveWorkload } from "./live-executor.mjs";
+import { ScenarioMetricsCollector } from "./metrics-collector.mjs";
 import { buildScenarioResult } from "./result.mjs";
 import { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
-import type { ScenarioResult, ScenarioRunnerInput } from "./types.mjs";
+import type {
+  ScenarioAttribution,
+  ScenarioMetrics,
+  ScenarioResult,
+  ScenarioRunnerInput,
+} from "./types.mjs";
 
 export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult {
   const startedAtMs = Date.now();
@@ -63,35 +69,50 @@ export async function runReplayFromCatalog(
     oracleScope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     samplingProfile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
   };
+  let liveMetrics: ScenarioMetrics | undefined;
+  let liveAttribution: ScenarioAttribution | undefined;
   if (input.mode !== "replay") {
     if (!workloadPlan || !runtimeEnvironment) {
       throw new Error(`${scenarioManifest.scenarioId} has no workload plan to execute`);
     }
     const gameIds = scenarioGameIds(workloadPlan);
     const liveStartedAtMs = Date.now();
-    await executeLiveWorkload(
+    const metricsCollector = new ScenarioMetricsCollector(
       hydratedInput,
-      scenarioManifest,
-      workloadPlan,
-      runtimeEnvironment,
+      hydratedInput.samplingProfile ?? "ramp",
     );
-    const liveFinishedAtMs = Date.now();
-    await appendArchivedHistory({
-      historyPath: hydratedInput.historyPath,
-      startedAtMs: liveStartedAtMs,
-      finishedAtMs: liveFinishedAtMs,
-      gameIds,
-    });
-    await appendControlPlaneHistory({
-      historyPath: hydratedInput.historyPath,
-      controlPlaneUrl: hydratedInput.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"],
-      gameIds,
-      startedAtMs: liveStartedAtMs,
-      finishedAtMs: liveFinishedAtMs,
-    });
+    await metricsCollector.start();
+    try {
+      await executeLiveWorkload(
+        hydratedInput,
+        scenarioManifest,
+        workloadPlan,
+        runtimeEnvironment,
+      );
+      const liveFinishedAtMs = Date.now();
+      await appendArchivedHistory({
+        historyPath: hydratedInput.historyPath,
+        startedAtMs: liveStartedAtMs,
+        finishedAtMs: liveFinishedAtMs,
+        gameIds,
+      });
+      await appendControlPlaneHistory({
+        historyPath: hydratedInput.historyPath,
+        controlPlaneUrl: hydratedInput.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"],
+        gameIds,
+        startedAtMs: liveStartedAtMs,
+        finishedAtMs: liveFinishedAtMs,
+      });
+    } finally {
+      const collection = await metricsCollector.stop();
+      liveMetrics = collection.metrics;
+      liveAttribution = collection.attribution;
+    }
   }
   return runReplayFromHistory({
     ...hydratedInput,
+    metrics: hydratedInput.metrics ?? liveMetrics,
+    attribution: hydratedInput.attribution ?? liveAttribution,
   });
 }
 

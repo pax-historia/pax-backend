@@ -198,6 +198,7 @@ export interface ScenarioRunnerInput {
   readonly phaseTimeoutMs?: number;
   readonly metrics?: ScenarioMetrics;
   readonly attribution?: ScenarioAttribution;
+  readonly metricsScrapeIntervalMs?: number;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
   readonly scenarioLocalOracles?: readonly Oracle[];
@@ -218,6 +219,7 @@ export interface ScenarioSuiteRunnerInput {
   readonly apiGatewayUrl?: string;
   readonly routerUrl?: string;
   readonly phaseTimeoutMs?: number;
+  readonly metricsScrapeIntervalMs?: number;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
   readonly samplingProfile?: SamplingProfile;
@@ -297,6 +299,7 @@ export interface ScenarioScaleRunnerInput {
   readonly apiGatewayUrl?: string;
   readonly routerUrl?: string;
   readonly phaseTimeoutMs?: number;
+  readonly metricsScrapeIntervalMs?: number;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
   readonly samplingProfile?: SamplingProfile;
@@ -385,6 +388,26 @@ export interface AttributionCandidate {
 
 export interface ScenarioMetrics {
   readonly per_surface: Readonly<Record<string, unknown>>;
+  readonly scrape?: ScenarioMetricsScrapeSummary;
+}
+
+export interface ScenarioMetricsScrapeSummary {
+  readonly started_at: string;
+  readonly finished_at: string;
+  readonly interval_ms: number;
+  readonly endpoints: readonly {
+    readonly surface: string;
+    readonly url: string;
+  }[];
+  readonly sample_count: number;
+  readonly dropped_sample_count?: number;
+  readonly error_count: number;
+  readonly errors: readonly {
+    readonly surface: string;
+    readonly url: string;
+    readonly sampled_at: string;
+    readonly error: string;
+  }[];
 }
 
 export interface ScenarioAttribution {

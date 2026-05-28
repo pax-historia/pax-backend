@@ -104,6 +104,7 @@ async function runScaleRung(
         apiGatewayUrl: input.apiGatewayUrl,
         routerUrl: input.routerUrl,
         phaseTimeoutMs: input.phaseTimeoutMs,
+        metricsScrapeIntervalMs: input.metricsScrapeIntervalMs,
         oracleScope,
         oracleNames: input.oracleNames,
         samplingProfile,
