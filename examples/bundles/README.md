@@ -10,7 +10,7 @@ for the broader rules about the `examples/` zone.
 | `hello-blob-rw/` | `c.blob` durability. Reads on `onWake`, writes compact message history, logs via `c.log.emit`. | source added (untested) |
 | `hello-state-rw/` | `c.state` durability with explicit `c.state.flush()` after each write. | source added (untested) |
 | `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |
-| `hello-multifeature/` | All of the above slowly enough to be readable in a tail of `GET /admin/history`. The integration smoke. | planned (M4) |
+| `hello-multifeature/` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable integration bundle. | source added (untested) |
 
 ## Per-bundle layout
 
