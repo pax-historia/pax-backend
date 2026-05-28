@@ -195,6 +195,29 @@ export interface PlayersConnectedIpcResponsePayload {
   readonly players: readonly ConnectedSessionSnapshot[];
 }
 
+export type ComputeBudgetName =
+  | "cpu-ms-per-tick"
+  | "memory-bytes"
+  | "bandwidth-bytes-per-sec"
+  | "ws-messages-per-sec"
+  | "state-bytes"
+  | "blob-bytes"
+  | "api-invocations-per-min";
+
+export interface ComputeBudgetUsage {
+  readonly currentUsage: number;
+  readonly limit: number;
+  readonly windowMs?: number;
+}
+
+export type ComputeBudgetSnapshot = Readonly<
+  Record<ComputeBudgetName, ComputeBudgetUsage>
+>;
+
+export interface ComputeBudgetIpcResponsePayload {
+  readonly budget: ComputeBudgetSnapshot;
+}
+
 // ----- Discriminated union: parent → child --------------------------------
 
 export type ParentToChildEnvelope =
@@ -202,6 +225,7 @@ export type ParentToChildEnvelope =
   | IpcEnvelope<"api.invoke.response", ApiInvokeIpcResponsePayload>
   | IpcEnvelope<"players.allowed.response", PlayersAllowedIpcResponsePayload>
   | IpcEnvelope<"players.connected.response", PlayersConnectedIpcResponsePayload>
+  | IpcEnvelope<"compute.budget.response", ComputeBudgetIpcResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
@@ -260,6 +284,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"api.invoke", ApiInvokeIpcPayload>
   | IpcEnvelope<"players.allowed", Record<string, never>>
   | IpcEnvelope<"players.connected", Record<string, never>>
+  | IpcEnvelope<"compute.budget", Record<string, never>>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
@@ -274,6 +299,7 @@ export const PARENT_TO_CHILD = Object.freeze({
   apiInvokeResponse: "api.invoke.response",
   playersAllowedResponse: "players.allowed.response",
   playersConnectedResponse: "players.connected.response",
+  computeBudgetResponse: "compute.budget.response",
   onWake: "onWake",
   onSleep: "onSleep",
   onPlayerConnect: "onPlayerConnect",
@@ -287,6 +313,7 @@ export const CHILD_TO_PARENT = Object.freeze({
   apiInvoke: "api.invoke",
   playersAllowed: "players.allowed",
   playersConnected: "players.connected",
+  computeBudget: "compute.budget",
   wsSend: "ws.send",
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",

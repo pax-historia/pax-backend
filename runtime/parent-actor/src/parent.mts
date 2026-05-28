@@ -40,6 +40,7 @@ import {
   type BundleRecord,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
+  type ComputeBudgetSnapshot,
   type ConnectedSessionSnapshot,
   type DisconnectReason,
   GAME_KEY_PREFIX,
@@ -79,6 +80,28 @@ const PAX_API_GATEWAY_URL =
   process.env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke";
 const ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS = Number.parseInt(
   process.env["PAX_ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS"] ?? "5000",
+  10,
+);
+const CPU_MS_PER_TICK_LIMIT = Number.parseInt(
+  process.env["PAX_CPU_MS_PER_TICK_LIMIT"] ?? "1000",
+  10,
+);
+const MEMORY_BYTES_LIMIT =
+  Number.parseInt(process.env["PAX_MEMORY_BYTES_LIMIT"] ?? "134217728", 10);
+const BANDWIDTH_BYTES_PER_SEC_LIMIT = Number.parseInt(
+  process.env["PAX_BANDWIDTH_BYTES_PER_SEC_LIMIT"] ?? "65536",
+  10,
+);
+const WS_MESSAGES_PER_SEC_LIMIT = Number.parseInt(
+  process.env["PAX_WS_MESSAGES_PER_SEC_LIMIT"] ?? "50",
+  10,
+);
+const STATE_BYTES_LIMIT =
+  Number.parseInt(process.env["PAX_STATE_BYTES_LIMIT"] ?? "131072", 10);
+const BLOB_BYTES_LIMIT =
+  Number.parseInt(process.env["PAX_BLOB_BYTES_LIMIT"] ?? "10485760", 10);
+const API_INVOCATIONS_PER_MIN_LIMIT = Number.parseInt(
+  process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
   10,
 );
 
@@ -236,6 +259,11 @@ interface SessionRecord {
   seq: number;
 }
 
+interface UsageSample {
+  readonly at: number;
+  readonly amount: number;
+}
+
 interface GameInstance {
   readonly actorId: string;
   readonly gameId: string;
@@ -244,6 +272,8 @@ interface GameInstance {
   readonly runId: string;
   child: ChildProcess | null;
   readonly sessions: Map<string, SessionRecord>;
+  readonly wsUsageSamples: UsageSample[];
+  readonly apiInvokeSamples: UsageSample[];
   ready: boolean;
   bootstrapPromise: Promise<void> | null;
 }
@@ -292,6 +322,8 @@ function ensureGame(
     runId,
     child: null,
     sessions: new Map(),
+    wsUsageSamples: [],
+    apiInvokeSamples: [],
     ready: false,
     bootstrapPromise: null,
   };
@@ -417,6 +449,9 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
     case CHILD_TO_PARENT.playersConnected:
       handlePlayersConnected(inst, raw.requestId);
       return;
+    case CHILD_TO_PARENT.computeBudget:
+      handleComputeBudget(inst, raw.requestId);
+      return;
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.payload);
       return;
@@ -539,6 +574,29 @@ function handlePlayersConnected(
   }
 }
 
+function handleComputeBudget(
+  inst: GameInstance,
+  requestId: string | undefined,
+): void {
+  if (!requestId) {
+    history("compute.budget.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const budget = computeBudgetSnapshot(inst);
+  history("compute.budget", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+  });
+  if (inst.child) {
+    sendTyped(inst.child, "compute.budget.response", { budget }, requestId);
+  }
+}
+
 async function handleApiInvoke(
   inst: GameInstance,
   requestId: string | undefined,
@@ -557,6 +615,7 @@ async function handleApiInvoke(
     payload.triggeringSessionId === null
       ? undefined
       : inst.sessions.get(payload.triggeringSessionId);
+  recordApiInvokeUsage(inst);
   const input: ApiGatewayDispatchInput = {
     kind: payload.kind,
     args: payload.args,
@@ -715,6 +774,72 @@ function connectedSessionSnapshot(inst: GameInstance): readonly ConnectedSession
   }));
 }
 
+function recordWsUsage(inst: GameInstance, bytes: number): void {
+  inst.wsUsageSamples.push({ at: Date.now(), amount: bytes });
+  pruneUsageSamples(inst.wsUsageSamples, 1_000);
+}
+
+function recordApiInvokeUsage(inst: GameInstance): void {
+  inst.apiInvokeSamples.push({ at: Date.now(), amount: 1 });
+  pruneUsageSamples(inst.apiInvokeSamples, 60_000);
+}
+
+function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
+  const wsSamples = pruneUsageSamples(inst.wsUsageSamples, 1_000);
+  const apiSamples = pruneUsageSamples(inst.apiInvokeSamples, 60_000);
+  const bandwidthBytes = wsSamples.reduce((sum, sample) => sum + sample.amount, 0);
+  const wsMessages = wsSamples.length;
+  const apiInvocations = apiSamples.reduce((sum, sample) => sum + sample.amount, 0);
+  return {
+    "cpu-ms-per-tick": {
+      currentUsage: 0,
+      limit: CPU_MS_PER_TICK_LIMIT,
+    },
+    "memory-bytes": {
+      currentUsage: process.memoryUsage().rss,
+      limit: MEMORY_BYTES_LIMIT,
+    },
+    "bandwidth-bytes-per-sec": {
+      currentUsage: bandwidthBytes,
+      limit: BANDWIDTH_BYTES_PER_SEC_LIMIT,
+      windowMs: 1_000,
+    },
+    "ws-messages-per-sec": {
+      currentUsage: wsMessages,
+      limit: WS_MESSAGES_PER_SEC_LIMIT,
+      windowMs: 1_000,
+    },
+    "state-bytes": {
+      currentUsage: 0,
+      limit: STATE_BYTES_LIMIT,
+    },
+    "blob-bytes": {
+      currentUsage: 0,
+      limit: BLOB_BYTES_LIMIT,
+    },
+    "api-invocations-per-min": {
+      currentUsage: apiInvocations,
+      limit: API_INVOCATIONS_PER_MIN_LIMIT,
+      windowMs: 60_000,
+    },
+  };
+}
+
+function pruneUsageSamples(
+  samples: UsageSample[],
+  windowMs: number,
+): readonly UsageSample[] {
+  const cutoff = Date.now() - windowMs;
+  let firstKept = 0;
+  while (firstKept < samples.length && (samples[firstKept]?.at ?? 0) < cutoff) {
+    firstKept += 1;
+  }
+  if (firstKept > 0) {
+    samples.splice(0, firstKept);
+  }
+  return samples;
+}
+
 function handleWsSend(
   inst: GameInstance,
   payload: Extract<ChildToParentEnvelope, { type: "ws.send" }>["payload"],
@@ -732,6 +857,7 @@ function handleWsSend(
   for (const sess of targets) {
     try {
       sess.ws.send(text);
+      recordWsUsage(inst, text.length);
       history("ws.send", {
         actorId: inst.actorId,
         gameId: inst.gameId,

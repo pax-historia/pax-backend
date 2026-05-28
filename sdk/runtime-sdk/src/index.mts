@@ -9,6 +9,7 @@
 import type {
   ApiInvokeResponse,
   BundleManifest,
+  ComputeBudgetSnapshot,
   ConnectedSessionSnapshot,
   MetricsEmitPayload,
   OnCapacityWarningPayload,
@@ -23,6 +24,7 @@ import type {
 export type {
   ApiInvokeResponse,
   BundleManifest,
+  ComputeBudgetSnapshot,
   ConnectedSessionSnapshot,
   MetricsEmitPayload,
 } from "@pax-backend/ipc-protocol";
@@ -66,10 +68,13 @@ export interface SubstrateContext {
     /** Read currently connected sessions for this game. */
     connected(): Promise<readonly ConnectedSessionSnapshot[]>;
   };
+  readonly compute: {
+    /** Read current compute-plane usage and configured limits. */
+    budget(): Promise<ComputeBudgetSnapshot>;
+  };
   // Reserved (smoke does not exercise these; types pin the surface).
   readonly state?: undefined;
   readonly blob?: undefined;
-  readonly compute?: undefined;
 }
 
 // ----- Bundle handler signatures -----------------------------------------

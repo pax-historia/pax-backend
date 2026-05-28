@@ -2,9 +2,9 @@
 //
 // One node child_process per game. The bundle source is loaded into an
 // isolated-vm Isolate; substrate context (c.ws.send / c.log.emit /
-// c.metrics.emit / c.lifecycle.requestSleep / c.api.invoke / c.players.*) is
-// exposed as ivm bridges that post IPC envelopes back to the parent via
-// process.send().
+// c.metrics.emit / c.lifecycle.requestSleep / c.api.invoke / c.players.* /
+// c.compute.budget) is exposed as ivm bridges that post IPC envelopes back
+// to the parent via process.send().
 //
 // Trust model (README §"Trust model"):
 //  - No outbound network (parent forks us with a stripped env).
@@ -121,6 +121,9 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   const cPlayersConnected = new ivm.Reference(() =>
     invokeParentFromBridge(CHILD_TO_PARENT.playersConnected, {}),
   );
+  const cComputeBudget = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.computeBudget, {}),
+  );
 
   await jail.set("__pax_c_ws_send", cWsSend);
   await jail.set("__pax_c_log_emit", cLogEmit);
@@ -129,6 +132,7 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   await jail.set("__pax_c_api_invoke", cApiInvoke);
   await jail.set("__pax_c_players_allowed", cPlayersAllowed);
   await jail.set("__pax_c_players_connected", cPlayersConnected);
+  await jail.set("__pax_c_compute_budget", cComputeBudget);
 
   // SDK-equivalent in the isolate. Bundles compiled via esbuild see
   // defineBundle bundled in directly; __pax_install is the only global the
@@ -171,6 +175,12 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
         },
         connected: () => {
           const responseJson = __pax_c_players_connected.applySyncPromise(undefined, []);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+      },
+      compute: {
+        budget: () => {
+          const responseJson = __pax_c_compute_budget.applySyncPromise(undefined, []);
           return Promise.resolve(JSON.parse(responseJson));
         },
       },
@@ -256,7 +266,7 @@ function invokeApiFromBridge(
 }
 
 function invokeParentFromBridge(
-  type: "api.invoke" | "players.allowed" | "players.connected",
+  type: "api.invoke" | "players.allowed" | "players.connected" | "compute.budget",
   payload: Record<string, unknown>,
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -327,6 +337,9 @@ process.on("message", async (raw: unknown) => {
         return;
       case PARENT_TO_CHILD.playersConnectedResponse:
         completeParentRequest(raw.requestId, raw.payload.players);
+        return;
+      case PARENT_TO_CHILD.computeBudgetResponse:
+        completeParentRequest(raw.requestId, raw.payload.budget);
         return;
       case PARENT_TO_CHILD.onWake:
         await invokeHandler("onWake", raw.payload);
