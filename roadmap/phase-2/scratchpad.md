@@ -319,3 +319,12 @@ Phase 0 documented shape: `kill-shard` calls the control-plane drain endpoint,
 and the runner's replacement-ready hook un-drains the shard after the configured
 delay so the single-Fly-shard topology can continue receiving placements
 between injections.
+
+## 2026-05-28 07:41 PDT
+
+Discarded shard-death attempt `phase2-shard-death-20260528143319` after the
+first drain/un-drain cycle. The live behavior was correct — the registry moved
+to `draining`, then back to healthy after the replacement-ready hook — but the
+runner's `HistoryWriter` overwrote the nemesis event's selected `shardId` with
+the driver shard ID `scenario-runner`. Patched the nemesis events to emit
+`targetShardId` so the rerun artifact preserves the selected shard in history.
