@@ -27,6 +27,23 @@ export interface ArchivedHistoryInput {
   readonly env?: NodeJS.ProcessEnv;
 }
 
+export interface ControlPlaneHistoryCollection {
+  readonly enabled: boolean;
+  readonly appendedEvents: number;
+  readonly scannedEvents: number;
+  readonly gameIds: readonly string[];
+  readonly reason?: string;
+}
+
+export interface ControlPlaneHistoryInput {
+  readonly historyPath: string;
+  readonly controlPlaneUrl?: string;
+  readonly gameIds: readonly string[];
+  readonly startedAtMs: number;
+  readonly finishedAtMs: number;
+  readonly windowPaddingMs?: number;
+}
+
 export async function appendArchivedHistory(input: ArchivedHistoryInput): Promise<ArchivedHistoryCollection> {
   const env = input.env ?? process.env;
   if (env["PAX_SCENARIO_COLLECT_ARCHIVE_HISTORY"] === "0") {
@@ -92,6 +109,50 @@ export async function appendArchivedHistory(input: ArchivedHistoryInput): Promis
   };
 }
 
+export async function appendControlPlaneHistory(
+  input: ControlPlaneHistoryInput,
+): Promise<ControlPlaneHistoryCollection> {
+  if (!input.controlPlaneUrl) {
+    return controlPlaneDisabled("control-plane URL is required");
+  }
+  const paddingMs = input.windowPaddingMs ?? 1_000;
+  const from = new Date(input.startedAtMs - paddingMs).toISOString();
+  const to = new Date(input.finishedAtMs + paddingMs).toISOString();
+  const existing = loadExistingEventKeys(input.historyPath);
+  const events: HistoryEvent[] = [];
+  try {
+    for (const gameId of input.gameIds) {
+      events.push(
+        ...(await fetchControlPlaneHistory(input.controlPlaneUrl, gameId, from, to)),
+      );
+    }
+  } catch (err) {
+    return controlPlaneDisabled(err instanceof Error ? err.message : String(err));
+  }
+
+  const uniqueEvents = events
+    .filter((event) => {
+      const key = eventKey(event);
+      if (existing.has(key)) return false;
+      existing.add(key);
+      return true;
+    })
+    .sort(compareHistoryEvents);
+  if (uniqueEvents.length > 0) {
+    appendFileSync(
+      input.historyPath,
+      uniqueEvents.map((event) => JSON.stringify(event)).join("\n") + "\n",
+      "utf8",
+    );
+  }
+  return {
+    enabled: true,
+    appendedEvents: uniqueEvents.length,
+    scannedEvents: events.length,
+    gameIds: input.gameIds,
+  };
+}
+
 function disabled(reason: string): ArchivedHistoryCollection {
   return {
     enabled: false,
@@ -100,6 +161,47 @@ function disabled(reason: string): ArchivedHistoryCollection {
     matchedObjects: [],
     reason,
   };
+}
+
+function controlPlaneDisabled(reason: string): ControlPlaneHistoryCollection {
+  return {
+    enabled: false,
+    appendedEvents: 0,
+    scannedEvents: 0,
+    gameIds: [],
+    reason,
+  };
+}
+
+async function fetchControlPlaneHistory(
+  controlPlaneUrl: string,
+  gameId: string,
+  from: string,
+  to: string,
+): Promise<readonly HistoryEvent[]> {
+  const events: HistoryEvent[] = [];
+  let cursor: number | null | undefined;
+  do {
+    const url = new URL("/admin/history", trimTrailingSlash(controlPlaneUrl));
+    url.searchParams.set("gameId", gameId);
+    url.searchParams.set("from", from);
+    url.searchParams.set("to", to);
+    url.searchParams.set("limit", "1000");
+    if (cursor !== undefined && cursor !== null) {
+      url.searchParams.set("cursor", String(cursor));
+    }
+    const response = await fetch(url);
+    const body = (await response.json()) as unknown;
+    if (!response.ok) {
+      throw new Error(`control-plane history failed for ${gameId}: HTTP ${response.status}`);
+    }
+    if (!isRecord(body) || !Array.isArray(body["events"])) {
+      throw new Error(`control-plane history returned an invalid response for ${gameId}`);
+    }
+    events.push(...(body["events"] as HistoryEvent[]));
+    cursor = typeof body["nextCursor"] === "number" ? body["nextCursor"] : null;
+  } while (cursor !== null);
+  return events;
 }
 
 async function listHistoryObjects(
@@ -255,6 +357,10 @@ function positiveInt(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

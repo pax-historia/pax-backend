@@ -87,6 +87,7 @@ export function makeWorkload(input: {
         rampMs: 500,
       },
       ...hostEventPhases(input.preMessageHostEvents ?? []),
+      ...hostEventDeliveryPhases(input.preMessageHostEvents ?? []),
       ...(input.body
         ? [
             {
@@ -145,4 +146,18 @@ function hostEventPhases(events: readonly HostEventSpec[]): ScenarioWorkloadPlan
     wakeOnDelivery: event.wakeOnDelivery ?? false,
     targetGameCount: 1,
   }));
+}
+
+function hostEventDeliveryPhases(
+  events: readonly HostEventSpec[],
+): ScenarioWorkloadPlan["phases"] {
+  return events.length > 0
+    ? [
+        {
+          type: "expect-history-events" as const,
+          events: ["onHostEvent.delivered"],
+          minimumPerGame: events.length,
+        },
+      ]
+    : [];
 }

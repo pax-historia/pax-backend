@@ -65,3 +65,9 @@ Added shared historia scenario builders, shared baseline fixtures, and all ten r
 Started running the local historia scenarios. The first immediate failure was environmental: this execution environment cleans up `nohup`-spawned local stack children when the command exits, so local scenario runs need the stack held open in a persistent session while tests execute. After holding the stack open, `chat-basic` reached placement and actor startup.
 
 The first bundle blocker was `TextEncoder` missing inside the `ivm` isolate. The bundle's `cborg` dependency instantiated `TextEncoder` at module evaluation time, before any lifecycle handler could run. Replaced the bundle-local snapshot codec with self-contained JSON-over-UTF-8 bytes and removed `cborg` from the historia bundle importer. This keeps state/blob snapshots opaque `Uint8Array`s to the substrate while avoiding globals that are not in the isolate runtime.
+
+## 2026-05-28 09:23 PDT
+
+Got `chat-basic` through a local live run with all selected substrate oracles and local bundle oracles passing over 88 events. Two runner/scenario issues surfaced on the way: the runner result file only contained workload events unless Fly archive collection was configured, and pre-message host events were queued but not necessarily delivered before the scenario sent player messages. Added a local `/admin/history` collector for live runs and made the shared historia workload wait for pre-message host-event delivery before sending player input.
+
+This also confirmed the historia bundle needs to use the generic `{ type: "ready" }` connect frame that the runner and existing example bundles expect; the payload now carries `topic: "historia.ready"` plus the hydration snapshot.

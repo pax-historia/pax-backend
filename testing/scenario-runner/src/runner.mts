@@ -11,7 +11,7 @@ import {
   loadScenarioManifest,
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
-import { appendArchivedHistory } from "./history-archive.mjs";
+import { appendArchivedHistory, appendControlPlaneHistory } from "./history-archive.mjs";
 import { executeLiveWorkload } from "./live-executor.mjs";
 import { buildScenarioResult } from "./result.mjs";
 import { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
@@ -80,8 +80,22 @@ export async function runReplayFromCatalog(
       startedAtMs: liveStartedAtMs,
       finishedAtMs: liveFinishedAtMs,
     });
+    await appendControlPlaneHistory({
+      historyPath: hydratedInput.historyPath,
+      controlPlaneUrl: hydratedInput.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"],
+      gameIds: scenarioGameIds(workloadPlan),
+      startedAtMs: liveStartedAtMs,
+      finishedAtMs: liveFinishedAtMs,
+    });
   }
   return runReplayFromHistory({
     ...hydratedInput,
   });
+}
+
+function scenarioGameIds(workload: NonNullable<ScenarioRunnerInput["workloadPlan"]>): readonly string[] {
+  return Array.from(
+    { length: workload.maxGames },
+    (_unused, index) => `${workload.gameIdPrefix}-${index + 1}`,
+  );
 }
