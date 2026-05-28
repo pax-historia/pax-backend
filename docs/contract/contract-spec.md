@@ -140,8 +140,9 @@ handler execution, and timeout telemetry.
 
 ## History contract
 
-History is JSONL with at least `event`, ISO `ts`, and `shardId`. Events that
-name a game, actor, request, player, or session include the corresponding ids.
+History is JSONL with at least `event`, ISO `ts`, `shardId`, and a positive
+per-shard monotonic `pax_seq`. Events that name a game, actor, request, player,
+or session include the corresponding ids.
 Guarantee #14 validates that channel calls, lifecycle transitions, session
 transitions, storage operations, API wire records, bundle gates, placement
 decisions, and compute events are observable.

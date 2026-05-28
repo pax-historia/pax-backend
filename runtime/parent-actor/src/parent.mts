@@ -185,6 +185,7 @@ const log: Logger = pino({
 
 mkdirSync(dirname(HISTORY_PATH), { recursive: true });
 const historyFd = openSync(HISTORY_PATH, "a");
+let nextPaxSeq = loadLastPaxSeq(HISTORY_PATH) + 1;
 
 interface HistoryFields {
   readonly actorId?: string;
@@ -196,14 +197,40 @@ interface HistoryFields {
 }
 
 function history(event: string, fields: HistoryFields): void {
+  const paxSeq = nextPaxSeq;
+  nextPaxSeq += 1;
   const line =
     JSON.stringify({
+      ...fields,
       ts: new Date().toISOString(),
       shardId: SHARD_ID,
+      pax_seq: paxSeq,
       event,
-      ...fields,
     }) + "\n";
   writeSync(historyFd, line);
+}
+
+function loadLastPaxSeq(path: string): number {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = raw.trimEnd().split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line) as { readonly pax_seq?: unknown };
+      if (typeof parsed.pax_seq === "number" && Number.isInteger(parsed.pax_seq)) {
+        return parsed.pax_seq;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return 0;
 }
 
 // --- Redis self-registration -------------------------------------------

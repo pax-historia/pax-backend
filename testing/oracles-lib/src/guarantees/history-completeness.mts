@@ -41,6 +41,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 export function historyCompleteness(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
+  const lastSeqByShard = new Map<string, number>();
 
   for (const event of history) {
     if (typeof event.ts !== "string" || Number.isNaN(Date.parse(event.ts))) {
@@ -48,6 +49,22 @@ export function historyCompleteness(history: readonly HistoryEvent[]): OracleRes
     }
     if (typeof event.shardId !== "string" || event.shardId.length === 0) {
       findings.push(finding("missing-shardid", "history event must include shardId", event));
+    }
+    const paxSeq = event.pax_seq;
+    if (typeof paxSeq !== "number" || !Number.isInteger(paxSeq) || paxSeq < 1) {
+      findings.push(finding("missing-pax-seq", "history event must include positive pax_seq", event));
+    } else if (typeof event.shardId === "string" && event.shardId.length > 0) {
+      const previous = lastSeqByShard.get(event.shardId);
+      if (previous !== undefined && paxSeq !== previous + 1) {
+        findings.push(
+          finding("pax-seq-gap", "history pax_seq must be contiguous per shard", event, {
+            previous,
+            expected: previous + 1,
+            actual: paxSeq,
+          }),
+        );
+      }
+      lastSeqByShard.set(event.shardId, paxSeq);
     }
     const required = REQUIRED_FIELDS[event.event] ?? [];
     findings.push(...requiredStringFindings(event, required));

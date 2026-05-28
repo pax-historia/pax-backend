@@ -4,6 +4,7 @@ export interface HistoryEvent {
   readonly event: string;
   readonly ts?: string;
   readonly shardId?: string;
+  readonly pax_seq?: number;
   readonly actorId?: string;
   readonly gameId?: string;
   readonly sessionId?: string;
