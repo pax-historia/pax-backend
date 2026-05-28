@@ -1,10 +1,10 @@
 # `historia-default`
 
 > **Status: scaffolded.** The package, manifest, TypeScript config, runtime
-> ambient declarations, and minimal lifecycle entrypoint are present and
-> build to `dist/bundle.js`. Modules, workflow runtime, default workflow
-> strings, scenarios, and bundle oracles land in follow-up Phase 3 tasks.
-> The plan is in
+> ambient declarations, minimal lifecycle entrypoint, and core
+> state/blob/migration adapter are present and build to `dist/bundle.js`.
+> Modules, workflow runtime, default workflow strings, scenarios, and bundle
+> oracles land in follow-up Phase 3 tasks. The plan is in
 > [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md).
 
 `historia-default` is the reference creator bundle for the historia game
@@ -190,15 +190,15 @@ examples/bundles/historia-default/
 │   │   ├── ol-bundle.generated.ts       (OpenLayers IIFE; rebuild via scripts/bundle-ol.ts)
 │   │   └── polygon-clipping-bundle.generated.ts
 │   ├── core/
-│   │   ├── persistence.ts               (commitRound: merge working state, c.blob.put('current', ...), clear c.state, optional c.state.flush())
-│   │   ├── initialization.ts            (cold-load: c.blob.get('current'), migrate, replay c.state working set)
-│   │   ├── migrations.ts                (v1 → v5 chain, dispatched on blobCompatTag)
-│   │   └── migrate-v*-to-v*.ts
+│   │   ├── codec.mts                    (CBOR encode/decode helpers for c.blob snapshots)
+│   │   ├── persistence.mts              (load c.state + c.blob, save snapshot, clear/flush working state)
+│   │   ├── migrations.mts               (v1 → v5 compatibility dispatch on blobCompatTag)
+│   │   └── schema.mts                   (working-state and LiveGameBlob v5 shape)
 │   ├── routing/
 │   │   ├── websocket.ts                 (dispatch + policy gates over onPlayerMessage)
 │   │   └── message-caps.ts
 │   ├── hydration.ts                     (initial client snapshot on connect)
-│   └── context.ts                       (GameContext adapter over c.*)
+│   └── context.mts                      (GameContext adapter over c.*)
 ├── oracles-lib/
 │   └── src/                             (bundle-correctness oracles, NOT in testing/oracles-lib)
 └── scenarios/

@@ -1,6 +1,13 @@
-import { defineBundle } from "@pax-backend/runtime-sdk";
+import { defineBundle, type SubstrateContext } from "@pax-backend/runtime-sdk";
 
 import { manifest } from "../manifest.js";
+import { createGameContext, type HistoriaGameContext } from "./context.mjs";
+import {
+  commitSnapshot,
+  loadHistoriaState,
+  persistWorkingState,
+  type LoadedHistoriaState,
+} from "./core/persistence.mjs";
 
 interface SessionSummary {
   readonly playerId: string;
@@ -8,11 +15,16 @@ interface SessionSummary {
 }
 
 const sessions = new Map<string, SessionSummary>();
+let loadedState: LoadedHistoriaState | undefined;
+let gameContext: HistoriaGameContext | undefined;
 
 export default defineBundle({
   manifest,
 
-  onWake(c, payload) {
+  async onWake(c, payload) {
+    loadedState = await loadHistoriaState(c, payload);
+    gameContext = createGameContext(c, loadedState);
+    const persistResult = await persistWorkingState(c, loadedState.workingState);
     c.log.emit({
       event: "historia-default.onWake",
       reason: payload.reason,
@@ -20,6 +32,9 @@ export default defineBundle({
       runId: payload.runId,
       compatTagProduced: manifest.compatTagProduced,
       compatTagsAccepted: manifest.compatTagsAccepted,
+      blobCompatTag: payload.blobCompatTag ?? null,
+      migratedFrom: loadedState.migratedFrom ?? null,
+      stateWrite: persistResult.stateWrite,
     });
   },
 
@@ -47,10 +62,12 @@ export default defineBundle({
       sessionId: payload.sessionId,
       compatTag: manifest.compatTagProduced,
       connectedPlayers: connectedPlayerCount(),
+      snapshot: hydrationSummary(),
     });
   },
 
   async onPlayerMessage(c, payload) {
+    const ctx = requireGameContext(c);
     const messageType = readMessageType(payload.body);
     c.log.emit({
       event: "historia-default.onPlayerMessage",
@@ -58,11 +75,13 @@ export default defineBundle({
       sessionId: payload.sessionId,
       seq: payload.seq,
       messageType,
+      currentRound: ctx.loaded.blob.game.currentRound,
     });
     await c.ws.send(payload.playerId, {
       type: "historia.unhandled",
       seq: payload.seq,
       messageType,
+      currentRound: ctx.loaded.blob.game.currentRound,
     });
   },
 
@@ -82,13 +101,17 @@ export default defineBundle({
     });
   },
 
-  onSleep(c, payload) {
+  async onSleep(c, payload) {
+    const commitResult = loadedState
+      ? await commitSnapshot(c, loadedState.blob)
+      : undefined;
     c.log.emit({
       event: "historia-default.onSleep",
       reason: payload.reason,
       deadline: payload.deadline,
       connectedSessions: sessions.size,
       connectedPlayers: connectedPlayerCount(),
+      commitResult,
     });
   },
 
@@ -124,6 +147,24 @@ export default defineBundle({
 
 function connectedPlayerCount(): number {
   return new Set([...sessions.values()].map((session) => session.playerId)).size;
+}
+
+function requireGameContext(c: SubstrateContext): HistoriaGameContext {
+  if (gameContext) return gameContext;
+  const now = c.now();
+  throw new Error(`historia-default missing game context at ${now}`);
+}
+
+function hydrationSummary(): Readonly<Record<string, unknown>> {
+  if (!loadedState) return { status: "not-loaded" };
+  return {
+    status: loadedState.blob.game.status,
+    title: loadedState.blob.game.title ?? null,
+    currentRound: loadedState.blob.game.currentRound,
+    players: Object.keys(loadedState.blob.game.players).length,
+    pendingEvents: loadedState.workingState.currentRoundDeltas.length,
+    migratedFrom: loadedState.migratedFrom ?? null,
+  };
 }
 
 function readMessageType(body: unknown): string {
