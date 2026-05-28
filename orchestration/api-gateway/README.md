@@ -19,6 +19,13 @@ The gateway has **zero opinion** about `args` or `result` bodies. It does not
 interpret billing, validate kind-specific schemas, or model debits. Strong
 Platform Guarantee #5 is the contract.
 
-Step 5 of the plan's kickoff.
+Current source passes include:
 
-Stub.
+- Redis-backed operator kind registrations with in-memory fallback defaults.
+- Co-located reference URL service routes under `/_url-services/*`.
+- Sliding-window `api-invocations-per-min` enforcement.
+- Live and replay dispatch modes with wire-record JSONL storage.
+- Provider timeout handling via `PAX_API_PROVIDER_TIMEOUT_MS`.
+
+Still pending: richer deployment configuration, production metrics, and
+driver-owned replay fixture loading.

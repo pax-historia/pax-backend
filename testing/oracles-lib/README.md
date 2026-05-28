@@ -27,7 +27,8 @@ decouples filesystem identity from prose ordering in the plan README.
 See [`../README.md`](../README.md) for the full numbered list and the
 naming convention rationale.
 
-Current source pass ships the package skeleton plus one named oracle function
-per Strong Platform Guarantee. Each oracle reads structured history events and
-returns `pass`, `fail`, or `inconclusive`; the scenario-runner will decide how
-strictly to treat inconclusive results for each run mode.
+Current source passes ship one named oracle function per Strong Platform
+Guarantee, a canonical guarantee index, all-oracle replay, and named-oracle
+selection for scenario-focused replays. Each oracle reads structured history
+events and returns `pass`, `fail`, or `inconclusive`; the scenario-runner
+treats anything other than `pass` as blocking in the current CLI.
