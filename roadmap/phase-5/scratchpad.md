@@ -156,3 +156,7 @@ The heartbeat retry cleared the earlier no-faults hold failure window. At about 
 Preserved a remote hold snapshot under `/data/phase-5/soak/ivm-20260528T222045Z/snapshots/`: `shards-20260528T230507Z.json` plus a corrected exact history summary at `no-faults-hold-20260528T230507Z.summary.json`. The summary records 1000 placements, 98-102 per shard, zero workload failures, zero runner-side session closes/errors, and the no-faults `send-json` phase still active.
 
 Started a detached driver-side monitor for the rest of the run: `/data/phase-5/soak/ivm-20260528T222045Z/monitor/monitor.js`, PID 2039, appending five-minute JSON status snapshots to `/data/phase-5/soak/ivm-20260528T222045Z/monitor/status.jsonl`. The first monitor line matched the live check: process alive, no exit code, 10 healthy accepting shards, `total_active_games=1000`, and no history failures.
+
+## 2026-05-28 16:13 PDT
+
+Confirmed the detached monitor cadence. The second monitor line landed at `2026-05-28T23:12:23.154Z`; the heartbeat `ivm` retry was still alive with no `exit.code`, the no-faults history still had 1000 placements and zero workload failures/session close/session error events, and `/admin/shards` still showed 10 healthy accepting shards with `total_active_games=1000`. This puts the no-faults hold about 25 minutes past `send-json` start and still green.
