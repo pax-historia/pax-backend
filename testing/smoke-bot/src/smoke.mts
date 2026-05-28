@@ -12,8 +12,8 @@
 //  5. Read the history.jsonl tail and assert the expected channel calls
 //     show up with the same sessionId.
 
-import { openSync, readSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +45,8 @@ const BUNDLE_NAME = process.env["PAX_SMOKE_BUNDLE"] ?? "hello-ws-echo";
 interface PlacementResponse {
   readonly gameId: string;
   readonly shardId: string;
+  readonly runtimeContractRequired: number;
+  readonly runtimeContractsSupported: readonly [number, number];
   readonly shardUrl: string;
   readonly webSocketUrl: string;
   readonly placementToken: string;
@@ -52,6 +54,13 @@ interface PlacementResponse {
   readonly runId: string;
   readonly bundleName: string;
   readonly serverTimings: Readonly<Record<string, number>>;
+}
+
+interface PlacementErrorResponse {
+  readonly ok: false;
+  readonly error: string;
+  readonly message?: string;
+  readonly detail?: unknown;
 }
 
 interface ReadyFrame {
@@ -84,6 +93,31 @@ const log = (...args: unknown[]): void => {
 function fail(msg: string, extra?: unknown): never {
   console.error("[smoke] FAIL:", msg, extra ?? "");
   process.exit(1);
+}
+
+function writeDriverHistory(event: string, fields: Readonly<Record<string, unknown>>): void {
+  mkdirSync(dirname(HISTORY_PATH), { recursive: true });
+  appendFileSync(
+    HISTORY_PATH,
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      shardId: typeof fields["shardId"] === "string" ? fields["shardId"] : "driver",
+      event,
+      ...fields,
+    }) + "\n",
+    "utf8",
+  );
+}
+
+function parsePlacementError(raw: string): PlacementErrorResponse | undefined {
+  try {
+    const parsed = JSON.parse(raw) as Partial<PlacementErrorResponse>;
+    return parsed && parsed.ok === false && typeof parsed.error === "string"
+      ? (parsed as PlacementErrorResponse)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function main(): Promise<void> {
@@ -143,17 +177,36 @@ async function main(): Promise<void> {
   const placementResp = await fetch(placementUrl);
   if (!placementResp.ok) {
     const text = await placementResp.text();
+    const parsed = parsePlacementError(text);
+    writeDriverHistory("placement.rejected", {
+      gameId: GAME_ID,
+      playerId: PLAYER_ID,
+      error: parsed?.error ?? `http_${placementResp.status}`,
+      statusCode: placementResp.status,
+      detail: parsed?.detail ?? text,
+    });
     fail(`placement ${placementResp.status}: ${text}`);
   }
   const placement = (await placementResp.json()) as PlacementResponse;
   log("placement:", {
     shardId: placement.shardId,
     webSocketUrl: placement.webSocketUrl,
+    runtimeContractRequired: placement.runtimeContractRequired,
+    runtimeContractsSupported: placement.runtimeContractsSupported,
     expiresAt: placement.expiresAt,
   });
   if (typeof placement.webSocketUrl !== "string") {
     fail("placement missing webSocketUrl", placement);
   }
+  writeDriverHistory("placement.accepted", {
+    gameId: placement.gameId,
+    playerId: PLAYER_ID,
+    shardId: placement.shardId,
+    runId: placement.runId,
+    bundleName: placement.bundleName,
+    runtimeContractRequired: placement.runtimeContractRequired,
+    runtimeContractsSupported: placement.runtimeContractsSupported,
+  });
 
   // 3. Open WebSocket — must request rivet subprotocols.
   log("opening WS:", placement.webSocketUrl);
