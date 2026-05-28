@@ -180,6 +180,13 @@ export class ControlPlaneStore {
   ): Promise<void> {
     await this.redis.set(storageKey(gameId, tier), raw);
   }
+
+  async getStorageRaw(
+    gameId: string,
+    tier: "state" | "blob",
+  ): Promise<string | undefined> {
+    return (await this.redis.get(storageKey(gameId, tier))) ?? undefined;
+  }
 }
 
 async function getJson<T>(redis: Redis, key: string): Promise<T | undefined> {

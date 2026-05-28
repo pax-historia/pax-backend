@@ -380,6 +380,11 @@ async function handleGameResource(
     return;
   }
 
+  if (parts.length === 4 && parts[3] === "snapshot" && req.method === "GET") {
+    await handleGameSnapshot(res, store, config, gameId, url);
+    return;
+  }
+
   if (parts.length === 4 && parts[3] === "allowed-players" && req.method === "GET") {
     writeJson(res, 200, {
       ok: true,
@@ -541,6 +546,48 @@ async function handleBundleCompatDryRun(
   const bundle = await requireBundle(store, bundleName);
   const compat = checkBundleCompat(game.blobCompatTag, bundle.manifest);
   writeJson(res, compat.ok ? 200 : 409, compat);
+}
+
+async function handleGameSnapshot(
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  config: ControlPlaneConfig,
+  gameId: string,
+  url: URL,
+): Promise<void> {
+  const game = await requireGame(store, gameId);
+  const includeBlob = url.searchParams.get("includeBlob") !== "false";
+  const apiLimit = clampInt(url.searchParams.get("apiLimit"), 0, 1000, 100);
+  const [allowedPlayers, stateRaw, blobRaw] = await Promise.all([
+    store.listAllowedPlayers(gameId),
+    store.getStorageRaw(gameId, "state"),
+    includeBlob ? store.getStorageRaw(gameId, "blob") : Promise.resolve(undefined),
+  ]);
+  const connectedPlayers = connectedPlayersForGame(config.historyPath, gameId).map((session) => ({
+    sessionId: session.sessionId,
+    playerId: session.playerId,
+    connectedAt: session.connectedAt,
+  }));
+  const recentApiInvokes =
+    apiLimit === 0
+      ? []
+      : queryHistory(config.historyPath, {
+          event: "api.invoke.response",
+          gameId,
+          limit: apiLimit,
+        }).events;
+
+  writeJson(res, 200, {
+    ok: true,
+    game,
+    allowedPlayers,
+    connectedPlayers,
+    storage: {
+      state: decodeStoredRaw(stateRaw),
+      blob: includeBlob ? decodeStoredRaw(blobRaw) : { omitted: true },
+    },
+    recentApiInvokes,
+  });
 }
 
 async function handleCompatTags(
@@ -765,6 +812,32 @@ function encodeStoredValue(
     throw new HttpError(413, "sizeExceeded", { field, bytes, limit });
   }
   return { raw, bytes };
+}
+
+function decodeStoredRaw(
+  raw: string | undefined,
+):
+  | { readonly found: false; readonly bytes: 0 }
+  | { readonly found: true; readonly bytes: number; readonly value?: unknown; readonly parseError?: string } {
+  if (raw === undefined) return { found: false, bytes: 0 };
+  const bytes = Buffer.byteLength(raw, "utf8");
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      Object.prototype.hasOwnProperty.call(parsed, "value")
+    ) {
+      return { found: true, bytes, value: (parsed as { value?: unknown }).value };
+    }
+    return { found: true, bytes, value: parsed };
+  } catch (err) {
+    return {
+      found: true,
+      bytes,
+      parseError: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function parsePositiveInteger(raw: string, fallback: number): number {
