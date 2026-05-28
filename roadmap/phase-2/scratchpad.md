@@ -73,3 +73,31 @@ Validation checkpoint before deploy:
 - `fly config validate` passed for all three Fly configs.
 - `docker buildx build --check` passed for the shard, control, and driver
   Dockerfiles.
+
+## 2026-05-28 04:26 PDT
+
+Deployed the first production-shaped control and driver images. The initial
+remote image builds exposed three packaging issues that local `--check`
+validation did not catch:
+
+- `pnpm-lock.yaml` was stale for the new `@pax-backend/node-telemetry`
+  workspace dependency entries. `pnpm install --lockfile-only` repaired the
+  lockfile and `pnpm install --frozen-lockfile` passed locally afterward.
+- The control and driver image contexts intentionally excluded `vendor/`, but
+  root `pnpm install` still resolves the vendored Rivet file dependencies
+  declared by `runtime/parent-actor`. The image-specific dockerignore files now
+  include only the three small vendored TypeScript packages needed to satisfy
+  root lockfile resolution.
+- Shard images installed root dependencies before the vendored Rivet TypeScript
+  `dist/` files existed in the container. The shard Dockerfile now runs
+  `pnpm build:vendor-ts` before root `pnpm install --frozen-lockfile`, so fresh
+  Docker contexts do not depend on local vendor build artifacts.
+
+Also added a global `**/target` Docker ignore rule so local Cargo build caches
+do not inflate future image contexts. Control deployment completed with two
+started machines and all three Fly checks passing. Driver deployment completed
+with one started machine, one standby machine, and its health check passing.
+Public router health returned `{"runtime":"placement-router","status":"ok"}`;
+internal control-plane, API gateway, and driver health endpoints all returned
+`status:"ok"`. The shard deployment is still running after the install-order
+fix; wait for it before closing task 2.
