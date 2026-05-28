@@ -11,7 +11,8 @@ The substrate's only egress to operator-owned URL services. Implements
    `bundleCompatTag`, `runId`, `traceId`, `idempotencyKey`.
 5. Fingerprint = `sha256(serialize(outbound))`.
 6. Live mode: POST to URL with `X-Gateway-Envelope-Version: 2`, record both
-   raw outbound + raw inbound at wire grain, return verbatim.
+   raw outbound + raw inbound at wire grain, return the creator-facing
+   response plus the wire record to the parent.
 7. Replay mode: lookup recorded inbound by fingerprint; **hard-fail with
    `replayCoverageGap` if no match** (no silent fall-through to live).
 
@@ -28,7 +29,8 @@ Current source passes include:
 - Redis-backed operator kind registrations with in-memory fallback defaults.
 - Co-located reference URL service routes under `/_url-services/*`.
 - Sliding-window `api-invocations-per-min` enforcement.
-- Live and replay dispatch modes with wire-record JSONL storage.
+- Live and replay dispatch modes with wire-record JSONL storage and parent
+  handoff for `api.invoke.wire` history events.
 - Provider timeout handling via `PAX_API_PROVIDER_TIMEOUT_MS`.
 
 Still pending: richer deployment configuration, production scrape wiring, and

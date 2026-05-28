@@ -31,6 +31,9 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `ChildUnknownMessagePayload`.
 - Parent-to-child response payload types for request/response channels,
   including `WsSendResponsePayload` for typed bandwidth/rate rejections.
+- API gateway handoff types, including `ApiGatewayInvokeResult`, which lets
+  the gateway return the creator-facing response plus the wire-grain record
+  the parent writes into history.
 - `BootstrapPayload` carries the parent-selected memory limit and
   `handlerTimeoutMs` so child runner enforcement matches the advertised
   `cpu-ms-per-tick` budget.

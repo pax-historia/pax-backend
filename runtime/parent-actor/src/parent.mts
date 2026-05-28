@@ -35,9 +35,11 @@ import {
   ACTIVE_GAME_TTL_SECONDS,
   ALLOWED_PLAYERS_KEY_PREFIX,
   type ApiGatewayDispatchInput,
+  type ApiGatewayInvokeResult,
   type ApiInvokeError,
   type ApiInvokeIpcPayload,
   type ApiInvokeResponse,
+  type ApiInvokeWireRecord,
   BLOB_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
@@ -1187,7 +1189,8 @@ async function handleApiInvoke(
     connectedSessionCount: input.connectedSessions.length,
   });
 
-  const response = await dispatchApiInvoke(input);
+  const result = await dispatchApiInvoke(input);
+  const response = result.response;
   history("api.invoke.response", {
     actorId: inst.actorId,
     gameId: inst.gameId,
@@ -1196,7 +1199,28 @@ async function handleApiInvoke(
     traceId: input.traceId,
     ok: response.ok,
     error: response.ok ? undefined : response.error,
+    fingerprint: result.wireRecord?.fingerprint,
+    mode: result.wireRecord?.mode,
+    statusCode: result.wireRecord?.statusCode,
   });
+  if (result.wireRecord) {
+    history("api.invoke.wire", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      kind: payload.kind,
+      gatewayRequestId: result.wireRecord.requestId,
+      runId: inst.runId,
+      traceId: input.traceId,
+      fingerprint: result.wireRecord.fingerprint,
+      mode: result.wireRecord.mode,
+      statusCode: result.wireRecord.statusCode,
+      error: result.wireRecord.error,
+      rawOutbound: result.wireRecord.rawOutbound,
+      rawInbound: result.wireRecord.rawInbound,
+      recordedAt: result.wireRecord.recordedAt,
+    });
+  }
   if (inst.child) {
     sendTyped(inst.child, "api.invoke.response", { response }, requestId);
   }
@@ -1204,7 +1228,7 @@ async function handleApiInvoke(
 
 async function dispatchApiInvoke(
   input: ApiGatewayDispatchInput,
-): Promise<ApiInvokeResponse> {
+): Promise<ApiGatewayInvokeResult> {
   try {
     const res = await fetch(PAX_API_GATEWAY_URL, {
       method: "POST",
@@ -1214,23 +1238,40 @@ async function dispatchApiInvoke(
     const raw = await res.text();
     if (!res.ok) {
       return {
-        ok: false,
-        error: "providerError",
-        detail: { statusCode: res.status, body: raw },
+        response: {
+          ok: false,
+          error: "providerError",
+          detail: { statusCode: res.status, body: raw },
+        },
       };
     }
-    return parseApiInvokeResponse(raw);
+    return parseApiGatewayInvokeResult(raw);
   } catch (err) {
     return {
-      ok: false,
-      error: "providerError",
-      detail: { message: err instanceof Error ? err.message : String(err) },
+      response: {
+        ok: false,
+        error: "providerError",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      },
     };
   }
 }
 
-function parseApiInvokeResponse(raw: string): ApiInvokeResponse {
+function parseApiGatewayInvokeResult(raw: string): ApiGatewayInvokeResult {
   const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const responseRaw = parsed["response"];
+  if (isRecord(responseRaw)) {
+    const response = parseApiInvokeResponseRecord(responseRaw);
+    const wireRecordRaw = parsed["wireRecord"];
+    return {
+      response,
+      wireRecord: parseApiInvokeWireRecord(wireRecordRaw),
+    };
+  }
+  return { response: parseApiInvokeResponseRecord(parsed) };
+}
+
+function parseApiInvokeResponseRecord(parsed: Readonly<Record<string, unknown>>): ApiInvokeResponse {
   if (parsed["ok"] === true) {
     return { ok: true, result: parsed["result"] };
   }
@@ -1241,8 +1282,34 @@ function parseApiInvokeResponse(raw: string): ApiInvokeResponse {
   return {
     ok: false,
     error: "providerError",
-    detail: { message: "gateway returned malformed api.invoke response", raw },
+    detail: { message: "gateway returned malformed api.invoke response", raw: parsed },
   };
+}
+
+function parseApiInvokeWireRecord(raw: unknown): ApiInvokeWireRecord | undefined {
+  if (!isRecord(raw)) return undefined;
+  if (
+    raw["event"] !== "api.invoke" ||
+    typeof raw["requestId"] !== "string" ||
+    typeof raw["fingerprint"] !== "string" ||
+    (raw["mode"] !== "live" && raw["mode"] !== "replay") ||
+    typeof raw["kind"] !== "string" ||
+    typeof raw["gameId"] !== "string" ||
+    typeof raw["runId"] !== "string" ||
+    typeof raw["rawOutbound"] !== "string" ||
+    typeof raw["rawInbound"] !== "string" ||
+    typeof raw["statusCode"] !== "number" ||
+    typeof raw["recordedAt"] !== "string"
+  ) {
+    return undefined;
+  }
+  const error = raw["error"];
+  if (error !== undefined && !isApiInvokeError(error)) return undefined;
+  return raw as unknown as ApiInvokeWireRecord;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function isApiInvokeError(value: unknown): value is ApiInvokeError {

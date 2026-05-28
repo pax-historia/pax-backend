@@ -1,5 +1,6 @@
 import {
   type ApiGatewayDispatchInput,
+  type ApiGatewayInvokeResult,
   type ApiInvokeError,
   type ApiInvokeResponse,
   type ApiInvokeWireRecord,
@@ -59,7 +60,7 @@ export class ApiGateway {
     };
   }
 
-  async invoke(input: ApiGatewayDispatchInput): Promise<ApiInvokeResponse> {
+  async invoke(input: ApiGatewayDispatchInput): Promise<ApiGatewayInvokeResult> {
     this.#invocationsTotal += 1;
     const mode = input.replayMode === true ? "replay" : this.#defaultMode;
     const envelope = buildGatewayEnvelope(input, mode);
@@ -87,16 +88,17 @@ export class ApiGateway {
           fingerprint: envelope.fingerprint,
         });
       }
-      await this.#records.record({
+      const record: ApiInvokeWireRecord = {
         ...recorded,
         mode: "replay",
         requestId: envelope.requestId,
         rawOutbound: envelope.rawOutbound,
         recordedAt: new Date().toISOString(),
-      });
+      };
+      await this.#records.record(record);
       const response = apiInvokeResponseFromHttp(recorded.statusCode, recorded.rawInbound);
       this.#recordMetrics(response);
-      return response;
+      return { response, wireRecord: record };
     }
 
     const controller = new AbortController();
@@ -111,7 +113,7 @@ export class ApiGateway {
       });
       const rawInbound = await res.text();
       const response = apiInvokeResponseFromHttp(res.status, rawInbound);
-      await this.#records.record({
+      const record: ApiInvokeWireRecord = {
         event: "api.invoke",
         requestId: envelope.requestId,
         fingerprint: envelope.fingerprint,
@@ -124,9 +126,10 @@ export class ApiGateway {
         statusCode: res.status,
         error: response.ok ? undefined : response.error,
         recordedAt: new Date().toISOString(),
-      });
+      };
+      await this.#records.record(record);
       this.#recordMetrics(response);
-      return response;
+      return { response, wireRecord: record };
     } catch (err) {
       return this.#recordAndReturn(input, envelope, mode, 0, "providerError", {
         timeoutMs: this.#providerTimeoutMs,
@@ -144,7 +147,7 @@ export class ApiGateway {
     statusCode: number,
     error: ApiInvokeError,
     detail: unknown,
-  ): Promise<ApiInvokeResponse> {
+  ): Promise<ApiGatewayInvokeResult> {
     const response: ApiInvokeResponse = { ok: false, error, detail };
     this.#recordMetrics(response);
     const record: ApiInvokeWireRecord = {
@@ -162,7 +165,7 @@ export class ApiGateway {
       recordedAt: new Date().toISOString(),
     };
     await this.#records.record(record);
-    return response;
+    return { response, wireRecord: record };
   }
 
   #recordMetrics(response: ApiInvokeResponse): void {

@@ -11,7 +11,8 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
 - `onWake` hydration and `onSleep` dispatch with a minimum flush budget
 - Forwarding `c.api.invoke` calls to the API gateway with the context envelope
 - Writing every channel call / lifecycle event / session transition / api
-  round trip to the history (guarantee #14)
+  round trip to the history, including `api.invoke.wire` raw payload records
+  from the gateway (guarantee #14)
 - Exposing `GET /health` and `GET /metrics` on `PAX_PARENT_METRICS_BIND`
   (default `127.0.0.1:7700`) for parent-process gauges and history counters
 

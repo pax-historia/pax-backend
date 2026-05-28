@@ -193,6 +193,11 @@ export interface ApiInvokeWireRecord {
   readonly recordedAt: string;
 }
 
+export interface ApiGatewayInvokeResult {
+  readonly response: ApiInvokeResponse;
+  readonly wireRecord?: ApiInvokeWireRecord;
+}
+
 export interface ApiInvokeIpcPayload extends ApiInvokeRequest {
   readonly triggeringSessionId: string | null;
 }

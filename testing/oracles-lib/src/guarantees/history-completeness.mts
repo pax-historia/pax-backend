@@ -7,6 +7,17 @@ const GUARANTEE = 14;
 const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "api.invoke.request": ["actorId", "gameId", "requestId", "kind"],
   "api.invoke.response": ["actorId", "gameId", "requestId", "kind"],
+  "api.invoke.wire": [
+    "actorId",
+    "gameId",
+    "requestId",
+    "gatewayRequestId",
+    "kind",
+    "runId",
+    "fingerprint",
+    "rawOutbound",
+    "rawInbound",
+  ],
   "blob.read": ["actorId", "gameId", "requestId"],
   "blob.write": ["actorId", "gameId", "requestId"],
   "child.exit": ["actorId", "gameId", "runId"],

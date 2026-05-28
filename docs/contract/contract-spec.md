@@ -113,6 +113,9 @@ The gateway adds `X-Gateway-Envelope-Version: 2`. URL services respond with
 `{ result }` or `{ error, detail? }`. The substrate maps substrate-owned
 failures to `kindUnknown`, `providerError`, `apiRateExceeded`, or
 `replayCoverageGap` and records both request and response at wire grain.
+The parent history stream records this as `api.invoke.wire` with the
+gateway request id, fingerprint, mode, status code, raw outbound payload,
+and raw inbound payload.
 
 ## Compute budgets
 
