@@ -68,6 +68,7 @@ interface SoakSummary {
     readonly total_placements: number;
     readonly observed_placement_shards: number;
     readonly parse_error_count: number;
+    readonly monitor_parse_error_count: number;
     readonly failing_cases: number;
     readonly errored_cases: number;
     readonly gates_ok: boolean;
@@ -97,7 +98,7 @@ const allShardIds = new Set<string>();
 for (const entry of cases) {
   for (const shardId of Object.keys(entry.placement_distribution)) allShardIds.add(shardId);
 }
-const gateFailures = gateFailuresFor(options, cases, allShardIds.size);
+const gateFailures = gateFailuresFor(options, cases, allShardIds.size, monitor);
 const summary: SoakSummary = {
   schema_version: 1,
   kind: "phase-5-soak-summary",
@@ -112,6 +113,7 @@ const summary: SoakSummary = {
     total_placements: cases.reduce((sum, entry) => sum + entry.placement_count, 0),
     observed_placement_shards: allShardIds.size,
     parse_error_count: cases.reduce((sum, entry) => sum + entry.parse_errors.length, 0),
+    monitor_parse_error_count: monitor?.parse_errors.length ?? 0,
     failing_cases: cases.filter((entry) => entry.result_status === "fail").length,
     errored_cases: cases.filter((entry) => entry.result_status === "error").length,
     gates_ok: gateFailures.length === 0,
@@ -269,6 +271,7 @@ function gateFailuresFor(
   options: CliOptions,
   cases: readonly CaseSummary[],
   observedPlacementShards: number,
+  monitor: MonitorSummary | undefined,
 ): readonly string[] {
   const failures: string[] = [];
   if (options.expectCases !== undefined && cases.length < options.expectCases) {
@@ -296,6 +299,9 @@ function gateFailuresFor(
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
     if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
     if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
+  }
+  if (monitor && monitor.parse_errors.length > 0) {
+    failures.push(`${monitor.path} has parse errors`);
   }
   return failures;
 }
