@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@pax-backend/runtime-sdk": "workspace:*",
+    "@pax-backend/runtime-sdk-test-harness": "workspace:*",
     "esbuild": "^0.25.12"
   }
 }

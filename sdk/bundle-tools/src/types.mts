@@ -1,4 +1,5 @@
 import type { BundleManifest } from "@pax-backend/runtime-sdk";
+import type { HarnessLintFinding } from "@pax-backend/runtime-sdk-test-harness";
 
 export interface BundleBuildInput {
   readonly packageDir: string;
@@ -32,4 +33,7 @@ export interface BundleVerifyResult {
   readonly path: string;
   readonly sha256: string;
   readonly bytes: number;
+  readonly manifest: BundleManifest;
+  readonly deterministic: boolean;
+  readonly lintFindings: readonly HarnessLintFinding[];
 }
