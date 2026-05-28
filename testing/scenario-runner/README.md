@@ -42,6 +42,9 @@ Current source pass provides the first runner shell:
   and `--phase-timeout-ms`
 - can run a whole catalog with `--suite <dir>`, producing one history/result
   pair per scenario × nemesis combination plus a `suite.result.json` summary
+- can run a Phase 5 scale ladder with `--scale-plan <file>`, producing a
+  `scale-ladder.result.json` summary plus one `rung.result.json`, history file,
+  and scenario `result.json` per rung × nemesis case
 - tags suite runs with `--runtime ivm|noivm`; the local stack still needs to be
   started with matching `PAX_CHILD_RUNNER_KIND`, which
   [`scripts/test/scenario-suite-local.sh`](../../scripts/test/scenario-suite-local.sh)
@@ -84,3 +87,23 @@ The script restarts the local stack once with `PAX_CHILD_RUNNER_KIND=ivm` and
 once with `PAX_CHILD_RUNNER_KIND=noivm`, then invokes suite mode for each
 catalog. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`, `PAX_SCENARIO_SUITE_NEMESES`,
 or `PAX_SCENARIO_SUITE_ORACLES` when iterating locally. CI uses the same contract.
+
+## Scale ladder mode
+
+Phase 5 rungs are declared in `testing/scale-ladders/v1-scale.mts`. Run a
+selected rung against an already-running stack:
+
+```bash
+pnpm exec tsx testing/scenario-runner/src/cli.mts \
+  --scale-plan testing/scale-ladders/v1-scale.mts \
+  --scale-rung 100g-1shard \
+  --runtime ivm \
+  --oracles scenario \
+  --output-dir var/scale-ladder/ivm/100g-1shard
+```
+
+Each rung records target game count, shard-machine count, target duration,
+nemesis set, sampling profile, attribution sentences, and per-case history and
+result paths. The runner applies the rung target to the scenario workload by
+overriding `maxGames`, `open-sessions` ramp/session count, and `send-json`
+message count derived from the target duration.

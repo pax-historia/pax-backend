@@ -185,6 +185,11 @@ export interface ScenarioRunnerInput {
   readonly workloadPath?: string;
   readonly workloadPlan?: ScenarioWorkloadPlan;
   readonly workloadGameIdPrefix?: string;
+  readonly workloadMaxGames?: number;
+  readonly workloadDurationMs?: number;
+  readonly workloadSessionsPerGame?: number;
+  readonly workloadOpenSessionsRampMs?: number;
+  readonly workloadSendJsonMessagesPerSession?: number;
   readonly fixtureBaseDir?: string;
   readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
   readonly controlPlaneUrl?: string;
@@ -249,6 +254,120 @@ export interface ScenarioSuiteResult {
     readonly errored: number;
   };
   readonly cases: readonly ScenarioSuiteCaseSummary[];
+}
+
+export interface ScaleLadderPlan {
+  readonly schemaVersion: 1;
+  readonly ladderId: string;
+  readonly description: string;
+  readonly scenarioCatalogDir?: string;
+  readonly nemesisCatalogDir?: string;
+  readonly defaultScenarioId: string;
+  readonly defaultMode?: ScenarioRunMode;
+  readonly defaultBackend?: ScenarioBackend;
+  readonly defaultOracleScope?: OracleScope;
+  readonly rungs: readonly ScaleRungSpec[];
+}
+
+export interface ScaleRungSpec {
+  readonly rungId: string;
+  readonly concurrentGames: number;
+  readonly shardMachines: number;
+  readonly targetDurationMs: number;
+  readonly rampMs: number;
+  readonly sessionsPerGame: number;
+  readonly scenarioId?: string;
+  readonly nemesisIds: readonly NemesisKind[];
+  readonly samplingProfile?: SamplingProfile;
+  readonly workerCount?: number;
+  readonly notes?: string;
+}
+
+export interface ScenarioScaleRunnerInput {
+  readonly scalePlanPath: string;
+  readonly outputDir: string;
+  readonly runtimeKind: ScenarioRuntimeKind;
+  readonly rungIds?: readonly string[];
+  readonly scenarioCatalogDir?: string;
+  readonly nemesisCatalogDir?: string;
+  readonly mode?: ScenarioRunMode;
+  readonly backend?: ScenarioBackend;
+  readonly workerCount?: number;
+  readonly controlPlaneUrl?: string;
+  readonly apiGatewayUrl?: string;
+  readonly routerUrl?: string;
+  readonly phaseTimeoutMs?: number;
+  readonly oracleScope?: OracleScope;
+  readonly oracleNames?: readonly string[];
+  readonly samplingProfile?: SamplingProfile;
+}
+
+export interface ScaleRungCaseSummary {
+  readonly scenario_id: string;
+  readonly nemesis_id: NemesisKind;
+  readonly runtime_kind: ScenarioRuntimeKind;
+  readonly mode: ScenarioRunMode;
+  readonly backend: ScenarioBackend;
+  readonly status: "pass" | "fail" | "error";
+  readonly history_path: string;
+  readonly result_path?: string;
+  readonly duration_ms: number;
+  readonly failing_oracles: readonly string[];
+  readonly attribution_sentence?: string;
+  readonly error?: string;
+}
+
+export interface ScaleRungResult {
+  readonly schema_version: 1;
+  readonly kind: "scale-rung";
+  readonly ladder_id: string;
+  readonly rung_id: string;
+  readonly runtime_kind: ScenarioRuntimeKind;
+  readonly scenario_id: string;
+  readonly concurrent_games: number;
+  readonly shard_machines: number;
+  readonly sessions_per_game: number;
+  readonly target_duration_ms: number;
+  readonly ramp_ms: number;
+  readonly sampling_profile: SamplingProfile;
+  readonly nemesis_ids: readonly NemesisKind[];
+  readonly output_dir: string;
+  readonly started_at: string;
+  readonly finished_at: string;
+  readonly duration_ms: number;
+  readonly summary: {
+    readonly total: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly errored: number;
+  };
+  readonly cases: readonly ScaleRungCaseSummary[];
+  readonly attribution_sentences: readonly string[];
+  readonly notes?: string;
+}
+
+export interface ScaleLadderResult {
+  readonly schema_version: 1;
+  readonly kind: "scale-ladder";
+  readonly ladder_id: string;
+  readonly description: string;
+  readonly plan_path: string;
+  readonly output_dir: string;
+  readonly runtime_kind: ScenarioRuntimeKind;
+  readonly started_at: string;
+  readonly finished_at: string;
+  readonly duration_ms: number;
+  readonly summary: {
+    readonly total_rungs: number;
+    readonly passed_rungs: number;
+    readonly failed_rungs: number;
+    readonly errored_rungs: number;
+    readonly total_cases: number;
+    readonly passed_cases: number;
+    readonly failed_cases: number;
+    readonly errored_cases: number;
+  };
+  readonly rungs: readonly ScaleRungResult[];
 }
 
 export interface WorkerArtifact {

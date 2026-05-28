@@ -4,6 +4,7 @@ export { buildScenarioResult, oracleResultKey } from "./result.mjs";
 export { executeLiveWorkload } from "./live-executor.mjs";
 export { NemesisRuntime } from "./nemesis-runtime.mjs";
 export { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
+export { loadScaleLadderPlan, runScaleLadder } from "./scale-ladder.mjs";
 export {
   loadNemesisManifest,
   loadScenarioManifest,
@@ -20,8 +21,14 @@ export type {
   NemesisManifest,
   OracleScope,
   ResolvedWorkloadFixture,
+  ScaleLadderPlan,
+  ScaleLadderResult,
+  ScaleRungCaseSummary,
+  ScaleRungResult,
+  ScaleRungSpec,
   SamplingProfile,
   ScenarioBackend,
+  ScenarioScaleRunnerInput,
   ScenarioRuntimeKind,
   ScenarioAttribution,
   ScenarioManifest,

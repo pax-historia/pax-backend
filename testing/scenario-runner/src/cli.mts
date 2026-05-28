@@ -3,16 +3,19 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { runReplayFromCatalog } from "./runner.mjs";
+import { runScaleLadder } from "./scale-ladder.mjs";
 import { runScenarioSuite } from "./suite.mjs";
 import type {
   NemesisKind,
   OracleScope,
+  ScaleLadderResult,
   SamplingProfile,
   ScenarioBackend,
   ScenarioResult,
   ScenarioRuntimeKind,
   ScenarioRunMode,
   ScenarioRunnerInput,
+  ScenarioScaleRunnerInput,
   ScenarioSuiteResult,
   ScenarioSuiteRunnerInput,
 } from "./types.mjs";
@@ -25,9 +28,14 @@ interface SuiteCliOptions extends ScenarioSuiteRunnerInput {
   readonly outputPath?: string;
 }
 
+interface ScaleCliOptions extends ScenarioScaleRunnerInput {
+  readonly outputPath?: string;
+}
+
 type ParsedCliOptions =
   | { readonly kind: "single"; readonly options: CliOptions }
-  | { readonly kind: "suite"; readonly options: SuiteCliOptions };
+  | { readonly kind: "suite"; readonly options: SuiteCliOptions }
+  | { readonly kind: "scale"; readonly options: ScaleCliOptions };
 
 const MODES = new Set<ScenarioRunMode>(["load", "property", "fuzz", "replay"]);
 const BACKENDS = new Set<ScenarioBackend>(["live", "mock-shard", "in-memory"]);
@@ -57,6 +65,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliOptions {
 
   if (values.has("suite")) {
     return { kind: "suite", options: parseSuiteOptions(values) };
+  }
+
+  if (values.has("scale-plan")) {
+    return { kind: "scale", options: parseScaleOptions(values) };
   }
 
   const scenarioId = required(values, "scenario");
@@ -101,6 +113,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     const result =
       parsed.kind === "suite"
         ? await runScenarioSuite(parsed.options)
+        : parsed.kind === "scale"
+          ? await runScaleLadder(parsed.options)
         : await runReplayFromCatalog(parsed.options);
     const raw = `${JSON.stringify(result, null, 2)}\n`;
     const outputPath = parsed.options.outputPath;
@@ -140,6 +154,35 @@ function parseSuiteOptions(values: ReadonlyMap<string, string>): SuiteCliOptions
     phaseTimeoutMs: parseOptionalPositiveInt(values.get("phase-timeout-ms")),
     oracleScope: oracles.scope,
     oracleNames: oracles.names,
+    samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),
+    outputPath: values.get("output"),
+  };
+}
+
+function parseScaleOptions(values: ReadonlyMap<string, string>): ScaleCliOptions {
+  const oracles = values.has("oracles") ? parseOracles(values.get("oracles")) : undefined;
+  const runtimeKind = parseRuntime(
+    values.get("runtime") ?? process.env["PAX_CHILD_RUNNER_KIND"] ?? "ivm",
+  );
+  const outputDir =
+    values.get("output-dir") ??
+    `var/scale-ladder/${runtimeKind}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
+  return {
+    scalePlanPath: required(values, "scale-plan"),
+    outputDir,
+    runtimeKind,
+    rungIds: parseOptionalList(values.get("scale-rungs") ?? values.get("scale-rung")),
+    scenarioCatalogDir: values.get("scenarios-dir"),
+    nemesisCatalogDir: values.get("nemeses-dir"),
+    mode: values.has("mode") ? parseMode(required(values, "mode")) : undefined,
+    backend: values.has("backend") ? parseBackend(required(values, "backend")) : undefined,
+    workerCount: parseOptionalPositiveInt(values.get("workers")),
+    controlPlaneUrl: values.get("control-url"),
+    apiGatewayUrl: values.get("api-gateway-url"),
+    routerUrl: values.get("router-url"),
+    phaseTimeoutMs: parseOptionalPositiveInt(values.get("phase-timeout-ms")),
+    oracleScope: oracles?.scope,
+    oracleNames: oracles?.names,
     samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),
     outputPath: values.get("output"),
   };
@@ -235,9 +278,12 @@ function parseOracles(
   return { scope: "explicit", names };
 }
 
-function hasBlockingResult(result: ScenarioResult | ScenarioSuiteResult): boolean {
+function hasBlockingResult(result: ScenarioResult | ScenarioSuiteResult | ScaleLadderResult): boolean {
   if (result.kind === "scenario-suite") {
     return result.summary.failed > 0 || result.summary.errored > 0;
+  }
+  if (result.kind === "scale-ladder") {
+    return result.summary.failed_rungs > 0 || result.summary.errored_rungs > 0;
   }
   return Object.values(result.oracles).some((oracle) => oracle.status !== "pass");
 }

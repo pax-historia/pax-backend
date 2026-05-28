@@ -64,6 +64,7 @@ Same artifact, two consumers.
 |---|---|
 | `result.json` | Pass/fail per oracle, attribution sentence, per-surface metrics, scenario metadata, history pointer |
 | `suite.result.json` | Pass/fail summary for a scenario catalog under a runtime/nemesis matrix |
+| `scale-ladder.result.json` / `rung.result.json` | Phase 5 scale-ladder summaries tying rung game count, shard-machine target, nemesis set, sampling profile, attribution, histories, and scenario results together |
 | Tigris (if shipping) | History archive for replay |
 | Self (Prometheus) | `pax_driver_*` metrics for the run |
 
@@ -250,6 +251,16 @@ Three profiles control collector behavior:
 The runner auto-promotes the saturation rung ±1 to `cliff_hold`. The
 allowlist exists to prevent the load-bot from OOMing on full
 high-cardinality scrapes (a sister-spike lesson).
+
+## Scale ladder mode
+
+Phase 5 uses a declarative scale plan (`testing/scale-ladders/v1-scale.mts`)
+with rungs from 100 games on one shard machine through the v1 soak target
+of 1000 games on 10 shard machines. The scale runner executes a selected
+rung by cloning the scenario workload with rung-specific `maxGames`,
+`open-sessions` ramp/session count, target duration, nemesis set, and
+sampling profile. Every rung writes a `rung.result.json`; the full ladder
+writes `scale-ladder.result.json`.
 
 ## CI integration
 

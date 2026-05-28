@@ -88,8 +88,57 @@ function applyWorkloadOverrides(
   input: ScenarioRunnerInput,
   plan: ScenarioWorkloadPlan,
 ): ScenarioWorkloadPlan {
-  if (!input.workloadGameIdPrefix) return plan;
-  return { ...plan, gameIdPrefix: input.workloadGameIdPrefix };
+  if (
+    input.workloadGameIdPrefix === undefined &&
+    input.workloadMaxGames === undefined &&
+    input.workloadDurationMs === undefined &&
+    input.workloadSessionsPerGame === undefined &&
+    input.workloadOpenSessionsRampMs === undefined &&
+    input.workloadSendJsonMessagesPerSession === undefined
+  ) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    gameIdPrefix: input.workloadGameIdPrefix ?? plan.gameIdPrefix,
+    maxGames: input.workloadMaxGames ?? plan.maxGames,
+    durationMs: input.workloadDurationMs ?? plan.durationMs,
+    phases: plan.phases.map((phase) => applyWorkloadPhaseOverrides(input, phase)),
+  };
+}
+
+function applyWorkloadPhaseOverrides(
+  input: ScenarioRunnerInput,
+  phase: ScenarioWorkloadPlan["phases"][number],
+): ScenarioWorkloadPlan["phases"][number] {
+  if (phase.type === "open-sessions") {
+    return {
+      ...phase,
+      sessionsPerGame: input.workloadSessionsPerGame ?? phase.sessionsPerGame,
+      rampMs: input.workloadOpenSessionsRampMs ?? phase.rampMs,
+    };
+  }
+
+  if (phase.type === "send-json") {
+    return {
+      ...phase,
+      messagesPerSession:
+        input.workloadSendJsonMessagesPerSession ??
+        deriveSendJsonMessagesPerSession(input.workloadDurationMs, phase) ??
+        phase.messagesPerSession,
+    };
+  }
+
+  return phase;
+}
+
+function deriveSendJsonMessagesPerSession(
+  durationMs: number | undefined,
+  phase: Extract<ScenarioWorkloadPlan["phases"][number], { readonly type: "send-json" }>,
+): number | undefined {
+  if (durationMs === undefined || phase.intervalMs <= 0) return undefined;
+  return Math.max(1, Math.ceil(durationMs / phase.intervalMs));
 }
 
 async function importDefault(path: string): Promise<unknown> {
