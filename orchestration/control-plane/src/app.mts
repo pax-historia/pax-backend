@@ -402,7 +402,7 @@ async function handleGameResource(
   }
 
   if (parts.length === 4 && parts[3] === "bundle" && req.method === "POST") {
-    await handleBundleFlip(req, res, store, gameId);
+    await handleBundleFlip(req, res, store, config, gameId);
     return;
   }
 
@@ -550,6 +550,7 @@ async function handleBundleFlip(
   req: IncomingMessage,
   res: ServerResponse,
   store: ControlPlaneStore,
+  config: ControlPlaneConfig,
   gameId: string,
 ): Promise<void> {
   const body = asRecord(await readJson(req), "bundle flip body");
@@ -558,11 +559,23 @@ async function handleBundleFlip(
   const bundle = await requireBundle(store, newBundleName);
   const compat = checkBundleCompat(game.blobCompatTag, bundle.manifest);
   if (!compat.ok) {
+    appendControlHistory(config, "bundle.flip.rejected", {
+      gameId,
+      oldBundleName: game.bundleName,
+      newBundleName,
+      ...compat,
+    });
     writeJson(res, 409, compat);
     return;
   }
   const updated: GameRecord = { ...game, bundleName: newBundleName };
   await store.putGame(updated);
+  appendControlHistory(config, "bundle.flip.succeeded", {
+    gameId,
+    oldBundleName: game.bundleName,
+    newBundleName,
+    blobCompatTag: game.blobCompatTag,
+  });
   writeJson(res, 200, { ok: true, game: updated });
 }
 

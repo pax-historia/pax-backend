@@ -9,6 +9,8 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "api.invoke.response": ["actorId", "gameId", "requestId", "kind"],
   "blob.read": ["actorId", "gameId", "requestId"],
   "blob.write": ["actorId", "gameId", "requestId"],
+  "bundle.flip.rejected": ["gameId", "oldBundleName", "newBundleName", "blobCompatTag"],
+  "bundle.flip.succeeded": ["gameId", "oldBundleName", "newBundleName"],
   "bundle.coldWake.rejected": ["actorId", "gameId", "bundleName", "blobCompatTag"],
   "compute.budget": ["actorId", "gameId", "requestId"],
   "log.emit": ["actorId", "gameId", "runId"],
