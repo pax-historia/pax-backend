@@ -1,11 +1,11 @@
 {
   "files": [],
   "references": [
-    { "path": "./runtime/ipc-protocol" },
+    { "path": "./shared/ipc-protocol" },
     { "path": "./sdk/runtime-sdk" },
     { "path": "./runtime/child-runner-ivm" },
     { "path": "./runtime/parent-actor" },
-    { "path": "./tooling/smoke-bot" },
-    { "path": "./tooling/bundles/hello-ws-echo" }
+    { "path": "./testing/smoke-bot" },
+    { "path": "./examples/bundles/hello-ws-echo" }
   ]
 }

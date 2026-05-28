@@ -1,0 +1,41 @@
+# Deploys testing/ to pax-backend-driver.
+#
+# Usually only invoked when a scenario run is queued — driver machines
+# spin up on demand for load runs and tear down after. Scope:
+# FLY_API_TOKEN_DRIVER has no permission on pax-backend-shards or
+# pax-backend-control.
+name: deploy-driver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "testing/**"
+      - "shared/ipc-protocol/**"
+      - ".github/workflows/deploy-driver.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-driver
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO (M-fly): build the driver image (scenario-runner +
+      # smoke-bot + oracles-lib), `fly deploy --remote-only`. Driver
+      # machines are ephemeral — spin up, run, write artifact, tear down.
+      - name: TODO — deploy
+        run: |
+          echo "deploy-driver: stub. M-fly will fill this in."
+          echo "Required secret: FLY_API_TOKEN_DRIVER"
+          echo "Target app:     pax-backend-driver"
+          exit 0

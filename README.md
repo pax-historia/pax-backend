@@ -750,49 +750,131 @@ The substrate exists to be the trust seam for untrusted JavaScript and the faith
 
 None at the substrate-design layer. Implementation-time questions (specific volume sizes, specific Postgres pool sizes, specific deprecation cadences) will surface during build; they are not load-bearing for the contract.
 
-## Repo shape (proposed)
+## Repo shape
 
-Repo lives at `pax-historia/pax-backend` on GitHub.
+Repo lives at `pax-historia/pax-backend` on GitHub. The convention in one
+sentence: **"where does it run?" answers the top-level folder; "what kind
+of thing is it?" answers the sub-folder.** The full three-sentence mental
+model is in [`docs/dev/layout.md`](docs/dev/layout.md).
 
 ```
 pax-backend/
-  runtime/                       # what runs INSIDE a shard
-    shard-image/                 # Dockerfile + entrypoint; bundles vendored Rivet + parent + child runner
-    parent-actor/                # The platform-trusted RivetKit actor; channel broker
-    child-runner-ivm/            # The untrusted-JS runner (isolated-vm inside child_process)
+  runtime/                       # deploys to pax-backend-shards
+    shard-image/                 # Dockerfile + entrypoint; bundles vendored Rivet + parent + child runners
+    parent-actor/                # Platform-trusted RivetKit actor; channel broker
+      src/
+        lifecycle/               # one file per lifecycle hook
+        ipc/                     # one file per IPC channel
+        budgets/                 # one file per compute-plane budget
+        sessions/                # session generation, tracking, eviction
+        parent.mts               # entrypoint
+    child-runner-ivm/            # Default v1 untrusted-JS runner (isolated-vm in child_process)
     child-runner-noivm/          # Alternate runner for the no-ivm conformance gate
-    ipc-protocol/                # The versioned IPC schema shared across parent/child/SDK
-  orchestration/                 # what runs OUTSIDE shards
-    placement-router/            # HTTP placement + JWT; lifted from pax-sharded-spike
-    control-plane/               # Shard registry, capacity, drain
-    api-gateway/                 # The API gateway; kind→URL registry, context envelope, wire-grain record/replay
-    url-services/                # First-party reference URL services (echo, delay, http.fetch, mock-ai.v1, billing-mock.v1 reference)
-  sdk/                           # what creators install
-    runtime-sdk/                 # @pax-backend/runtime-sdk; the typed surface (the contract in code form)
+
+  orchestration/                 # deploys to pax-backend-control
+    placement-router/            # Rust crate; HTTP placement + JWT; runtime-contract placement gate
+      src/
+        gates/                   # one file per placement gate
+        jwt.rs
+        directory.rs             # active-game directory (Redis)
+        registry.rs              # shard registry reader
+        main.rs
+    control-plane/               # TS; shard registry, drain, admin REST surface
+      src/
+        admin/<resource>/<action>.ts   # e.g. admin/games/flip-bundle.ts
+        app.ts
+    api-gateway/                 # TS; kind→URL registry, context envelope, wire-grain record/replay
+      src/
+        registry.ts
+        envelope.ts
+        record-replay.ts
+        budgets.ts
+        app.ts
+    url-services/                # First-party reference URL services
+      echo/
+      delay/
+      http-fetch/
+      mock-ai.v1/
+
+  sdk/                           # published to npm
+    runtime-sdk/                 # @pax-backend/runtime-sdk; the typed creator surface
+      src/
+        c/<surface>.ts           # one file per c.* surface (api.ts, ws.ts, state.ts, ...)
+        manifest.ts
+        define-bundle.ts
+        types/
+        index.mts
     runtime-sdk-test-harness/    # @pax-backend/runtime-sdk-test-harness; local dev loop + record/replay
-  tooling/
+    bundle-tools/                # @pax-backend/bundle-tools; creator CLI (build, publish, verify)
+      src/
+        commands/<command>.ts    # one file per CLI command
+
+  testing/                       # deploys to pax-backend-driver (on demand)
     scenario-runner/             # The scenario-bundle harness (load / property / fuzz / replay)
-    scenarios/                   # First-party scenarios (chat-steady, compute-stress, shard-death-resilience)
-    bundles/                     # First-party hello-world creator bundles (one per library feature)
-    nemeses/                     # First-party fault profiles
-    oracles-lib/                 # Reusable oracle helpers (substrate-side only; billing oracles live in the operator's billing-service test suite)
-    bundle-tools/                # Bundle build, publish, fetch; optional sha256/signing helpers (defense-in-depth, off by default)
-  vendor/
+    scenarios/<scenario>/        # one folder per scenario
+    nemeses/<nemesis>/           # one folder per fault profile
+    oracles-lib/                 # Reusable oracle helpers (substrate-side only)
+      src/
+        guarantees/<name>.ts     # one file per Strong Platform Guarantee (NAMED, not numbered)
+    smoke-bot/                   # End-to-end vertical-smoke driver; the acceptance gate
+
+  examples/                      # never deployed; pure demos
+    bundles/<name>/              # creator-facing example bundles
+    url-services/<service>/      # operator-facing reference URL services (future home of billing-mock.v1)
+
+  shared/                        # cross-zone contract code
+    ipc-protocol/                # @pax-backend/ipc-protocol; envelopes + Redis row schemas + ID generators
+
+  vendor/                        # third-party source, vendored Google-style (read-only)
     rivet/                       # Vendored from pax-rivet-refactor's pin
-  docs/
-    contract.md                  # The plain-language contract creators read
-    contract-spec.md             # The formal spec the runtime + harness implement against (substrate guarantees only; no billing semantics)
-    api-kinds-catalog.md         # Registered API kinds in a given deployment (operator-extensible; the substrate ships only the four reference kinds)
-    compute-budgets-catalog.md   # Enumerated compute-plane budgets and their defaults
-    redeploy-runbook.md          # Three surfaces × runbook
-    sandboxing-current-pick.md   # The provisional v1 pick + criteria for revisit
-    fly-topology.md              # The v1 1k-game footprint and the scale-up procedure
-    why-no-billing.md            # The compute-vs-business plane split, with the URL-service pattern as the recommended way to layer billing on top
-    bundle-compatibility.md      # The compat-tag model: opaque tags, runtime contract, two gates, worked examples (linear / multi-family / branching / forking / fingerprinting)
-  .github/workflows/             # Per-zone deploy workflows with scoped Fly tokens
+      UPSTREAM.md                # provenance + re-pin procedure
+
+  docs/                          # markdown only
+    contract/                    # contract.md, contract-spec.md, api-kinds-catalog.md,
+                                 #   bundle-compatibility.md, compute-budgets-catalog.md
+    ops/                         # redeploy-runbook.md, fly-topology.md, sandboxing-current-pick.md
+    dev/                         # dev-loop.md, layout.md
+    why/                         # why-no-billing.md
+
+  scripts/                       # local + CI helpers
+    bootstrap/                   # spin-up.sh, tear-down.sh (Fly + Infisical provisioning)
+    dev/                         # local-up.sh, local-down.sh, spawn-engine.mts
+    build/                       # build-engine.sh, build-router.sh, build-vendor-ts.sh, build-bundles.sh
+
+  .github/workflows/
+    smoke.yml                    # pnpm smoke must be green — the acceptance gate
+    typescript-strict.yml        # tsc -b across the workspace
+    deploy-shards.yml            # runtime/ → pax-backend-shards (scoped Fly token)
+    deploy-control.yml           # orchestration/ → pax-backend-control (scoped Fly token)
+    deploy-driver.yml            # testing/ → pax-backend-driver (scoped Fly token)
+    publish-sdk.yml              # sdk/ → npm (scoped npm token)
 ```
 
-Five zones (was four). The new one is `sdk/` — the typed surface lives separately from the runtime that loads it, so creators can install the SDK and write code locally without the runtime, and the runtime can swap implementations without breaking the SDK.
+Seven zones. Three of them are deployable (`runtime/`, `orchestration/`,
+`testing/`); the rest are either consumed elsewhere (`sdk/` ships to npm,
+`vendor/` rebuilds into the shard image), pure documentation (`examples/`,
+`docs/`), or cross-zone infrastructure (`shared/`, `scripts/`,
+`.github/`). Multi-zone PRs are encouraged — the zones exist for
+discovery and deploy-token scoping, not for review restriction.
+
+### What's deliberately NOT in this layout
+
+- **No per-channel "version" folders.** Channel payload shapes are fixed
+  by the bundle's `runtimeContractRequired` (Axis A in §"Bundle
+  compatibility"); the IPC envelope carries no in-band version field.
+- **No `runtime/billing/` folder.** The substrate has no billing
+  vocabulary. The layout enforces this by absence — nobody can put
+  billing code under `runtime/` because there's no obvious place for it.
+  Billing layered on top lives in operator-owned URL services
+  (`examples/url-services/billing-mock.v1/` is a reference, not a part
+  of the substrate).
+- **No `shared/wire/spec/` + codegen on day one.** Defer until the Rust
+  router (or any Rust consumer) actually needs to consume shared
+  constants. Today's duplication between the router's Redis row structs
+  and `@pax-backend/ipc-protocol`'s TypeScript interfaces is a known
+  debt with a known fix.
+- **No multi-zone-PR ban.** CI only enforces what the layout can't
+  (types, smoke, deploy-token scoping).
 
 ## Production redeploy strategy (simpler now)
 
@@ -820,6 +902,6 @@ The fourth surface (frontend / client bundles) is not our problem.
     - `hello-ws-echo` — echoes every `onPlayerMessage` body back to the sending player via `c.ws.send`. Exercises the WS tunnel, idempotency keys, and sessionId stability.
     - `hello-ai-call` — once per minute, invokes `c.api.invoke('mock-ai.v1', { messages: [...] })` for each connected player. Exercises the API gateway, the context envelope (the URL service sees `connectedSessions`), the URL service round trip, and the wire-grain recording end-to-end. Whatever the URL service does with billing (if anything) is its own affair.
     - `hello-multifeature` — combines all of the above slowly enough to be readable in a tail of the history. The integration smoke for the substrate.
-10. Stand up the v1 Fly footprint: 10 Rivet shard machines, 1 control+gateway machine (with the four-plus reference URL services co-located as HTTP routes), and any other URL services on demand. **No in-app Postgres in v1** — the substrate has no ledger to back. Spin up scenario-runner driver machines on demand for load runs and tear them down after. Document the current footprint and scale-up procedure in `docs/fly-topology.md`.
-11. Document the contract in `docs/contract.md` (plain language for creators) and `docs/contract-spec.md` (formal spec the runtime/harness implement against). Both must be explicit that the substrate has no billing primitives and point at the URL-service pattern for anything billing-shaped. Both must also explain the compat-tag model: opaque strings, set membership, two gates, operator-owned naming conventions, worked examples. `docs/contract-spec.md` documents the `BundleManifest` shape, the two enforcement gates, and the dry-run / histogram admin endpoints. The harness's oracle library and the spec doc must be in lock-step.
+10. Stand up the v1 Fly footprint: 10 Rivet shard machines, 1 control+gateway machine (with the four-plus reference URL services co-located as HTTP routes), and any other URL services on demand. **No in-app Postgres in v1** — the substrate has no ledger to back. Spin up scenario-runner driver machines on demand for load runs and tear them down after. Document the current footprint and scale-up procedure in `docs/ops/fly-topology.md`.
+11. Document the contract in `docs/contract/contract.md` (plain language for creators) and `docs/contract/contract-spec.md` (formal spec the runtime/harness implement against). Both must be explicit that the substrate has no billing primitives and point at the URL-service pattern for anything billing-shaped. Both must also explain the compat-tag model: opaque strings, set membership, two gates, operator-owned naming conventions, worked examples. `docs/contract/contract-spec.md` documents the `BundleManifest` shape, the two enforcement gates, and the dry-run / histogram admin endpoints. The harness's oracle library and the spec doc must be in lock-step.
 12. Sister spikes are read-only references. Patterns lifted, code rewritten in-repo.

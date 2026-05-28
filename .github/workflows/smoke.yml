@@ -1,0 +1,93 @@
+# Vertical-smoke acceptance gate.
+#
+# Boots the full local stack (Redis + rivet-engine + parent-actor + router)
+# and runs the smoke-bot end-to-end. Red = no release.
+#
+# This is THE acceptance gate for the substrate. Every PR must keep it
+# green; every deploy must have a green smoke run on the merged commit.
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: macos-14   # Apple Silicon; matches the native dev loop
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: pnpm
+
+      - name: Install pnpm deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build vendor rivetkit TS dist (tsup of 3 packages)
+        run: ./scripts/build/build-vendor-ts.sh
+
+      - name: Build hello-ws-echo bundle
+        run: ./scripts/build/build-bundles.sh
+
+      - name: Cache rivet-engine binary (by vendor SHA + lock hash)
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/rivet-engine
+          # vendor/rivet/UPSTREAM.md SHA is canonical; Cargo.lock catches
+          # partial mutations.
+          key: rivet-engine-${{ hashFiles('vendor/rivet/UPSTREAM.md', 'vendor/rivet/Cargo.lock') }}
+
+      - name: Build rivet-engine (native macOS, profile=quick)
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build/build-engine.sh
+
+      - name: Cache placement-router binary
+        id: router-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/router
+          key: router-${{ hashFiles('orchestration/placement-router/**/*.rs', 'orchestration/placement-router/Cargo.lock') }}
+
+      - name: Build placement-router (release)
+        if: steps.router-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build/build-router.sh
+
+      - name: Bring up the local stack
+        run: ./scripts/dev/local-up.sh
+
+      - name: Run vertical smoke
+        run: pnpm smoke
+
+      - name: Tear down
+        if: always()
+        run: ./scripts/dev/local-down.sh
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failure-logs
+          path: |
+            var/local-up/
+            var/history.jsonl
+          if-no-files-found: ignore

@@ -34,7 +34,7 @@ sibling repo from this one.
 
 1. The Fly org `pax-backend` exists with billing.
 2. The Infisical project is linked via `.infisical.json` at the repo root.
-3. `./scripts/spin-up.sh` has provisioned:
+3. `./scripts/bootstrap/spin-up.sh` has provisioned:
    - Fly apps: `pax-backend-shards`, `pax-backend-control`, `pax-backend-driver`
    - Starter Fly Volume `pax_backend_rocks` (5 GB) on `pax-backend-shards`
    - Tigris bucket `pax-backend-blobs` (AWS_* in Infisical, synced to all three apps)
@@ -44,24 +44,39 @@ sibling repo from this one.
    - `PAX_JWT_SECRET` (HS256, 64 bytes) synced to control + shards
 
 If you need to start over from a clean slate:
-`PAX_BACKEND_TEARDOWN_CONFIRM=yes ./scripts/tear-down.sh` then
-`./scripts/spin-up.sh`. Infisical secret values survive teardown by design.
+`PAX_BACKEND_TEARDOWN_CONFIRM=yes ./scripts/bootstrap/tear-down.sh` then
+`./scripts/bootstrap/spin-up.sh`. Infisical secret values survive teardown
+by design.
 
-## Zone discipline (lifted from pax-sharded-spike)
+## Zone index — where does it run?
 
-The repo is five zones. CI rejects PRs that touch more than one zone. Each
-zone has its own deploy workflow under `.github/workflows/` with its own
-scoped Fly token.
+The repo is six zones. Each zone answers **"where does this code run?"**
+mechanically; the layout itself enforces convention by absence of
+wrong-place (there is no `runtime/billing/` folder, so no one can put
+billing code there without obvious deliberation — no CI grep needed).
 
-| Zone | What it is | Deploys to |
+| Zone | What runs there | Deploys to |
 |---|---|---|
-| `runtime/` | What runs INSIDE a shard (Rivet engine, parent actor, child runners, IPC schema) | `pax-backend-shards` |
-| `orchestration/` | What runs OUTSIDE shards (placement router, control plane, API gateway, reference URL services) | `pax-backend-control` |
-| `sdk/` | The typed contract surface creators install (`@pax-backend/runtime-sdk`, harness) | npm |
-| `tooling/` | Scenario-runner, scenarios, hello-world bundles, nemeses, oracles, bundle-tools | `pax-backend-driver` (when scenarios run) |
-| `vendor/` | Vendored Rivet at the `pax-rivet-refactor` pin | rebuilt into shard image |
+| `runtime/` | Rivet engine, parent actor, child runners, shard image | `pax-backend-shards` |
+| `orchestration/` | Placement router, control plane, API gateway, reference URL services | `pax-backend-control` |
+| `sdk/` | Typed creator surface, harness, bundle CLI | npm |
+| `testing/` | Scenario-runner, scenarios, nemeses, oracle library, smoke bot | `pax-backend-driver` (on demand) |
+| `examples/` | Reference creator bundles, reference URL services | never deployed; pure demos |
+| `shared/` | Cross-zone wire-contract code (`@pax-backend/ipc-protocol`) | imported by ≥2 zones |
+| `vendor/` | Vendored Rivet (read-only) | rebuilt into the shard image |
 
-`docs/` and `scripts/` are cross-zone and exempt from the no-mixed-PR rule.
+`docs/` and `scripts/` are cross-zone helpers and live at the top level.
+
+**Multi-zone PRs are encouraged.** A feature that spans an admin endpoint
+in `orchestration/control-plane/admin/games/flip-bundle.ts`, a manifest
+type in `sdk/runtime-sdk/src/manifest.ts`, an oracle in
+`testing/oracles-lib/src/guarantees/bundle-compatibility-safety.ts`, and a
+demo bundle in `examples/bundles/hello-bundle-flip/` is ONE PR — the same
+way a Next.js feature spans `app/api/foo/route.ts` and `app/foo/page.tsx`
+in one commit. The zones exist for **discovery and deploy-token scoping**,
+not for review restriction.
+
+The full mental model is three sentences in [`docs/dev/layout.md`](docs/dev/layout.md).
 
 ## Where to start
 
@@ -86,6 +101,7 @@ always to lean harder on session observability + the URL-service pattern.
 
 ## Refusing to extend the teardown allowlist
 
-`scripts/tear-down.sh` hard-codes the three apps + the Tigris bucket. If you
-ever feel the urge to generalize it or accept a flag, **stop and report**.
-The allowlist exists to make destruction reviewable in `git diff`.
+`scripts/bootstrap/tear-down.sh` hard-codes the three apps + the Tigris
+bucket. If you ever feel the urge to generalize it or accept a flag, **stop
+and report**. The allowlist exists to make destruction reviewable in
+`git diff`.

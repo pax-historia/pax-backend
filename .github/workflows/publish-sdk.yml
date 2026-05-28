@@ -1,0 +1,54 @@
+# Publishes sdk/ packages to npm under @pax-backend.
+#
+# Triggered on tagged releases that touch sdk/. Uses NPM_TOKEN scoped to
+# the @pax-backend org with publish-only permissions.
+name: publish-sdk
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Which sdk/* package to publish"
+        required: true
+        type: choice
+        options:
+          - runtime-sdk
+          - runtime-sdk-test-harness
+          - bundle-tools
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Set up Node 22 + npm registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      # TODO (M-sdk-publish): build the chosen package(s), validate the
+      # version bump, run unit tests, and `pnpm publish --no-git-checks
+      # --access public` to @pax-backend.
+      - name: TODO — publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "publish-sdk: stub. M-sdk-publish will fill this in."
+          echo "Required secret: NPM_TOKEN (scoped to @pax-backend, publish-only)"
+          exit 0

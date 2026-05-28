@@ -31,19 +31,23 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/bundles/hello-ws-echo:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
   runtime/child-runner-ivm:
     dependencies:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
-        version: link:../ipc-protocol
+        version: link:../../shared/ipc-protocol
       '@pax-backend/runtime-sdk':
         specifier: workspace:*
         version: link:../../sdk/runtime-sdk
       isolated-vm:
         specifier: ^5.0.3
         version: 5.0.4
-
-  runtime/ipc-protocol: {}
 
   runtime/parent-actor:
     dependencies:
@@ -52,7 +56,7 @@ importers:
         version: link:../child-runner-ivm
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
-        version: link:../ipc-protocol
+        version: link:../../shared/ipc-protocol
       '@rivetkit/bare-ts':
         specifier: ^0.6.2
         version: 0.6.2
@@ -79,19 +83,15 @@ importers:
     dependencies:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
-        version: link:../../runtime/ipc-protocol
+        version: link:../../shared/ipc-protocol
 
-  tooling/bundles/hello-ws-echo:
-    dependencies:
-      '@pax-backend/runtime-sdk':
-        specifier: workspace:*
-        version: link:../../../sdk/runtime-sdk
+  shared/ipc-protocol: {}
 
-  tooling/smoke-bot:
+  testing/smoke-bot:
     dependencies:
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
-        version: link:../../runtime/ipc-protocol
+        version: link:../../shared/ipc-protocol
       ioredis:
         specifier: ^5.4.1
         version: 5.11.0

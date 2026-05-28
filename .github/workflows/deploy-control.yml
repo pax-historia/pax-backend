@@ -1,0 +1,40 @@
+# Deploys orchestration/ to pax-backend-control.
+#
+# Scope: this workflow uses FLY_API_TOKEN_CONTROL, which has no
+# permission on pax-backend-shards or pax-backend-driver.
+name: deploy-control
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "orchestration/**"
+      - "shared/ipc-protocol/**"
+      - ".github/workflows/deploy-control.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO (M-fly): build the orchestration image (placement-router +
+      # control-plane + api-gateway + url-services co-located on one
+      # machine for v1), `fly deploy --remote-only`. Router stays on
+      # Rust release profile; control/gateway/url-services are TS.
+      - name: TODO — deploy
+        run: |
+          echo "deploy-control: stub. M-fly will fill this in."
+          echo "Required secret: FLY_API_TOKEN_CONTROL"
+          echo "Target app:     pax-backend-control"
+          exit 0

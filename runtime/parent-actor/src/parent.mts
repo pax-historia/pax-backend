@@ -71,7 +71,7 @@ const PAX_JWT_SECRET = process.env["PAX_JWT_SECRET"] ?? "local-dev-secret";
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
-const BUNDLE_DIR = join(REPO_ROOT, "tooling", "bundles");
+const BUNDLE_DIR = join(REPO_ROOT, "examples", "bundles");
 const CHILD_RUNNER_ENTRY = join(
   REPO_ROOT,
   "runtime",

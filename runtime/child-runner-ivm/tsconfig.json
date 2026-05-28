@@ -7,7 +7,7 @@
   },
   "include": ["src/**/*.mts"],
   "references": [
-    { "path": "../ipc-protocol" },
+    { "path": "../../shared/ipc-protocol" },
     { "path": "../../sdk/runtime-sdk" }
   ]
 }

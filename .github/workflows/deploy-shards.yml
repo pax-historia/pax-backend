@@ -1,0 +1,45 @@
+# Deploys runtime/ to pax-backend-shards.
+#
+# Scope: this workflow uses FLY_API_TOKEN_SHARDS, which has no permission
+# on pax-backend-control or pax-backend-driver. If it ever needs broader
+# scope, that's a sign the layout has cracked — stop and re-read
+# docs/dev/layout.md.
+name: deploy-shards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "runtime/**"
+      - "vendor/rivet/**"
+      - "shared/ipc-protocol/**"
+      - ".github/workflows/deploy-shards.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-shards
+  cancel-in-progress: false   # never cancel a deploy mid-roll
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO (M-fly): build the shard image with the Fly Depot remote
+      # builder using the BuildKit cache-mount recipe from
+      # docs/dev/dev-loop.md, then `fly deploy --build-only --push
+      # --image-label <label>` and `fly machine update --image <ref>` per
+      # the volume-pinned shard pattern from pax-sharded-spike. Never
+      # local-Docker on developer Macs (43-min Rosetta trap).
+      - name: TODO — deploy
+        run: |
+          echo "deploy-shards: stub. M-fly will fill this in."
+          echo "Required secret: FLY_API_TOKEN_SHARDS"
+          echo "Target app:     pax-backend-shards"
+          exit 0

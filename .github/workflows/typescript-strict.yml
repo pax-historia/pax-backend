@@ -1,0 +1,46 @@
+# tsc -b across the workspace with strict mode.
+#
+# Defends the IPC envelope contract (discriminated unions exhaustive on
+# `.type`), bundle handler signatures, and Redis row schemas. Catches
+# substrate-channel drift at compile time so it doesn't show up at
+# smoke time.
+name: typescript-strict
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: pnpm
+
+      - name: Install pnpm deps
+        run: pnpm install --frozen-lockfile
+
+      # Vendor rivetkit TS packages must be built before tsc can resolve
+      # their .d.ts files.
+      - name: Build vendor rivetkit TS dist
+        run: ./scripts/build/build-vendor-ts.sh
+
+      - name: tsc -b --pretty
+        run: pnpm typecheck
