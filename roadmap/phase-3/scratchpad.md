@@ -99,3 +99,24 @@ Added the `api-responses` fixture directory to the shared workload fixture list.
 Started Task 7 local proof. To make the `--oracles all` gate meaningful for mixed-surface scenarios, updated conditional safety oracles to pass vacuously when their triggering surface is absent: API dispatch/session-count, idempotent player input, crash blast radius, parent crash absence, eviction minimum budget, migration rollback, and host-event durability. Scenario-local oracles still assert required scenario-specific surfaces, so API-producing scenarios still fail if their expected API call is missing.
 
 Reran all ten historia scenarios locally with `--oracles all`; every scenario passed all seventeen substrate guarantee oracles plus its bundle-local oracles. Results are under `var/phase-3/local-proof/`.
+
+## 2026-05-28 10:09 PDT
+
+Finished the Task 7 Fly proof. Deployed the latest control image as `pax-backend-control:deployment-01KSQQG1E1MZ6J61X6NYK7PHZW` and the latest shard image as `pax-backend-shards:deployment-01KSQQMDH3RCDK8X5AHSC1MW1V`; health checks passed on the control machines `1855153b34e528` and `d8d1004f412328`, and shard machine `2872d67f64e6e8`.
+
+Two split-topology runner fixes were needed before the proof was reliable. First, live `expect-history-events` phases can run in delayed mode on Fly because control-plane history cannot see shard-local `onHostEvent.delivered` records while pacing a workload. Second, archived Tigris history is filtered by scenario game IDs; otherwise a time-window archive read can append adjacent scenario events and contaminate per-scenario oracle histories.
+
+The full Fly suite passed all ten scenarios with `--oracles all` and zero oracle failures. Artifacts live under `var/phase-3/fly-proof/`.
+
+| Scenario | Oracles | Checked events |
+|---|---:|---:|
+| `actions-basic` | 19 | 60 |
+| `advisor-basic` | 19 | 61 |
+| `chat-basic` | 19 | 96 |
+| `host-event-wake-delivery` | 18 | 49 |
+| `jump-forward-basic` | 21 | 66 |
+| `moderation-flow` | 20 | 64 |
+| `role-claim-flow` | 19 | 49 |
+| `role-destroy-flow` | 18 | 58 |
+| `spectator-billing-block` | 18 | 44 |
+| `workflow-override-loaded` | 19 | 68 |
