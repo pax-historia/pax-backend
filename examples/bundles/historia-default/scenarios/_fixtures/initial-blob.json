@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 5,
+  "compatTag": "historia:v5",
+  "updatedAt": 0,
+  "game": {
+    "status": "lobby",
+    "title": "Scenario Historia",
+    "currentRound": 1,
+    "players": {}
+  },
+  "chapters": [],
+  "moderationSnapshots": {}
+}
