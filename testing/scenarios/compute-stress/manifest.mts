@@ -2,13 +2,13 @@ import type { ScenarioManifest } from "@pax-backend/scenario-runner";
 
 export default {
   scenarioId: "compute-stress",
-  seed: "pax-compute-stress-v1",
-  determinism: "medium",
-  defaultMode: "fuzz",
+  seed: "pax-compute-stress-v2",
+  determinism: "high",
+  defaultMode: "load",
   defaultBackend: "live",
   defaultNemesis: "no-faults",
   description:
-    "Compute-plane stress scenario focused on websocket throughput, API rate limiting, state/blob byte caps, and budget observability. It deliberately avoids billing-shaped resources.",
+    "Compute-plane edge scenario focused on CPU timeout, websocket rate and bandwidth, state/blob caps, API rate limiting, and budget observability. It deliberately avoids billing-shaped resources.",
   oracleNames: [
     "singleton-game",
     "faithful-api-dispatch",

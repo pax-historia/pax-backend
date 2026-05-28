@@ -41,3 +41,11 @@ The new `testing/scenarios/compromised-bundle-adversarial` scenario asserts the 
 Finished the JWT half of Task 3. `jwt-adversarial` now covers tampered-signature, expired-token, and wrong-game placement-token handshakes. The runner can mutate a placement token by corrupting its signature or re-signing an expired payload with `PAX_JWT_SECRET` (defaulting to the local dev secret). In the local Rivet guard path, all three public clients observed `1011 guard.websocket_service_unavailable`; parent logs confirmed `invalid signature` and `jwt expired`, while wrong-game replay also produced `connection.refused(reason=wrongGame)` history.
 
 Verification: `pnpm --filter @pax-backend/scenario-runner check-types`, `pnpm --filter @pax-backend/oracles-lib check-types`, `git diff --check`, and a live local `jwt-adversarial --oracles scenario` run all passed. The scenario took about 58 seconds because each rejected pre-open WebSocket handshake waits through the guard retry window.
+
+## 2026-05-28 10:58 PDT
+
+Finished the compute-budget edge lane. `compute-stress` is now a deterministic live edge probe that runs the new `budget-edge-probe` bundle against the actual parent/gateway budget enforcers instead of generic churn. The scenario drives `ws-messages-per-sec`, `bandwidth-bytes-per-sec`, `state-bytes`, `blob-keys`, `api-invocations-per-min`, and `cpu-ms-per-tick` to typed refusals. The scenario-local oracle requires the expected rejection events and also checks that every `apiRateExceeded` response has a matching `api.invoke.wire` record with `statusCode: 0`, so the URL service is not contacted after the substrate budget rejects the call.
+
+One supporting runtime fix landed in the same task: local object-store prefix listing now walks the concrete prefix directory when the caller passes a directory-shaped prefix. Without that, hitting the blob-key edge repeatedly in a local dev workspace got slower as old per-game blobs accumulated under unrelated prefixes.
+
+Verification: root `pnpm typecheck`, `git diff --check`, and a live `compute-stress --backend live --oracles scenario` run all passed. The live run used `--game-id-prefix compute-stress-edge-v2` and produced `var/phase-4/compute-stress.result.json` with G1, G5, G7, G8, G11, G12, G14, and `G0_compute_budget_edges` passing.

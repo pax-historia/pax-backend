@@ -372,6 +372,18 @@ class LocalObjectStore implements ObjectStore {
       if (isErrnoException(err) && err.code === "ENOENT") return [];
       throw err;
     }
+    if (prefix.endsWith("/")) {
+      const prefixPath = localObjectPath(this.root, prefix);
+      try {
+        const prefixInfo = await stat(prefixPath);
+        if (!prefixInfo.isDirectory()) return [];
+      } catch (err) {
+        if (isErrnoException(err) && err.code === "ENOENT") return [];
+        throw err;
+      }
+      const entries = await listLocalObjects(this.root, prefixPath);
+      return entries.filter((entry) => entry.key.startsWith(prefix));
+    }
     const entries = await listLocalObjects(this.root, this.root);
     return entries.filter((entry) => entry.key.startsWith(prefix));
   }
