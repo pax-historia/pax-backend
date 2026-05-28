@@ -192,3 +192,7 @@ Sixth detached monitor snapshot landed at `2026-05-28T23:32:23.565Z`, about 45 m
 ## 2026-05-28 16:36 PDT
 
 Tightened the final soak audit gates in `scripts/fly/summarize-soak.mts`. It can now require exact case IDs, completed workload phases, and an expected runner `exit.code` in addition to result files, placement counts, shard coverage, and monitor parse health. Verified the default in-progress summary still passes for the active pulled soak, while the intended final gate command correctly fails today because only the no-faults case exists, result files are not written yet, `exit.code` is still absent, and `send-json`/`close-sessions`/`expect-history-events` are not complete.
+
+## 2026-05-28 16:38 PDT
+
+Seventh detached monitor snapshot landed at `2026-05-28T23:37:23.663Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory and summarized it locally; the in-progress summary now has seven clean monitor snapshots and still reports `gates_ok=true` for the non-final default gates.
