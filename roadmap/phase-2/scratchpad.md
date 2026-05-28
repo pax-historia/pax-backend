@@ -165,3 +165,11 @@ production-shaped Tigris archival for history and OTLP traces, and also writes
 local JSONL files under `/data/observability` for quick inspection on Fly
 machines. This gives task 3 a verifiable sink while Better Stack credentials
 are corrected.
+
+The trace-exemplar prep surfaced one deployment topology miss from task 2:
+`PAX_API_GATEWAY_URL` on shards pointed at the public control hostname, but Fly
+only exposes the placement router on that hostname. Changed shard API invokes
+to `http://pax-backend-control.internal:9081/invoke` over Fly private
+networking. Also changed the API gateway's own base URL back to
+`http://127.0.0.1:9081`, because the fallback reference URL-service registry is
+in-process and should not point at the public router.
