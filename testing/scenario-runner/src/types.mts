@@ -1,4 +1,4 @@
-import type { OracleResult } from "@pax-backend/oracles-lib";
+import type { Oracle, OracleResult } from "@pax-backend/oracles-lib";
 
 export type ScenarioRunMode = "load" | "property" | "fuzz" | "replay";
 export type ScenarioBackend = "live" | "mock-shard" | "in-memory";
@@ -169,6 +169,7 @@ export interface ScenarioRunnerInput {
   readonly attribution?: ScenarioAttribution;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
+  readonly scenarioLocalOracles?: readonly Oracle[];
   readonly samplingProfile?: SamplingProfile;
 }
 

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type {
@@ -8,6 +8,7 @@ import type {
   ScenarioRunnerInput,
   ScenarioWorkloadPlan,
 } from "./types.mjs";
+import type { Oracle } from "@pax-backend/oracles-lib";
 
 export async function loadScenarioManifest(
   input: ScenarioRunnerInput,
@@ -58,6 +59,29 @@ export async function loadScenarioWorkloadPlan(
     throw new Error(`${path} scenarioId does not match ${scenario.scenarioId}`);
   }
   return applyWorkloadOverrides(input, plan);
+}
+
+export async function loadScenarioLocalOracles(
+  input: ScenarioRunnerInput,
+  scenario: ScenarioManifest,
+): Promise<readonly Oracle[]> {
+  const path = join(
+    input.scenarioManifestPath
+      ? dirname(resolvePath(input.scenarioManifestPath))
+      : join(resolvePath(input.scenarioCatalogDir ?? "testing/scenarios"), scenario.scenarioId),
+    "oracles.mts",
+  );
+  if (!existsSync(path)) return [];
+  const mod = (await import(pathToFileURL(path).href)) as {
+    default?: unknown;
+    oracles?: unknown;
+  };
+  const value = mod.default ?? mod.oracles;
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "function")) {
+    throw new Error(`${path} must export default Oracle[] or named oracles: Oracle[]`);
+  }
+  return value as readonly Oracle[];
 }
 
 function applyWorkloadOverrides(

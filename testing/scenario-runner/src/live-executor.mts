@@ -312,7 +312,10 @@ async function registerApiKinds(
   for (const kind of kinds) {
     await requestJson(`${ctx.controlPlaneUrl}/admin/api-kinds`, {
       method: "POST",
-      body: kind,
+      body: {
+        ...kind,
+        url: kind.url.replaceAll("${controlPlaneUrl}", ctx.controlPlaneUrl),
+      },
     });
   }
 }

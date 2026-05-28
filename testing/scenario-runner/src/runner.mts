@@ -7,6 +7,7 @@ import {
 import { summarizeHistoryAttribution } from "./attribution.mjs";
 import {
   loadNemesisManifest,
+  loadScenarioLocalOracles,
   loadScenarioManifest,
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
@@ -23,6 +24,7 @@ export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult
   const oracleResults = input.oracleNames
     ? runNamedGuaranteeOracles(history, input.oracleNames)
     : runAllGuaranteeOracles(history);
+  const scenarioOracleResults = input.scenarioLocalOracles?.map((oracle) => oracle(history)) ?? [];
   const finishedAtMs = Date.now();
   return buildScenarioResult(
     {
@@ -30,7 +32,7 @@ export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult
       metrics: input.metrics ?? analysis.metrics,
       attribution: input.attribution ?? analysis.attribution,
     },
-    oracleResults,
+    [...oracleResults, ...scenarioOracleResults],
     startedAtMs,
     finishedAtMs,
   );
@@ -42,6 +44,7 @@ export async function runReplayFromCatalog(
   const scenarioManifest = await loadScenarioManifest(input);
   const nemesisManifest = await loadNemesisManifest(input, scenarioManifest);
   const workloadPlan = await loadScenarioWorkloadPlan(input, scenarioManifest);
+  const scenarioLocalOracles = await loadScenarioLocalOracles(input, scenarioManifest);
   const runtimeEnvironment =
     input.runtimeEnvironment ??
     (workloadPlan
@@ -55,6 +58,7 @@ export async function runReplayFromCatalog(
     nemesisManifest,
     workloadPlan,
     runtimeEnvironment,
+    scenarioLocalOracles,
     oracleNames,
     oracleScope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     samplingProfile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
