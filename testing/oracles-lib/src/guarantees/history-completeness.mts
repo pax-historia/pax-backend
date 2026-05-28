@@ -12,6 +12,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "bundle.flip.rejected": ["gameId", "oldBundleName", "newBundleName", "blobCompatTag"],
   "bundle.flip.succeeded": ["gameId", "oldBundleName", "newBundleName"],
   "bundle.coldWake.rejected": ["actorId", "gameId", "bundleName", "blobCompatTag"],
+  "bundle.loaded": ["actorId", "gameId", "bundleName", "bundleCompatTag"],
   "compute.budget": ["actorId", "gameId", "requestId"],
   "game.deleted": ["gameId"],
   "log.emit": ["actorId", "gameId", "runId"],

@@ -246,19 +246,37 @@ interface LoadedBundle {
   readonly name: string;
   readonly source: string;
   readonly manifest: BundleRecord["manifest"];
+  readonly origin: "directory" | "local-example";
 }
 
 const bundleCache = new Map<string, LoadedBundle>();
 
-function loadBundle(bundleName: string): LoadedBundle {
+async function loadBundle(bundleName: string): Promise<LoadedBundle> {
   const cached = bundleCache.get(bundleName);
+  if (cached?.origin === "directory") return cached;
+  const bundleRaw = await redis.get(`${BUNDLE_KEY_PREFIX}${bundleName}`);
+  if (bundleRaw) {
+    const bundle = JSON.parse(bundleRaw) as BundleRecord;
+    if (typeof bundle.source === "string" && bundle.source.length > 0) {
+      const record: LoadedBundle = {
+        name: bundleName,
+        source: bundle.source,
+        manifest: bundle.manifest,
+        origin: "directory",
+      };
+      bundleCache.set(bundleName, record);
+      return record;
+    }
+  }
   if (cached) return cached;
-  // For smoke, bundleName resolves to examples/bundles/<name>/dist/bundle.js
-  // (the esbuild-IIFE output of the .mts source).
+  return loadLocalExampleBundle(bundleName);
+}
+
+function loadLocalExampleBundle(bundleName: string): LoadedBundle {
   const compiledPath = join(BUNDLE_DIR, bundleName, "dist", "bundle.js");
   const source = readFileSync(compiledPath, "utf8");
   const manifest = extractManifestFromSource(source);
-  const record: LoadedBundle = { name: bundleName, source, manifest };
+  const record: LoadedBundle = { name: bundleName, source, manifest, origin: "local-example" };
   bundleCache.set(bundleName, record);
   return record;
 }
@@ -314,6 +332,7 @@ interface UsageSample {
 interface GameInstance {
   readonly actorId: string;
   readonly gameId: string;
+  readonly bundle: LoadedBundle;
   readonly bundleName: string;
   readonly bundleCompatTag: string;
   blobCompatTag?: string;
@@ -360,17 +379,17 @@ if (
 function ensureGame(
   actorId: string,
   gameId: string,
-  bundleName: string,
+  bundle: LoadedBundle,
   blobCompatTag?: string,
 ): GameInstance {
   const existing = games.get(actorId);
   if (existing) return existing;
-  const bundle = loadBundle(bundleName);
   const runId = generateRunId();
   const inst: GameInstance = {
     actorId,
     gameId,
-    bundleName,
+    bundle,
+    bundleName: bundle.name,
     bundleCompatTag: bundle.manifest.compatTagProduced,
     blobCompatTag,
     runId,
@@ -387,14 +406,19 @@ function ensureGame(
   };
   games.set(actorId, inst);
   activeGameCount = games.size;
-  history("game.created", { actorId, gameId, bundleName, runId });
+  history("game.created", {
+    actorId,
+    gameId,
+    bundleName: bundle.name,
+    bundleOrigin: bundle.origin,
+    runId,
+  });
   return inst;
 }
 
 function forkChild(inst: GameInstance): Promise<void> {
   if (inst.bootstrapPromise) return inst.bootstrapPromise;
   inst.bootstrapPromise = new Promise<void>((resolveReady, rejectReady) => {
-    const bundle = loadBundle(inst.bundleName);
     // Fork the child via tsx so we can run the .mts source directly. The
     // production shard image will compile to .mjs at image-build time and
     // skip tsx; in the local dev loop tsx is the no-build-step shortcut.
@@ -457,7 +481,7 @@ function forkChild(inst: GameInstance): Promise<void> {
 
     sendTyped(child, "bootstrap", {
       bundleName: inst.bundleName,
-      bundleSource: bundle.source,
+      bundleSource: inst.bundle.source,
       bundleCompatTag: inst.bundleCompatTag,
       runId: inst.runId,
       gameId: inst.gameId,
@@ -1450,7 +1474,15 @@ const runner = new Runner({
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ gameId, err: msg }, "redis games lookup failed");
     }
-    const bundle = loadBundle(bundleName);
+    const bundle = await loadBundle(bundleName);
+    history("bundle.loaded", {
+      actorId,
+      gameId,
+      bundleName,
+      bundleOrigin: bundle.origin,
+      bundleCompatTag: bundle.manifest.compatTagProduced,
+      runtimeContractRequired: bundle.manifest.runtimeContractRequired,
+    });
     if (!bundleAcceptsBlobCompatTag(bundle.manifest, blobCompatTag)) {
       history("bundle.coldWake.rejected", {
         actorId,
@@ -1473,7 +1505,7 @@ const runner = new Runner({
       );
       return;
     }
-    const inst = ensureGame(actorId, gameId, bundleName, blobCompatTag);
+    const inst = ensureGame(actorId, gameId, bundle, blobCompatTag);
     wakeMetrics.recentWakes += 1;
     log.info({ actorId, gameId, bundleName }, "actor start; forking child");
     await forkChild(inst);
