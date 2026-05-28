@@ -116,3 +116,8 @@ instead of retaining raw scrape lines, and `cliff_hold` applies a small
 vendored-engine metric-family allowlist to keep 24-hour soaks bounded. Override
 cadence with `--metrics-scrape-interval-ms` when a short local run needs denser
 samples.
+
+By default the collector uses one parent and one vendored-engine endpoint. For
+multi-shard rungs, set `PAX_PARENT_METRICS_URLS` and `PAX_RIVET_METRICS_URLS` to
+comma-separated `label=url` entries so `metrics.per_surface` keeps each shard's
+samples separate.

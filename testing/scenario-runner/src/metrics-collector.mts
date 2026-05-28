@@ -337,15 +337,52 @@ function metricEndpoints(input: ScenarioRunnerInput): readonly MetricEndpoint[] 
           DEFAULT_GATEWAY_METRICS_URL,
         ),
     },
-    {
-      surface: "parent",
-      url: process.env["PAX_PARENT_METRICS_URL"] ?? DEFAULT_PARENT_METRICS_URL,
-    },
-    {
-      surface: "engine",
-      url: process.env["PAX_RIVET_METRICS_URL"] ?? DEFAULT_ENGINE_METRICS_URL,
-    },
+    ...metricEndpointGroup(
+      "parent",
+      process.env["PAX_PARENT_METRICS_URLS"],
+      process.env["PAX_PARENT_METRICS_URL"] ?? DEFAULT_PARENT_METRICS_URL,
+    ),
+    ...metricEndpointGroup(
+      "engine",
+      process.env["PAX_RIVET_METRICS_URLS"],
+      process.env["PAX_RIVET_METRICS_URL"] ?? DEFAULT_ENGINE_METRICS_URL,
+    ),
   ];
+}
+
+function metricEndpointGroup(
+  surface: string,
+  rawList: string | undefined,
+  fallbackUrl: string,
+): readonly MetricEndpoint[] {
+  if (!rawList || rawList.trim().length === 0) return [{ surface, url: fallbackUrl }];
+  return rawList
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry, index) => {
+      const separator = entry.indexOf("=");
+      const rawLabel = separator > 0 ? entry.slice(0, separator).trim() : undefined;
+      const url = separator > 0 ? entry.slice(separator + 1).trim() : entry;
+      const label = rawLabel ?? metricEndpointLabel(url, index);
+      return {
+        surface: `${surface}:${normalizeMetricEndpointLabel(label)}`,
+        url,
+      };
+    });
+}
+
+function metricEndpointLabel(url: string, index: number): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname || `endpoint-${index + 1}`;
+  } catch {
+    return `endpoint-${index + 1}`;
+  }
+}
+
+function normalizeMetricEndpointLabel(label: string): string {
+  return label.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "endpoint";
 }
 
 async function fetchPrometheusText(url: string, timeoutMs: number): Promise<string> {
@@ -388,10 +425,14 @@ function metricAllowedForProfile(
   metric: string,
   profile: SamplingProfile,
 ): boolean {
-  if (profile !== "cliff_hold" || surface !== "engine") return true;
+  if (profile !== "cliff_hold" || metricSurfaceBase(surface) !== "engine") return true;
   return FAST_ENGINE_METRIC_FAMILIES.some(
     (family) => metric === family || metric.startsWith(`${family}_`),
   );
+}
+
+function metricSurfaceBase(surface: string): string {
+  return surface.split(":", 1)[0] ?? surface;
 }
 
 const FAST_ENGINE_METRIC_FAMILIES = [
