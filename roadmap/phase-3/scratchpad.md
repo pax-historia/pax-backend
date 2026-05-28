@@ -73,3 +73,11 @@ Got `chat-basic` through a local live run with all selected substrate oracles an
 This also confirmed the historia bundle needs to use the generic `{ type: "ready" }` connect frame that the runner and existing example bundles expect; the payload now carries `topic: "historia.ready"` plus the hydration snapshot.
 
 One more registration issue appeared after the green-path run: the shared historia workloads had been pointing reference URL-service providers at `${controlPlaneUrl}/_url-services/...`, but those routes live on the API gateway. Added an `${apiGatewayUrl}` template with local defaults in the runner and switched the shared workload to it. A fresh `chat-basic` run then produced successful `ai.chat.v1` wire records with `statusCode: 200`.
+
+## 2026-05-28 09:31 PDT
+
+Ran the full ten-scenario suite locally with fresh game prefixes per scenario. All ten scenarios passed their selected substrate and bundle-local oracle sets:
+
+`chat-basic`, `jump-forward-basic`, `advisor-basic`, `actions-basic`, `role-claim-flow`, `role-destroy-flow`, `spectator-billing-block`, `moderation-flow`, `workflow-override-loaded`, and `host-event-wake-delivery`.
+
+Fixes needed to get there: scenario histories are per-game slices, so `history-completeness` now skips global `pax_seq` contiguity checks for scenario-runner histories while still checking timestamps, shard IDs, positive sequence IDs, and required fields. The historia manifests now exclude API/input-specific substrate oracles for scenarios that intentionally do not exercise those surfaces, and the shared workload waits for post-message host-event delivery before replaying oracles.

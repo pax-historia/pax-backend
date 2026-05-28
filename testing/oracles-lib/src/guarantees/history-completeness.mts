@@ -87,6 +87,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
 export function historyCompleteness(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
   const lastSeqByShard = new Map<string, number>();
+  const isScenarioSlice = history.some((event) => event.shardId === "scenario-runner");
 
   for (const event of history) {
     if (typeof event.ts !== "string" || Number.isNaN(Date.parse(event.ts))) {
@@ -98,7 +99,11 @@ export function historyCompleteness(history: readonly HistoryEvent[]): OracleRes
     const paxSeq = event.pax_seq;
     if (typeof paxSeq !== "number" || !Number.isInteger(paxSeq) || paxSeq < 1) {
       findings.push(finding("missing-pax-seq", "history event must include positive pax_seq", event));
-    } else if (typeof event.shardId === "string" && event.shardId.length > 0) {
+    } else if (
+      !isScenarioSlice &&
+      typeof event.shardId === "string" &&
+      event.shardId.length > 0
+    ) {
       const previous = lastSeqByShard.get(event.shardId);
       if (previous !== undefined && paxSeq !== previous + 1) {
         findings.push(

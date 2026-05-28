@@ -14,9 +14,12 @@ export const HISTORIA_SUBSTRATE_ORACLES = [
   "host-event-durability",
 ] as const;
 
+export type HistoriaSubstrateOracle = (typeof HISTORIA_SUBSTRATE_ORACLES)[number];
+
 export function makeManifest(
   scenarioId: string,
   description: string,
+  oracleNames: readonly HistoriaSubstrateOracle[] = HISTORIA_SUBSTRATE_ORACLES,
 ): ScenarioManifest {
   return {
     scenarioId,
@@ -26,8 +29,15 @@ export function makeManifest(
     defaultBackend: "live",
     defaultNemesis: "no-faults",
     description,
-    oracleNames: HISTORIA_SUBSTRATE_ORACLES,
+    oracleNames,
   };
+}
+
+export function withoutOracles(
+  ...excluded: readonly HistoriaSubstrateOracle[]
+): readonly HistoriaSubstrateOracle[] {
+  const excludedSet = new Set<HistoriaSubstrateOracle>(excluded);
+  return HISTORIA_SUBSTRATE_ORACLES.filter((oracle) => !excludedSet.has(oracle));
 }
 
 export function makeWorkload(input: {
@@ -103,6 +113,7 @@ export function makeWorkload(input: {
         ? [{ type: "wait" as const, durationMs: input.waitBeforePostHostEventsMs }]
         : []),
       ...hostEventPhases(input.postMessageHostEvents ?? []),
+      ...hostEventDeliveryPhases(input.postMessageHostEvents ?? []),
       {
         type: "wait",
         durationMs: 500,
