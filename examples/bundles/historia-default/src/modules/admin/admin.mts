@@ -4,6 +4,12 @@ import { readBodyType, readString } from "../util.mjs";
 export const handleAdminMessage: PlayerMessageHandler = async (input) => {
   if (readBodyType(input.body) !== "admin.rename") return false;
   const title = readString(input.body["title"], "Untitled historia");
+  input.ctx.patchGame({ title });
+  input.ctx.appendWorkingEvent("admin.renamed", {
+    playerId: input.playerId,
+    seq: input.seq,
+    title,
+  });
   await input.ctx.projectionSync({ op: "titleChanged", title });
   await input.c.ws.send("all", {
     type: "admin.renamed",

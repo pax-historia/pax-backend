@@ -13,10 +13,16 @@ export const handleAdvisorMessage: PlayerMessageHandler = async (input) => {
     input,
     execute: (command) => executeWorkflowCommand(input.ctx, command),
   });
+  const advice = readAdvice(result);
+  input.ctx.appendWorkingEvent("advisor.response", {
+    playerId: input.playerId,
+    seq: input.seq,
+    advice,
+  });
   await input.c.ws.send(input.playerId, {
     type: "advisor.response",
     seq: input.seq,
-    advice: readAdvice(result),
+    advice,
   });
   return true;
 };

@@ -15,6 +15,12 @@ export async function maybeModerateMessage(input: PlayerMessageInput): Promise<v
   });
   const verdict = readVerdict(result);
   if (verdict === "ok") return;
+  input.ctx.appendWorkingEvent("moderation.verdict", {
+    playerId: input.playerId,
+    seq: input.seq,
+    verdict,
+    reason: readReason(result),
+  });
   await input.ctx.apiInvoke("moderation.audit.v1", {
     op: "recordVerdict",
     contentId: `${input.sessionId}:${input.seq}`,

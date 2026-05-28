@@ -14,6 +14,15 @@ export const handleChatMessage: PlayerMessageHandler = async (input) => {
     execute: (command) => executeWorkflowCommand(input.ctx, command),
   });
   const text = readWorkflowText(result, "I hear you.");
+  input.ctx.appendWorkingEvent("chat.message", {
+    playerId: input.playerId,
+    seq: input.seq,
+    content: readString(input.body["content"]),
+  });
+  input.ctx.appendWorkingEvent("chat.ai", {
+    seq: input.seq,
+    text,
+  });
   await input.c.ws.send("all", {
     type: "chat.message",
     playerId: input.playerId,

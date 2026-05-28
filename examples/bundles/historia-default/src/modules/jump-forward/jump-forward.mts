@@ -15,6 +15,16 @@ export const handleJumpForwardMessage: PlayerMessageHandler = async (input) => {
     execute: (command) => executeWorkflowCommand(input.ctx, command),
   });
   const round = nextRound(input.ctx.loaded.blob.game.currentRound);
+  input.ctx.patchGame({
+    status: "in-progress",
+    currentRound: round,
+  });
+  input.ctx.appendWorkingEvent("jumpForward.completed", {
+    playerId: input.playerId,
+    seq: input.seq,
+    round,
+    summary: readSummary(result),
+  });
   await input.ctx.projectionSync({ op: "roundDisplay", displayedRound: round });
   await input.c.ws.send("all", {
     type: "jumpForward.completed",

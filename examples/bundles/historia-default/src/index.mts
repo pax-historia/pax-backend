@@ -6,8 +6,10 @@ import {
   commitSnapshot,
   loadHistoriaState,
   persistWorkingState,
+  saveBlobSnapshot,
   type LoadedHistoriaState,
 } from "./core/persistence.mjs";
+import { dispatchHostEvent } from "./routing/host-events.mjs";
 import { dispatchPlayerMessage } from "./routing/websocket.mjs";
 
 interface SessionSummary {
@@ -24,7 +26,9 @@ export default defineBundle({
 
   async onWake(c, payload) {
     loadedState = await loadHistoriaState(c, payload);
-    gameContext = createGameContext(c, loadedState);
+    gameContext = createGameContext(c, requireLoadedState, (next) => {
+      loadedState = next;
+    });
     const persistResult = await persistWorkingState(c, loadedState.workingState);
     c.log.emit({
       event: "historia-default.onWake",
@@ -78,7 +82,11 @@ export default defineBundle({
       seq: payload.seq,
       body,
     });
-    if (handled) return;
+    if (handled) {
+      await persistWorkingState(c, ctx.loaded.workingState);
+      await saveBlobSnapshot(c, ctx.loaded.blob);
+      return;
+    }
 
     const messageType = readMessageType(body);
     c.log.emit({
@@ -141,6 +149,19 @@ export default defineBundle({
   },
 
   async onHostEvent(c, payload) {
+    const ctx = requireGameContext(c);
+    const handled = await dispatchHostEvent({
+      c,
+      ctx,
+      eventId: payload.eventId,
+      eventType: payload.eventType,
+      payload: payload.payload,
+    });
+    if (handled) {
+      await persistWorkingState(c, ctx.loaded.workingState);
+      await saveBlobSnapshot(c, ctx.loaded.blob);
+      return;
+    }
     c.log.emit({
       event: "historia-default.onHostEvent",
       eventId: payload.eventId,
@@ -165,6 +186,11 @@ function requireGameContext(c: SubstrateContext): HistoriaGameContext {
   if (gameContext) return gameContext;
   const now = c.now();
   throw new Error(`historia-default missing game context at ${now}`);
+}
+
+function requireLoadedState(): LoadedHistoriaState {
+  if (!loadedState) throw new Error("historia-default missing loaded state");
+  return loadedState;
 }
 
 function hydrationSummary(): Readonly<Record<string, unknown>> {
