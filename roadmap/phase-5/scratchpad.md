@@ -180,3 +180,7 @@ Fourth detached monitor snapshot landed at `2026-05-28T23:22:23.363Z`. The heart
 ## 2026-05-28 16:26 PDT
 
 The verification audit found one scale-plan wording/semantics drift: `targetDurationMs` is applied per nemesis case, but the older `v1-scale` 1000-game rung still carried the full 24-hour exit-soak duration and note. Kept the actual 24-hour full-suite exit proof in `testing/scale-ladders/v1-soak.mts` and made the `v1-scale` 1000-game rung a one-hour target-concurrency rung. Also clarified the per-case duration wording in the scenario-runner docs so future runs do not accidentally turn a three-nemesis rung into a 72-hour job. Verification: `pnpm --filter @pax-backend/scenario-runner check-types`, `git diff --check`, and a replay-mode `v1-scale` 1000-game rung smoke confirmed `target_duration_ms=3600000` with the three expected nemesis cases; the replay smoke exited through expected oracle failures on empty history.
+
+## 2026-05-28 16:28 PDT
+
+Fifth detached monitor snapshot landed at `2026-05-28T23:27:23.444Z`. The active heartbeat `ivm` no-faults case was still alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory with `scripts/fly/pull-soak-artifacts.sh` and summarized it locally; the summary had one in-progress case, 1000 placements across all 10 shards, `gates_ok=true`, and five clean monitor snapshots.
