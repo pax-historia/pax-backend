@@ -492,16 +492,21 @@ function tryJsonClone<T>(value: T, field: string): JsonCloneResult<T> {
   try {
     return { ok: true, value: jsonClone(value) };
   } catch (err) {
+    const response: WsSendResponse = {
+      ok: false,
+      error: "serializationFailed",
+      detail: {
+        field,
+        message: err instanceof Error ? err.message : String(err),
+      },
+    };
+    emitOne(CHILD_TO_PARENT.wsSendRejected, {
+      error: response.error,
+      detail: response.detail,
+    });
     return {
       ok: false,
-      response: {
-        ok: false,
-        error: "serializationFailed",
-        detail: {
-          field,
-          message: err instanceof Error ? err.message : String(err),
-        },
-      },
+      response,
     };
   }
 }

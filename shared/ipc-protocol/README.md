@@ -26,8 +26,9 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `OnPlayerConnectPayload`, `OnPlayerDisconnectPayload`,
   `OnPlayerMessagePayload`, `OnCapacityWarningPayload`.
 - Child-to-parent payload types: `BootstrapPayload`, `WsSendPayload`,
-  `LogEmitPayload`, `ChildFatalPayload`, `ChildHandlerErrorPayload`,
-  `ChildHandlerCompletePayload`, `ChildUnknownMessagePayload`.
+  `WsSendRejectedPayload`, `LogEmitPayload`, `ChildFatalPayload`,
+  `ChildHandlerErrorPayload`, `ChildHandlerCompletePayload`,
+  `ChildUnknownMessagePayload`.
 - Parent-to-child response payload types for request/response channels,
   including `WsSendResponsePayload` for typed bandwidth/rate rejections.
 - `BootstrapPayload` carries the parent-selected memory limit and

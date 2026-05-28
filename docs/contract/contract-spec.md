@@ -78,7 +78,8 @@ The SDK type `SubstrateContext` is authoritative. The child runner injects:
 Websocket send responses are `{ ok: true, sent, bytes }` or `{ ok: false,
 error: "bandwidthExceeded" | "rateExceeded" | "serializationFailed", detail? }`.
 The child runner returns `serializationFailed` before IPC if `target` or `body`
-cannot be represented as JSON.
+cannot be represented as JSON, and still emits `ws.send.rejected` history for
+that local rejection.
 
 Storage write responses are `{ ok: true }` or `{ ok: false, error:
 "sizeExceeded" | "storageUnavailable", detail? }`.

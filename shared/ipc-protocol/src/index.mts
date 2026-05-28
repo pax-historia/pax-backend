@@ -310,6 +310,11 @@ export type WsSendResponse =
       readonly detail?: unknown;
     };
 
+export interface WsSendRejectedPayload {
+  readonly error: WsSendError;
+  readonly detail?: unknown;
+}
+
 export interface WsSendResponsePayload {
   readonly response: WsSendResponse;
 }
@@ -368,6 +373,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"blob.read", Record<string, never>>
   | IpcEnvelope<"blob.write", StorageWriteIpcPayload>
   | IpcEnvelope<"ws.send", WsSendPayload>
+  | IpcEnvelope<"ws.send.rejected", WsSendRejectedPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
@@ -410,6 +416,7 @@ export const CHILD_TO_PARENT = Object.freeze({
   blobRead: "blob.read",
   blobWrite: "blob.write",
   wsSend: "ws.send",
+  wsSendRejected: "ws.send.rejected",
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",

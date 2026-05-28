@@ -129,6 +129,14 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       return Promise.reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
+  const cWsSendRejected = new ivm.Reference((payloadJson: string) => {
+    try {
+      const payload = JSON.parse(payloadJson);
+      emitOne(CHILD_TO_PARENT.wsSendRejected, payload);
+    } catch (err) {
+      panic("ws.send.rejected bridge failed", err);
+    }
+  });
   const cLogEmit = new ivm.Reference((payloadJson: string) => {
     try {
       const payload = JSON.parse(payloadJson) as Record<string, unknown>;
@@ -183,6 +191,7 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   );
 
   await jail.set("__pax_c_ws_send", cWsSend);
+  await jail.set("__pax_c_ws_send_rejected", cWsSendRejected);
   await jail.set("__pax_c_log_emit", cLogEmit);
   await jail.set("__pax_c_metrics_emit", cMetricsEmit);
   await jail.set("__pax_c_lifecycle_requestSleep", cLifecycleRequestSleep);
@@ -230,29 +239,32 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       try {
         const valueJson = JSON.stringify(value);
         if (typeof valueJson !== "string") {
-          return {
-            ok: false,
-            response: {
-              ok: false,
-              error: "serializationFailed",
-              detail: { field, message: "value must be JSON-serializable" },
-            },
-          };
+          return __pax_ws_send_serialization_failed(
+            field,
+            "value must be JSON-serializable",
+          );
         }
         return { ok: true, valueJson };
       } catch (err) {
-        return {
-          ok: false,
-          response: {
-            ok: false,
-            error: "serializationFailed",
-            detail: {
-              field,
-              message: err && typeof err.message === "string" ? err.message : String(err),
-            },
-          },
-        };
+        return __pax_ws_send_serialization_failed(
+          field,
+          err && typeof err.message === "string" ? err.message : String(err),
+        );
       }
+    };
+    const __pax_ws_send_serialization_failed = (field, message) => {
+      const response = {
+        ok: false,
+        error: "serializationFailed",
+        detail: { field, message },
+      };
+      __pax_c_ws_send_rejected.applySync(undefined, [
+        JSON.stringify({
+          error: response.error,
+          detail: response.detail,
+        }),
+      ]);
+      return { ok: false, response };
     };
     const __pax_console_message_part = (value) => {
       if (typeof value === "string") return value;

@@ -603,6 +603,15 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.requestId, raw.payload);
       return;
+    case CHILD_TO_PARENT.wsSendRejected:
+      history("ws.send.rejected", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        error: raw.payload.error,
+        detail: raw.payload.detail,
+      });
+      return;
     case CHILD_TO_PARENT.logEmit:
       history("log.emit", {
         actorId: inst.actorId,
