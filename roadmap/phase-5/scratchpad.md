@@ -27,3 +27,28 @@ Verification so far: `pnpm --filter @pax-backend/scenario-runner check-types`, `
 Closed the first metrics-attribution gap. Non-replay scenario runs now start a Prometheus collector before workload execution and stop it after history archive collection. The collector scrapes router, control-plane, gateway, parent, and vendored-engine endpoints; summarizes scalars and histogram buckets into `result.json.metrics.per_surface`; records scrape endpoint/error metadata; and emits a ranked live attribution sentence. It uses online aggregation rather than retaining raw scrape lines so long soaks are bounded, and `cliff_hold` applies a small Rivet/engine fast-family allowlist.
 
 Verification: package typecheck/build passed, `git diff --check` passed, a synthetic Prometheus collector smoke passed with parser coverage and engine-family dropping, and live local scenario invocations wrote scrape metadata plus live attribution into `result.json`. The live smoke scenarios were not used as correctness proofs because the current local stack produced scenario-oracle failures, but the metrics integration itself was present with nonzero samples and zero scrape errors.
+
+## 2026-05-28 12:30 PDT
+
+Completed the Fly shard scaling proof. `scripts/fly/scale-shards.sh 10` brought `pax-backend-shards` to ten started machines with one 20GB `pax_backend_rocks` volume per machine and stable shard slots:
+
+- `2872d67f64e6e8` -> `shard-fly-iad-1`
+- `85e297c4129998` -> `shard-fly-iad-2`
+- `2862467b6693d8` -> `shard-fly-iad-3`
+- `2860342b505d68` -> `shard-fly-iad-4`
+- `d89590dc4e0568` -> `shard-fly-iad-5`
+- `28624e2a959248` -> `shard-fly-iad-6`
+- `78175d6ad56598` -> `shard-fly-iad-7`
+- `d8927e5c706938` -> `shard-fly-iad-8`
+- `48e64d3c0401d8` -> `shard-fly-iad-9`
+- `e8204d2b7375e8` -> `shard-fly-iad-10`
+
+The first driver smoke failed with `ECONNREFUSED` to the shard machine-specific `.vm.pax-backend-shards.internal:6420` URL. The recovery signal was clear in the shard log: the engine config had `guard.host = 0.0.0.0`, while Fly's private app/machine DNS resolves to IPv6 addresses. The fix was to set `RIVET_GUARD_HOST=::`, `RIVET_API_PEER_HOST=::`, and `RIVET_METRICS_HOST=::` in `fly.shards.toml` and the scale normalizer, then rerun the normalizer. Direct private curls from the driver to shard machine URLs then returned `{"runtime":"engine","status":"ok","version":"2.3.0-rc.5"}`.
+
+Proof artifacts:
+
+- `var/phase-5/fly-placement-proof-10.json` showed 10 registered, healthy, wake-accepting shard rows before the placement smoke.
+- `var/phase-5/fly-placement-smoke/chat.history.jsonl` captured 256 `placement.accepted` events from the Fly driver smoke.
+- `var/phase-5/fly-placement-proof-10-distribution.json` showed all 10 shards observed in placement distribution: 23, 28, 28, 32, 28, 27, 25, 24, 19, and 22 placements by shard.
+
+The smoke was stopped after placement and message/close phases because the scenario's in-band `expect-history-events` phase waits on control-plane history before the runner's post-workload archive collection can append shard history. That is a scenario-runner ergonomics issue for future full soaks, not a placement-distribution blocker; the placement proof itself is complete.
