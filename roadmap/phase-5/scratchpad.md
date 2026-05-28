@@ -168,3 +168,7 @@ Added `scripts/fly/pull-soak-artifacts.sh` so partial `fly machine exec` streams
 ## 2026-05-28 16:18 PDT
 
 Extended `scripts/fly/summarize-soak.mts` to include `monitor/status.jsonl` when present, summarizing snapshot count, first/last monitor timestamp, last process/exit status, last shard count, active games, and aggregate workload failure/session close/session error counts. Verified it against the pulled active soak after the third monitor line at `2026-05-28T23:17:23.279Z`; the monitor summary showed three clean snapshots, last process alive, no exit code, 10 shards, 1000 active games, and zero failures/closes/errors.
+
+## 2026-05-28 16:21 PDT
+
+Preliminary Phase 5 verification audit caught cost-projection drift from the soak driver resize. `fly machines list` now shows the active and standby driver machines on `shared-cpu-4x` / 2GB, while the projection still used the earlier `shared-cpu-1x` / 1GB row. Updated `roadmap/phase-5/cost-projection.md`: the 1k-game v1 footprint is now $1,294.18/month for compute plus provisioned volume and the working 1k monthly projection is $1,541.38.

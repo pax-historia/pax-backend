@@ -13,7 +13,7 @@ substrate-side payment concept.
 - `fly machines list` on 2026-05-28:
   - `pax-backend-shards`: 10 started `performance-4x`, 8GB machines in `iad`.
   - `pax-backend-control`: 2 started `shared-cpu-1x`, 1GB machines in `iad`.
-  - `pax-backend-driver`: 1 started and 1 stopped `shared-cpu-1x`, 1GB machine.
+  - `pax-backend-driver`: 1 started and 1 stopped `shared-cpu-4x`, 2GB machines.
 - `fly volumes list -a pax-backend-shards`: 10 attached 20GB
   `pax_backend_rocks` volumes, one per shard.
 - Local Task 4 artifacts: 116KB total for the placement smoke history and proof
@@ -44,8 +44,8 @@ machines. It intentionally uses the measured two-machine control app state.
 | Shards | 10 | `performance-4x`, 8GB | $1,240.00 | $41.33 |
 | Shard volumes | 10 x 20GB | 200GB provisioned | $30.00 | $1.00 |
 | Control/gateway/router | 2 | `shared-cpu-1x`, 1GB | $11.40 | $0.38 |
-| Driver | 1 active | `shared-cpu-1x`, 1GB | $5.70 | $0.19 |
-| Subtotal | | compute + provisioned volume | $1,287.10 | $42.90 |
+| Driver | 1 active | `shared-cpu-4x`, 2GB | $12.78 | $0.43 |
+| Subtotal | | compute + provisioned volume | $1,294.18 | $43.14 |
 
 The stopped driver standby still has rootfs cost; it is deliberately excluded
 from this table because the current source of truth for stopped-machine rootfs
@@ -118,7 +118,7 @@ payment/accounting feature.
 
 | Scale | Infra subtotal | Storage extras | Observability cap | Working monthly projection |
 |---|---:|---:|---:|---:|
-| 1k games | $1,287.10 | $52 Tigris budget + $15.20 low-change snapshots | $180 | $1,534.30 |
+| 1k games | $1,294.18 | $52 Tigris budget + $15.20 low-change snapshots | $180 | $1,541.38 |
 | 10k games | $12,802.24 | $52 Tigris budget + $15.20 low-change snapshots | $750 | $13,619.44 |
 
 The 10k figure is linear in shard count because the proven density is still
