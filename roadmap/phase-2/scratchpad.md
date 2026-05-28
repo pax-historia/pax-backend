@@ -344,3 +344,37 @@ Extended the existing `pax_backend_rocks` volume
 `2872d67f64e6e8`, and verified the shard recovered: `/data` is 25% used, the
 Fly service check is passing, `/health` returns `status: ok`, and the control
 registry reports `shard-fly-iad-1` healthy with `activeGames: 0`.
+
+## 2026-05-28 08:39 PDT
+
+Shard-death medium proof `phase2-shard-death-20260528145918` completed the
+100-game Fly profile. The run opened 100 `hello-multifeature` games, delivered
+the host-event probe, flipped all games through the bundle gate, held the
+paced `send-json` phase for 1,830,212 ms, closed all sessions, and observed the
+shard return to `activeGames: 0` during the final wait.
+
+The nemesis injected seven drain cycles against `targetShardId:
+shard-fly-iad-1` at roughly five-minute intervals. Each drain moved the shard
+registry to `draining` / `acceptingWakes: false`; each replacement-ready hook
+un-drained it after 60 seconds. The last drain fired five seconds before the
+message phase ended, then recovered during the final wait with no stuck drain
+flag.
+
+The first result write reported guarantee 9 as `inconclusive` because that
+oracle only counted `parent.ready` or `actor.stop` as positive liveness
+evidence; this run had neither, but had thousands of parent-authored lifecycle
+events and no `parent.crash` or `parent.fatal`. Broadened the oracle to count
+parent lifecycle evidence (`actor.start`, `actor.stop`, `child.exit`,
+`child.restart`, `lifecycle.sleepComplete`, and `parent.ready`), then replayed
+the same history artifact. All 17 guarantee oracles passed over 70,502 checked
+events.
+
+Artifacts:
+
+- `var/phase-2/phase2-shard-death-20260528145918.history.jsonl` (85 MB)
+- `var/phase-2/phase2-shard-death-20260528145918.result.json`
+
+Monitoring during and after the run found no workload phase failures, no
+nemesis action failures, no `No space left on device`, no handler errors, no
+API invoke timeouts, no engine-runner disconnects, no core internal errors,
+and the shard volume stayed at 29% used after the proof.
