@@ -15,6 +15,16 @@ const WS_ERRORS = new Set([
   "rateExceeded",
   "serializationFailed",
 ]);
+const HANDLER_ERROR_CODES = new Set(["handlerError", "handlerTimeout"]);
+const COMPUTE_BUDGETS = new Set([
+  "cpu-ms-per-tick",
+  "memory-bytes",
+  "bandwidth-bytes-per-sec",
+  "ws-messages-per-sec",
+  "state-bytes",
+  "blob-bytes",
+  "api-invocations-per-min",
+]);
 
 export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
@@ -47,6 +57,28 @@ export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResu
       const error = stringField(event, "error");
       if (!error || !WS_ERRORS.has(error)) {
         findings.push(finding("untyped-ws-quota-error", "ws.send used an unknown error", event));
+      }
+    }
+    if (event.event === "child.handlerError") {
+      const code = stringField(event, "code");
+      if (!code || !HANDLER_ERROR_CODES.has(code)) {
+        findings.push(
+          finding("untyped-handler-error", "child.handlerError used an unknown code", event),
+        );
+      }
+      if (code === "handlerTimeout") observed += 1;
+    }
+    if (event.event === "compute.budget.rejected") {
+      const budget = stringField(event, "budget");
+      if (budget === "cpu-ms-per-tick") observed += 1;
+      if (budget && !COMPUTE_BUDGETS.has(budget)) {
+        findings.push(
+          finding(
+            "unknown-compute-budget",
+            "compute.budget.rejected used an unknown budget",
+            event,
+          ),
+        );
       }
     }
   }

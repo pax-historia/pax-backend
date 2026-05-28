@@ -40,6 +40,8 @@ import {
   BLOB_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
+  type ChildHandlerCompletePayload,
+  type ChildHandlerErrorPayload,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
   type ComputeBudgetName,
@@ -345,6 +347,7 @@ interface GameInstance {
   readonly capacityWarningSentAt: Map<ComputeBudgetName, number>;
   stateBytes: number;
   blobBytes: number;
+  lastHandlerDurationMs: number;
   ready: boolean;
   bootstrapPromise: Promise<void> | null;
   sleepTimer: NodeJS.Timeout | null;
@@ -401,6 +404,7 @@ function ensureGame(
     capacityWarningSentAt: new Map(),
     stateBytes: 0,
     blobBytes: 0,
+    lastHandlerDurationMs: 0,
     ready: false,
     bootstrapPromise: null,
     sleepTimer: null,
@@ -621,15 +625,10 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       log.error({ actorId: inst.actorId, ...raw.payload }, "child.fatal");
       return;
     case "child.handlerError":
-      history("child.handlerError", {
-        actorId: inst.actorId,
-        gameId: inst.gameId,
-        ...raw.payload,
-      });
-      log.warn(
-        { actorId: inst.actorId, ...raw.payload },
-        "child handler error",
-      );
+      handleChildHandlerError(inst, raw.payload);
+      return;
+    case "child.handlerComplete":
+      handleChildHandlerComplete(inst, raw.payload);
       return;
     case "child.unknownMessage":
       log.warn(
@@ -727,6 +726,46 @@ function handleComputeBudget(
   if (inst.child) {
     sendTyped(inst.child, "compute.budget.response", { budget }, requestId);
   }
+}
+
+function handleChildHandlerError(
+  inst: GameInstance,
+  payload: ChildHandlerErrorPayload,
+): void {
+  inst.lastHandlerDurationMs = payload.durationMs;
+  history("child.handlerError", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    ...payload,
+  });
+  if (payload.code === "handlerTimeout") {
+    history("compute.budget.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      budget: "cpu-ms-per-tick",
+      handler: payload.handler,
+      currentUsage: payload.durationMs,
+      limit: payload.timeoutMs,
+      reason: "handlerTimeout",
+    });
+  }
+  log.warn({ actorId: inst.actorId, ...payload }, "child handler error");
+}
+
+function handleChildHandlerComplete(
+  inst: GameInstance,
+  payload: ChildHandlerCompletePayload,
+): void {
+  inst.lastHandlerDurationMs = payload.durationMs;
+  history("child.handlerComplete", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    ...payload,
+  });
+  maybeSendCapacityWarnings(inst);
 }
 
 function handleLifecycleRequestSleep(inst: GameInstance): void {
@@ -1211,7 +1250,7 @@ function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
   const apiInvocations = apiSamples.reduce((sum, sample) => sum + sample.amount, 0);
   return {
     "cpu-ms-per-tick": {
-      currentUsage: 0,
+      currentUsage: inst.lastHandlerDurationMs,
       limit: CPU_MS_PER_TICK_LIMIT,
     },
     "memory-bytes": {

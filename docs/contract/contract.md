@@ -90,8 +90,8 @@ The substrate enforces seven compute-plane budgets per game:
 - `blob-bytes`
 - `api-invocations-per-min`
 
-Over-budget behavior is typed: a call is rejected, a handler is stopped, or a
-child is killed and restarted depending on the budget. See
+Over-budget behavior is typed: a call is rejected, a handler timeout is
+recorded, or a child is killed and restarted depending on the budget. See
 [compute-budgets-catalog.md](compute-budgets-catalog.md).
 
 ## Guarantees

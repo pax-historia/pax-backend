@@ -335,6 +335,15 @@ export interface ChildFatalPayload {
 export interface ChildHandlerErrorPayload {
   readonly handler: string;
   readonly error: string;
+  readonly code: "handlerError" | "handlerTimeout";
+  readonly durationMs: number;
+  readonly timeoutMs: number;
+}
+
+export interface ChildHandlerCompletePayload {
+  readonly handler: string;
+  readonly durationMs: number;
+  readonly timeoutMs: number;
 }
 
 export interface ChildUnknownMessagePayload {
@@ -364,6 +373,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"lifecycle.sleepComplete", LifecycleSleepCompletePayload>
   | IpcEnvelope<"child.fatal", ChildFatalPayload>
   | IpcEnvelope<"child.handlerError", ChildHandlerErrorPayload>
+  | IpcEnvelope<"child.handlerComplete", ChildHandlerCompletePayload>
   | IpcEnvelope<"child.unknownMessage", ChildUnknownMessagePayload>;
 
 // Channel-name catalogs for places where a string is fine (e.g. logs).

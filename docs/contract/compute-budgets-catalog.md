@@ -7,7 +7,7 @@ game (see [plan README](../../README.md) §"Compute-plane resources"):
 
 | Budget | Window | On violation |
 |---|---|---|
-| `cpu-ms-per-tick` | Per `onPlayerMessage` / `onWake` / `onSleep` | Handler killed; child stays alive |
+| `cpu-ms-per-tick` | Per lifecycle/player handler | Handler timeout recorded as `handlerTimeout`; child stays alive |
 | `memory-bytes` | Steady-state RSS | Child killed (OOM); restart with `cold-restart-after-crash`, `errorClass: 'oom'` |
 | `bandwidth-bytes-per-sec` | Sliding 1-second | `ws.send` returns `bandwidthExceeded` |
 | `ws-messages-per-sec` | Sliding 1-second | `ws.send` returns `rateExceeded` |

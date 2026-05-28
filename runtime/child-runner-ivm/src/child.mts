@@ -353,21 +353,60 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
   const cRef = (await context.global.get("c", { reference: true })) as ivm.Reference;
   const previousTriggeringSessionId = currentTriggeringSessionId;
   currentTriggeringSessionId = triggeringSessionIdFor(handlerName, payload);
+  const startedAt = Date.now();
   try {
     await fnRef.apply(
       undefined,
       [cRef.derefInto(), new ivm.ExternalCopy(payload).copyInto()],
       { timeout: PER_HANDLER_TIMEOUT_MS },
     );
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > PER_HANDLER_TIMEOUT_MS) {
+      emitHandlerError(
+        handlerName,
+        `${handlerName} exceeded ${PER_HANDLER_TIMEOUT_MS}ms`,
+        durationMs,
+      );
+      return false;
+    }
+    emitOne("child.handlerComplete", {
+      handler: handlerName,
+      durationMs,
+      timeoutMs: PER_HANDLER_TIMEOUT_MS,
+    });
     return true;
   } catch (err) {
+    const durationMs = Date.now() - startedAt;
     const errStr =
-      err instanceof Error ? err.stack ?? err.message : JSON.stringify(err);
-    emitOne("child.handlerError", { handler: handlerName, error: errStr });
+      err instanceof Error ? err.stack ?? err.message : JSON.stringify(err) ?? String(err);
+    emitHandlerError(handlerName, errStr, durationMs);
     return false;
   } finally {
     currentTriggeringSessionId = previousTriggeringSessionId;
   }
+}
+
+function emitHandlerError(
+  handlerName: HandlerName,
+  error: string,
+  durationMs: number,
+): void {
+  emitOne("child.handlerError", {
+    handler: handlerName,
+    error,
+    code: handlerErrorCode(error, durationMs),
+    durationMs,
+    timeoutMs: PER_HANDLER_TIMEOUT_MS,
+  });
+}
+
+function handlerErrorCode(
+  error: string,
+  durationMs: number,
+): "handlerError" | "handlerTimeout" {
+  return durationMs >= PER_HANDLER_TIMEOUT_MS || error.toLowerCase().includes("timed out")
+    ? "handlerTimeout"
+    : "handlerError";
 }
 
 function invokeApiFromBridge(

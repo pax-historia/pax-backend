@@ -122,6 +122,12 @@ The runtime emits budget history and capacity warnings, exposes snapshots via
 `c.compute.budget()`, and enforces per-budget failure behavior described in
 [compute-budgets-catalog.md](compute-budgets-catalog.md).
 
+Handler budget failures are recorded as `child.handlerError` with
+`code: "handlerTimeout"`, `durationMs`, and `timeoutMs`, plus a paired
+`compute.budget.rejected` event for `cpu-ms-per-tick`.
+Successful handlers record `child.handlerComplete` with `durationMs` so
+`c.compute.budget()` reflects the last observed handler cost.
+
 ## History contract
 
 History is JSONL with at least `event`, ISO `ts`, and `shardId`. Events that

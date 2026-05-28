@@ -27,7 +27,7 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `OnPlayerMessagePayload`, `OnCapacityWarningPayload`.
 - Child-to-parent payload types: `BootstrapPayload`, `WsSendPayload`,
   `LogEmitPayload`, `ChildFatalPayload`, `ChildHandlerErrorPayload`,
-  `ChildUnknownMessagePayload`.
+  `ChildHandlerCompletePayload`, `ChildUnknownMessagePayload`.
 - Parent-to-child response payload types for request/response channels,
   including `WsSendResponsePayload` for typed bandwidth/rate rejections.
 - Redis key prefixes + TTLs: `ACTIVE_GAMES_KEY_PREFIX`,
