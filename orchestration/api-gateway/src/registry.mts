@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 
-export interface ApiKindRegistration {
-  readonly kindName: string;
-  readonly url: string;
-}
+import type { ApiKindRegistration } from "@pax-backend/ipc-protocol";
+
+export type { ApiKindRegistration } from "@pax-backend/ipc-protocol";
 
 export interface ApiKindRegistry {
   get(kindName: string): string | undefined;

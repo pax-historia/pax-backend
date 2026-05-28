@@ -2,6 +2,8 @@ import { Redis } from "ioredis";
 
 import {
   ALLOWED_PLAYERS_KEY_PREFIX,
+  API_KIND_KEY_PREFIX,
+  type ApiKindRegistration,
   BLOB_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
@@ -75,6 +77,30 @@ export class ControlPlaneStore {
 
   async listAllowedPlayers(gameId: string): Promise<readonly string[]> {
     return (await this.redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`)).sort();
+  }
+
+  async listApiKinds(): Promise<readonly ApiKindRegistration[]> {
+    const keys = await scanKeys(this.redis, `${API_KIND_KEY_PREFIX}*`);
+    if (keys.length === 0) return [];
+    const raws = await this.redis.mget(...keys);
+    return raws
+      .flatMap((raw) => (raw ? [JSON.parse(raw) as ApiKindRegistration] : []))
+      .sort((a, b) => a.kindName.localeCompare(b.kindName));
+  }
+
+  async getApiKind(kindName: string): Promise<ApiKindRegistration | undefined> {
+    return getJson<ApiKindRegistration>(this.redis, `${API_KIND_KEY_PREFIX}${kindName}`);
+  }
+
+  async putApiKind(registration: ApiKindRegistration): Promise<void> {
+    await this.redis.set(
+      `${API_KIND_KEY_PREFIX}${registration.kindName}`,
+      JSON.stringify(registration),
+    );
+  }
+
+  async deleteApiKind(kindName: string): Promise<boolean> {
+    return (await this.redis.del(`${API_KIND_KEY_PREFIX}${kindName}`)) > 0;
   }
 
   async listShards(): Promise<readonly ShardRegistration[]> {

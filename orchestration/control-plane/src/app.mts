@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Redis } from "ioredis";
 
 import {
+  type ApiKindRegistration,
   DEFAULT_BLOB_BYTES_LIMIT,
   DEFAULT_STATE_BYTES_LIMIT,
   type BundleRecord,
@@ -110,6 +111,16 @@ async function handleRequest(
 
     if (parts[0] === "admin" && parts[1] === "bundles" && parts.length === 3) {
       await handleBundle(req, res, store, parts[2] ?? "");
+      return;
+    }
+
+    if (parts[0] === "admin" && parts[1] === "api-kinds" && parts.length === 2) {
+      await handleApiKindsCollection(req, res, store);
+      return;
+    }
+
+    if (parts[0] === "admin" && parts[1] === "api-kinds" && parts.length === 3) {
+      await handleApiKindResource(req, res, store, parts[2] ?? "");
       return;
     }
 
@@ -232,6 +243,49 @@ async function handleGamesCollection(
       blobBytes: initialBlob?.bytes ?? 0,
     },
   });
+}
+
+async function handleApiKindsCollection(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+): Promise<void> {
+  if (req.method === "GET") {
+    writeJson(res, 200, { ok: true, kinds: await store.listApiKinds() });
+    return;
+  }
+  if (req.method !== "POST") {
+    throw new HttpError(405, "methodNotAllowed", { method: req.method });
+  }
+  const body = asRecord(await readJson(req), "api-kind registration");
+  const registration: ApiKindRegistration = {
+    kindName: readString(body, "kindName"),
+    url: readString(body, "url"),
+    registeredAt: Date.now(),
+  };
+  assertApiKindRegistration(registration);
+  await store.putApiKind(registration);
+  writeJson(res, 201, { ok: true, registration });
+}
+
+async function handleApiKindResource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  kindName: string,
+): Promise<void> {
+  if (req.method === "GET") {
+    const registration = await store.getApiKind(kindName);
+    if (!registration) throw new HttpError(404, "apiKindNotFound", { kindName });
+    writeJson(res, 200, { ok: true, registration });
+    return;
+  }
+  if (req.method === "DELETE") {
+    const deleted = await store.deleteApiKind(kindName);
+    writeJson(res, deleted ? 200 : 404, { ok: deleted });
+    return;
+  }
+  throw new HttpError(405, "methodNotAllowed", { method: req.method });
 }
 
 async function handleGameResource(
@@ -561,6 +615,26 @@ function readOptionalStoredValue(
     throw new HttpError(413, "sizeExceeded", { field, bytes, limit });
   }
   return { raw, bytes };
+}
+
+function assertApiKindRegistration(registration: ApiKindRegistration): void {
+  if (!/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v[0-9]+$/.test(registration.kindName)) {
+    throw new HttpError(400, "badRequest", {
+      field: "kindName",
+      expected: "versioned API kind name such as mock-ai.v1",
+    });
+  }
+  try {
+    const url = new URL(registration.url);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("URL must be http or https");
+    }
+  } catch (err) {
+    throw new HttpError(400, "badRequest", {
+      field: "url",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 function optionalInt(value: string | null): number | undefined {

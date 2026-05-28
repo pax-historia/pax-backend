@@ -1,7 +1,12 @@
-# Registered API kinds
+# Registered API Kinds
 
-> Stub. Operator-extensible per deployment; this catalog tracks the kinds the
-> substrate ships with as references.
+API kinds are versioned names mapped to URL services. The control plane stores
+operator registrations under `api_kinds:<kindName>` and exposes:
+
+- `POST /admin/api-kinds` with `{ kindName, url }`
+- `GET /admin/api-kinds`
+- `GET /admin/api-kinds/:kindName`
+- `DELETE /admin/api-kinds/:kindName`
 
 ## First-party reference kinds (ship in `orchestration/url-services/`)
 

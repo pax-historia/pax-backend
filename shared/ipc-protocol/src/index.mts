@@ -22,6 +22,7 @@ export const PLACEMENT_RECENT_WAKES_KEY_PREFIX = "placement_recent_wakes:" as co
 export const BUNDLE_KEY_PREFIX = "bundles:" as const;
 export const GAME_KEY_PREFIX = "games:" as const;
 export const ALLOWED_PLAYERS_KEY_PREFIX = "allowed_players:" as const;
+export const API_KIND_KEY_PREFIX = "api_kinds:" as const;
 export const STATE_KEY_PREFIX = "state:" as const;
 export const BLOB_KEY_PREFIX = "blob:" as const;
 
@@ -122,6 +123,12 @@ export interface ApiInvokeRequest {
   readonly kind: string;
   readonly args: unknown;
   readonly idempotencyKey?: string;
+}
+
+export interface ApiKindRegistration {
+  readonly kindName: string;
+  readonly url: string;
+  readonly registeredAt?: number;
 }
 
 export type ApiInvokeResponse =
