@@ -79,7 +79,9 @@ This decision propagates:
 
 - **No `c.schedule.*` substrate channel.** See
   [`why-no-scheduled-wakeups.md`](why-no-scheduled-wakeups.md).
-- **No `onTimer` lifecycle hook.** Six hooks only.
+- **No `onTimer` lifecycle hook.** The seven hooks listed in
+  [`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md)
+  are exhaustive; no scheduled-wake hook joins them.
 - **No `ScheduledTimer` substrate unit.** No persisted timer ledger.
 - **`onCapacityWarning` is push-based**, fired in the moment, not a
   scheduled review.

@@ -71,7 +71,9 @@ For each game:
 ## The IPC channel set
 
 Channels are typed messages over Node's `child_process` IPC. Two
-directions:
+directions. The exhaustive envelope and payload reference lives in
+[`reference/ipc-protocol.md`](../reference/ipc-protocol.md); the
+summary below is for quick orientation.
 
 ### Child → Parent
 
@@ -196,10 +198,12 @@ Cross-shard migration is observably identical to wake.
 
 ## Trust position
 
-**Shard-local-trusted.** The parent runs as a Rivet actor process; it
-holds shared shard credentials (Tigris S3 keys, Redis URL) but not
-per-game scoped ones. If compromised, ~100 games on this shard are
-affected. See [`vision/trust-model.md`](../vision/trust-model.md).
+**Shard-local-trusted.** The parent is a substrate-owned process running
+on the shard machine — implemented as a Rivet actor in v1 (see
+[`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md)). It holds
+shared shard credentials (Tigris S3 keys, Redis URL) but not per-game
+scoped ones. If compromised, ~100 games on this shard are affected. See
+[`vision/trust-model.md`](../vision/trust-model.md).
 
 The parent treats the child as **untrusted**. Every IPC envelope is
 validated:
@@ -236,7 +240,9 @@ validated:
 - [`contract/storage.md`](../contract/storage.md) — what the parent caches
 - [`contract/compute-budgets.md`](../contract/compute-budgets.md) — what the parent enforces
 - [`contract/history-events.md`](../contract/history-events.md) — what the parent writes
-- [`reference/event-schema.md`](../reference/event-schema.md) — IPC + history schema
+- [`reference/ipc-protocol.md`](../reference/ipc-protocol.md) — parent-child wire contract
+- [`reference/event-schema.md`](../reference/event-schema.md) — history schema
+- [`reference/jwt-claims.md`](../reference/jwt-claims.md) — JWT the parent verifies on WS accept
 - [`vision/guarantees.md`](../vision/guarantees.md) — most guarantees touch the parent
 - [`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md)
 - [`child-runner-sandbox.md`](child-runner-sandbox.md)

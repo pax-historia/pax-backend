@@ -45,7 +45,7 @@ flowchart LR
   child[Child runner]
   gw[API gateway]
   url[URL services]
-  engine[Rivet engine]
+  shardInfra[Vendored shard engine]
 
   client -->|S1 placement HTTP| router
   client -->|S2 WS direct| parent
@@ -53,12 +53,15 @@ flowchart LR
   child -->|c.api.invoke| parent
   parent -->|S4 HTTP envelope| gw
   gw -->|HTTP POST| url
-  parent -.->|S5 internal| engine
-  engine -.->|tunnel/gateway/pegboard| parent
+  parent -.->|S5 internal| shardInfra
+  shardInfra -.->|actor host / tunnel| parent
 ```
 
 Each surface gets the same four primitives and the same correlation
-backbone.
+backbone. S5 (the vendored shard engine — Rivet today; opaque from the
+contract's perspective per [`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md))
+emits its own pass-through metrics and traces; the substrate cardinality-
+culls them before remote-write.
 
 ## The four primitives, at every surface
 
@@ -80,8 +83,9 @@ backbone.
   - api-gateway `:7800/metrics`
   - control-plane `:7900/metrics`
   - URL services `:78xx/metrics`
-  - vendored Rivet `:6430/metrics` (pass-through)
-- **Naming**: `pax_<surface>_*` for first-party; `rivet_*` for vendored.
+  - vendored shard engine (Rivet) `:6430/metrics` (pass-through)
+- **Naming**: `pax_<surface>_*` for first-party; vendor-namespaced (`rivet_*`)
+  for pass-through vendored metrics.
 - **Buckets**: standardized
   - `BUCKETS_SECONDS_FINE`: `0.0001 … 50`
   - `BUCKETS_SECONDS_COARSE`: `0.001 … 500`
@@ -146,9 +150,11 @@ Plus low-cardinality span attributes: `bundle_name`, `bundle_compat_tag`
 - **S4 parent→gateway→URL service**: gateway sets W3C `traceparent` on
   outbound HTTP. The library-defined envelope carries `context.traceId`
   under `X-Gateway-Envelope-Version: 2`.
-- **S5 internal Rivet**: `RIVET_OTEL_ENABLED=1`; Rivet emits its own
-  `guard_request`, `workflow`, etc. spans that inherit the parent span
-  via `traceparent`.
+- **S5 internal shard engine**: the vendored shard engine (Rivet today)
+  emits its own spans for actor host, tunnel, and workflow internals
+  that inherit the parent span via `traceparent`. The substrate sets
+  the engine's OTel flag (Rivet's case: `RIVET_OTEL_ENABLED=1`) and
+  scrapes its metrics endpoint.
 
 ## Label cardinality firewall
 
@@ -221,13 +227,19 @@ The most instrumented surface. `pax_parent_frame_age_seconds`,
 `pax_control_flip_gate_rejections_total{reason}`,
 `pax_control_host_event_delivery_total{mode}`.
 
-### Rivet engine
+### Vendored shard engine
 
-Pass-through `:6430/metrics` scrape. Cardinality-cull `actor_id_gen`,
-`database_id`, raw `game_id` labels in Vector before remote-write.
-Expose `Pressure.oldestAgeMs` and `TickWave.epoch` from the runner
-protocol via a parent-side bridge as `pax_parent_engine_pressure_age_seconds`
-and `pax_parent_engine_tick_epoch_lag`.
+Today the shard engine is vendored Rivet (see
+[`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md)); these
+metrics are the engine's own pass-through, not substrate-defined.
+
+Pass-through `:6430/metrics` scrape. Cardinality-cull engine-internal
+unbounded labels (`actor_id_gen`, `database_id`, raw `game_id`) in Vector
+before remote-write. Expose engine pressure / tick-epoch signals via a
+parent-side bridge as substrate-namespaced metrics
+(`pax_parent_engine_pressure_age_seconds`, `pax_parent_engine_tick_epoch_lag`)
+so contract-level observability does not depend on engine-specific
+metric names.
 
 ## The collection pipeline
 
@@ -235,7 +247,7 @@ and `pax_parent_engine_tick_epoch_lag`.
 flowchart LR
   subgraph fly_app[Each Fly app]
     svc[Service]
-    rivet[Rivet engine]
+    shardEngine[Vendored shard engine]
     vector[Vector sidecar]
   end
   sink[(Sink<br/>BetterStack / Datadog / etc.)]
@@ -244,9 +256,9 @@ flowchart LR
   svc -->|stdout JSON| vector
   svc -->|/metrics scrape| vector
   svc -->|OTLP gRPC :4317| vector
-  rivet -->|stdout JSON| vector
-  rivet -->|:6430 scrape| vector
-  rivet -->|OTLP gRPC :4317| vector
+  shardEngine -->|stdout JSON| vector
+  shardEngine -->|:6430 scrape| vector
+  shardEngine -->|OTLP gRPC :4317| vector
   vector -->|HTTP / OTLP| sink
   vector -->|S3 PUT| tigris
 ```
@@ -326,7 +338,7 @@ See [`scenario-runner.md`](scenario-runner.md) §sampling profiles.
 - [`reference/metrics-catalog.md`](../reference/metrics-catalog.md) —
   metrics catalog
 - [`scenario-runner.md`](scenario-runner.md) — testing-mode behavior
-- [`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md) — Rivet
-  observability pass-through
+- [`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md) — vendored
+  shard engine observability pass-through
 - [`docs/ops/observability-betterstack-setup.md`](../../docs/ops/observability-betterstack-setup.md)
   — BetterStack provisioning

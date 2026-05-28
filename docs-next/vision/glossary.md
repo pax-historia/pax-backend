@@ -98,11 +98,15 @@ See [`vision/trust-model.md`](trust-model.md).
 
 - **IPC channel** — A typed message kind exchanged between parent actor and
   child runner over the child_process IPC bridge. See
-  [`reference/event-schema.md`](../reference/event-schema.md) and
-  [`subsystems/parent-actor.md`](../subsystems/parent-actor.md).
+  [`reference/ipc-protocol.md`](../reference/ipc-protocol.md) for the
+  envelope and channel reference,
+  [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) for the
+  dispatcher.
 - **WS sub-protocol** — The wire format between the vercel platform frontend
   wrapper and the parent actor. See
   [`reference/ws-subprotocol.md`](../reference/ws-subprotocol.md).
+- **Placement API** — `POST /placement`; the only public non-WS endpoint
+  outside `/admin/`. See [`reference/placement-api.md`](../reference/placement-api.md).
 - **Gateway HTTP envelope** — The HTTP request shape the API gateway sends
   to URL services. See [`reference/gateway-envelope.md`](../reference/gateway-envelope.md).
 - **Admin REST** — The HTTP surface the vercel backend uses to operate
@@ -134,8 +138,10 @@ See [`contract/compute-budgets.md`](../contract/compute-budgets.md).
 - **Disconnect reasons:** `left`, `timedOut`, `removedFromAllowedPlayers`,
   `shardEvicted`, `gameDeleted`.
 - **Sleep reasons:** `idle` (sleep-grace fired), `requestedBySleep` (bundle
-  called `c.lifecycle.requestSleep`), `evicted` (capacity push), `shutdown`,
-  `upgrade`.
+  called `c.lifecycle.requestSleep`), `evicted` (capacity-pressure
+  eviction), `shardEvicted` (shard is going away — drain or shutdown),
+  `shutdown` (platform shutdown), `upgrade` (bundle pointer flipped while
+  awake).
 
 ## Things deliberately undefined
 

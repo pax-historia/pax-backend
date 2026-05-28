@@ -18,7 +18,7 @@ This page is the map. Every other doc in `docs-next/` is consistent with it.
 │    Out of this repo.                                               │
 └────────────────────────────────────────────────────────────────────┘
                               │
-                              │ WS (with substrate-signed JWT)
+                              │ WS (with router-signed JWT)
                               ▼
 ┌────────────────────────────────────────────────────────────────────┐
 │ 3. Substrate (this repo)                                           │
@@ -52,7 +52,8 @@ This page is the map. Every other doc in `docs-next/` is consistent with it.
 ┌────────────────────────────────────────────────────────────────────┐
 │ 1. Vercel backend                                                  │
 │    Pax-historia Next.js. Identity, billing, presets, metadata,     │
-│    marketplace. Hosts URL services and signs JWTs.                 │
+│    marketplace. Hosts URL services. Authenticates to placement     │
+│    and admin; the router signs the WS JWT.                         │
 │    Out of this repo.                                               │
 └────────────────────────────────────────────────────────────────────┘
 ```

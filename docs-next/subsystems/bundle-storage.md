@@ -132,23 +132,53 @@ to fix a buggy v5, upload v5.1.
 }
 ```
 
-The control plane:
+The control plane writes the bundle bytes first and finalizes via a
+single Redis index commit. The pipeline is **recoverable**, not atomic
+across stores — see "Cross-store commit model" below.
 
 1. Validates the manifest (see
    [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md)).
    On failure: `400 manifestInvalid`.
-2. Refuses if `bundleName` already exists: `409 bundleNameTaken`.
+2. Refuses if a Redis index row already exists for `bundleName`:
+   `409 bundleNameTaken`. (The Redis row is the source of truth for
+   "this bundle exists.")
 3. Computes `sha256(source)`.
-4. Atomically writes both:
-   - Tigris `bundles/<bundleName>/source.js`, `manifest.json`,
-     `metadata.json`.
-   - Redis index row.
-5. Emits `bundle.uploaded` history event.
-6. Returns 201 Created with `{ bundleName, contentSha256 }`.
+4. Writes the bundle bytes to Tigris under
+   `bundles/<bundleName>/{source.js, manifest.json, metadata.json}`.
+   These are write-once paths; an interrupted upload's partial bytes
+   are not the source of truth.
+5. **Finalize**: writes the Redis index row for `bundleName` in a
+   single Redis command. This commit is the point at which the bundle
+   becomes visible.
+6. Emits `bundle.uploaded` history event.
+7. Returns 201 Created with `{ bundleName, contentSha256 }`.
 
 For very large bundles (>1 MB), the upload may use multipart; the
 substrate exposes only the JSON-body endpoint at v1 (bundle sizes have
 been ≤ 500 KB in practice).
+
+### Cross-store commit model
+
+Tigris and Redis are two stores with independent failure modes. The
+substrate does **not** claim a multi-store transaction; instead the
+upload follows a recoverable-finalize pattern:
+
+- Tigris bytes are written first. They are not yet referenced by any
+  Redis row.
+- The Redis index commit is the visibility commit. After step 5
+  completes, the bundle exists; before step 5 completes, it does not.
+- If the process crashes between steps 4 and 5, Tigris holds orphan
+  bytes with no Redis row. These are unreachable by any substrate API
+  (placement, flip, fetch all key off the Redis row).
+- An orphan-bundle sweep in the periodic GC pass (see "Garbage
+  collection" below) lists Tigris `bundles/` paths that have no
+  matching Redis row and deletes them.
+
+This model gives the caller the guarantee they actually need ("either
+this bundle is visible, or it is not") without claiming a cross-store
+atomicity property the substrate cannot implement. See
+[`contract/storage.md`](../contract/storage.md) §"Engineering latitude"
+for the equivalent latitude applied to `c.state` / `c.blob` writes.
 
 ## Shard-side bundle cache
 
@@ -160,10 +190,11 @@ source from Tigris **once per `(shardId, bundleName)` pair**:
 3. Else: download from Tigris; write to local cache.
 4. Send to the child via the `bootstrap` IPC envelope.
 
-The cache lives on the shard's Fly Volume (the same volume Rivet uses
-for engine internals). Cache TTL: indefinite, but the volume is also a
-scratch space — anything in the cache is safe to lose; the shard
-re-downloads.
+The cache lives on the shard's local Fly Volume. Cache TTL: indefinite,
+but the volume is treated as scratch space — anything in the cache is
+safe to lose; the shard re-downloads from Tigris on the next miss. The
+substrate makes no durability claim about cached bundle bytes on shard
+volumes.
 
 ## Garbage collection
 
@@ -219,8 +250,10 @@ Tigris or the cache; it sees only the source string the parent gave it.
 
 ## End-state contract
 
-- **Upload is atomic** (both Tigris + Redis succeed, or the upload
-  fails and neither persists).
+- **Upload is recoverable.** The Redis index commit is the visibility
+  point; before it, no substrate API can see the bundle. Interrupted
+  uploads leave Tigris orphans that the GC sweep cleans up. (See
+  "Cross-store commit model" above.)
 - **Bundle source is byte-identical across all shards** that ever load
   the bundle (`contentSha256` is verified at every fetch).
 - **Bundle names are unforgeable** — write-once at the control plane.

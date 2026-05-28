@@ -59,7 +59,7 @@ flowchart TB
   redis[("Redis<br/>active-game directory + ephemeral")]
 
   frontend -->|"HTTP placement"| router
-  router -->|"signed JWT"| frontend
+  router -->|"router-signed JWT + wsUrl"| frontend
   frontend -->|"WS + JWT"| parent
   parent <-->|"reads/writes"| tigris
   parent -.->|"capacity push"| redis
@@ -67,7 +67,8 @@ flowchart TB
   parent -->|"c.api.invoke"| gateway
   gateway -->|"HTTP POST + envelope"| refsvc
   gateway -->|"HTTP POST + envelope"| vbackend
-  vbackend -->|"admin REST + JWT signing<br/>+ host-event POST"| control
+  vbackend -->|"POST /placement<br/>(authenticated; pass-through claims)"| router
+  vbackend -->|"admin REST + host-event POST"| control
   control -->|"writes bundles to"| tigris
   control -->|"history tail / poll"| vbackend
 ```
@@ -133,7 +134,7 @@ consequences:
 
 The contract surface is intentionally narrow:
 
-- 6 lifecycle hooks ([`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md))
+- 7 lifecycle hooks ([`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md))
 - 8 compute budgets ([`contract/compute-budgets.md`](../contract/compute-budgets.md))
 - 17 strong platform guarantees ([`vision/guarantees.md`](guarantees.md))
 - 3 versioning axes ([`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md))

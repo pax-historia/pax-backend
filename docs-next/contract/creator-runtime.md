@@ -52,7 +52,7 @@ If any check fails, the bundle fails to load and the substrate emits
 
 ## Lifecycle hooks
 
-Six hooks. All optional. All may return a promise. All receive `(c,
+Seven hooks. All optional. All may return a promise. All receive `(c,
 payload)`.
 
 | Hook | When called | Payload | See |
@@ -64,10 +64,6 @@ payload)`.
 | `onPlayerMessage` | A player sends a WS message | `OnPlayerMessagePayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
 | `onCapacityWarning` | A compute budget is approaching its limit | `OnCapacityWarningPayload` | [`compute-budgets.md`](compute-budgets.md) |
 | `onHostEvent` | A `POST /admin/games/:id/host-event` was delivered | `OnHostEventPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
-
-(That's seven hooks total counting `onHostEvent`. The reason this is "six
-hooks" in older docs is that `onHostEvent` was a later addition; see
-[`why/why-no-async-games.md`](../why/why-no-async-games.md) for context.)
 
 Deliberately not exposed: `onCreate` and `onMigrate` (folded into
 `onWake` reasons), `onDestroy` (admin action; the child just stops

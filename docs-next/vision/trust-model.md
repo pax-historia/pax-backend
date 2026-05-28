@@ -107,14 +107,17 @@ Blast radius of any in-substrate compromise via creator JS: **one game**.
 
 The substrate trusts the JWT the frontend presents, not the frontend.
 
-- Substrate verifies the JWT signature against `PAX_JWT_SECRET`.
-- Substrate trusts `playerId` from the JWT subject.
+- The WS JWT is signed by the **placement router**, not by the vercel
+  backend (see [`reference/jwt-claims.md`](../reference/jwt-claims.md)).
+  The substrate verifies the signature against `PAX_JWT_SECRET`, which the
+  router holds; the parent actor verifies with the same key.
+- Substrate trusts `playerId` from the JWT subject (`sub`).
 - Substrate trusts `gameId` from the JWT claims.
 - Substrate trusts `traceId` and `runId` from JWT claims when present.
 
-If the frontend is compromised, it can replay JWTs the vercel backend signed.
-Defense: the JWT carries an expiry. The vercel backend short-TTLs JWTs
-(typically minutes). A stolen JWT is useful for the TTL window only.
+If the frontend is compromised, it can replay router-signed JWTs.
+Defense: the JWT carries an expiry. The router issues short-TTL JWTs
+(default 5 minutes). A stolen JWT is useful for the TTL window only.
 
 A stolen JWT cannot let a player connect to a game they're not on the
 `allowedPlayers` list for. Guarantee #2 (`allowed-only-connection`) closes
@@ -124,8 +127,14 @@ this regardless of JWT validity.
 
 The substrate trusts the vercel backend for two distinct purposes:
 
-1. **JWT signing.** A compromised vercel backend can sign JWTs for any
-   `playerId` on any `gameId`. Mitigation: substrate still gates on
+1. **Placement authentication and pass-through claims.** The vercel
+   backend authenticates to `POST /placement` (today via the Fly edge /
+   vercel-backend proxy chain; the router itself does not currently
+   enforce caller auth on this endpoint — that's a vercel-backend / Fly
+   edge concern). The router takes the placement request's
+   `(gameId, playerId, passthrough)` at face value and signs the WS JWT.
+   A compromised vercel backend can therefore request JWTs for any
+   `(playerId, gameId)` pair. Mitigation: substrate still gates on
    `allowedPlayers` (which the vercel backend is also authoritative for).
    So a fully compromised vercel backend can compromise its own
    substrate-facing surface, but no other party.
@@ -133,7 +142,12 @@ The substrate trusts the vercel backend for two distinct purposes:
    compromise of the substrate's mutating surface (game lifecycle, bundle
    pointer flips, allowed-player mutations, host events).
 
-The substrate-internal defense for both: there isn't one. The vercel
+Note that **the WS JWT signing key (`PAX_JWT_SECRET`) is not held by the
+vercel backend.** It's held by the placement router and the parent actors.
+This keeps the signing capability inside one substrate-internal trust
+boundary; the vercel backend authenticates and proxies, but does not sign.
+
+The substrate-internal defense for both above: there isn't one. The vercel
 backend is a trusted counterparty for these two purposes. If it's owned,
 the system is owned.
 

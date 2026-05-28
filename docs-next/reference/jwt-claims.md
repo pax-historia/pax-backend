@@ -41,10 +41,10 @@ interface SubstrateJwt {
   gameId: string;                       // the game this JWT permits a WS to
   shardId: string;                      // the shard the placement router chose
   traceId: string | null;               // W3C trace_id; for distributed tracing
-  runId: string | null;                 // scenario-runner runId; null in production-untouched flows
+  runId: string | null;                 // scenario-runner run id; null in production
 
   // Pass-through claims (vercel-backend-controlled)
-  passthrough: Record<string, unknown>; // verbatim opaque blob the vercel backend signed at placement-request time
+  passthrough: Record<string, unknown>; // verbatim opaque blob the vercel backend supplied in the placement request body; embedded in the JWT by the router and signed as part of it
 }
 ```
 
@@ -61,7 +61,7 @@ interface SubstrateJwt {
 | `gameId` | Router (from placement request) | Parent | Used to scope WS endpoint |
 | `shardId` | Router | Parent | Cross-checks the WS URL is on the right shard |
 | `traceId` | Router (from `traceparent` header on placement request) | Parent + every downstream span | W3C 16-byte hex |
-| `runId` | Router (from placement request body) | Substrate-internal; for scenario-runner | Optional |
+| `runId` | Router (from placement request body) | Substrate-internal; for scenario-runner | Scenario-only; `null` in production |
 | `passthrough` | Vercel backend (proxied through placement request body) | Bundle (in `onPlayerConnect.jwtClaims`) | Opaque |
 
 ## The pass-through claims
@@ -182,7 +182,7 @@ last line of defense.
 ## Cross-references
 
 - [`ws-subprotocol.md`](ws-subprotocol.md) — handshake and frame format
-- [`admin-api.md`](admin-api.md) — `POST /placement` (technically not under `/admin/`)
+- [`placement-api.md`](placement-api.md) — `POST /placement` wire reference
 - [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md) — placement flow
 - [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — JWT verification on WS accept
 - [`vision/trust-model.md`](../vision/trust-model.md)

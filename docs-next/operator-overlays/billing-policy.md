@@ -47,7 +47,7 @@ Every `c.api.invoke` HTTP call to a billing URL service includes:
 |---|---|
 | `connectedSessions[]` | "Only bill players who are connected" — the URL service refuses to bill if `args.billToPlayer` isn't in the snapshot |
 | `triggeringSessionId` | Distinguishes "this call came from a player's WS message" vs "this call came from `onWake` / `onCapacityWarning` / `onHostEvent`" — useful for billing different categories of activity |
-| `triggeringJwtClaims` | Verbatim claims signed by the vercel backend — may include Firebase identity, role hints, vercel-backend-issued trust tokens |
+| `triggeringJwtClaims` | Verbatim claims from the router-signed WS JWT, including the `passthrough` block the vercel backend supplied at placement time (Firebase identity, role hints, vercel-backend-issued trust tokens) |
 | `bundleName`, `bundleCompatTag` | Lets the URL service apply per-bundle pricing or refuse calls from unexpected bundles |
 | `gameId` | Identifies the game; the URL service uses this as a billing scope (e.g. per-game spend caps) |
 

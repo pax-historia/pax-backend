@@ -188,7 +188,7 @@ in the host-event case) can rely on:
 
 - [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md)
   — the placement gate's contract side
-- [`reference/admin-api.md`](../reference/admin-api.md) — placement API
+- [`reference/placement-api.md`](../reference/placement-api.md) — placement HTTP wire reference
 - [`reference/jwt-claims.md`](../reference/jwt-claims.md) — JWT shape
 - [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — what
   the parent does on WS-accept

@@ -17,25 +17,29 @@ players, owns the user-visible UX, runs the Firebase auth flow, knows about
 |---|---|
 | Lives in | Pax-historia repo (out of scope for this tree) |
 | Talks to | The **vercel backend** for auth/billing/metadata; directly to the **substrate** over WebSocket for game data |
-| Substrate sees from it | A WebSocket connection bearing a JWT issued by the vercel backend |
+| Substrate sees from it | A WebSocket connection bearing a JWT the **placement router** signed after the vercel backend called `POST /placement` on its behalf |
 | Substrate exposes to it | The WebSocket sub-protocol — see [`reference/ws-subprotocol.md`](../reference/ws-subprotocol.md) |
-| Trust position | Untrusted by the substrate. The substrate trusts the JWT (signed by the vercel backend), not the frontend |
+| Trust position | Untrusted by the substrate. The substrate trusts the WS JWT (signed by the router), not the frontend |
 
 ### Vercel backend
 
 Pax-historia's Next.js server on Vercel. Owns identity, billing, the
 token/credit ledger, the participation system, the moderation pipeline, game
-metadata, presets, and the marketplace. Signs JWTs the substrate verifies.
-Hosts URL services the substrate dispatches to. Issues admin calls into the
-substrate. Receives history-tail / host-event traffic from the substrate.
+metadata, presets, and the marketplace. **Authenticates to** the substrate's
+placement and admin surfaces (it does **not** sign the WS JWT; the placement
+router does that — see [`reference/jwt-claims.md`](../reference/jwt-claims.md)).
+Provides opaque pass-through claims at placement time that the router embeds
+verbatim. Hosts URL services the substrate dispatches to. Issues admin calls
+into the substrate. Receives history-tail / host-event traffic from the
+substrate.
 
 | | |
 |---|---|
 | Lives in | Pax-historia repo (out of scope for this tree) |
-| Talks to | The substrate via the admin REST API, by signing JWTs, and by serving URL service HTTP endpoints |
-| Substrate sees from it | JWTs at WS handshake; admin calls; URL service responses; host-event POSTs |
+| Talks to | The substrate via `POST /placement` (with pass-through claims), the admin REST API (bearer-token authed), and by serving URL service HTTP endpoints |
+| Substrate sees from it | Authenticated placement requests; admin REST calls; URL service responses; host-event POSTs |
 | Substrate exposes to it | Admin REST API ([`reference/admin-api.md`](../reference/admin-api.md)), history stream, URL service callback envelope ([`reference/gateway-envelope.md`](../reference/gateway-envelope.md)), host-event POST endpoint |
-| Trust position | Platform-trusted for admin calls (bearer token); URL services are over-the-wire equal to any other URL endpoint — the substrate just dispatches |
+| Trust position | Platform-trusted for admin calls (bearer token); the WS JWT is signed by the router using `PAX_JWT_SECRET`, which the vercel backend does not hold; URL services are over-the-wire equal to any other URL endpoint — the substrate just dispatches |
 
 The vercel backend is treated as an **opaque counterparty** for design
 purposes. The substrate makes no assumptions about its internal structure
@@ -104,3 +108,22 @@ or any other abstraction that only makes sense with multiple consumers — stop.
 That's the wrong design force. The right design force is "would this be a
 clean contract if there were a hundred vercel backends?" and the answer
 informs the shape, not whether to ship the abstraction.
+
+## The contract is generic; the party names are concrete
+
+The substrate's contract surface ([`contract/`](../contract/),
+[`reference/`](../reference/)) is shaped around generic primitives:
+`gameId`, `playerId`, `bundle`, JWT, kind→URL registry, history events.
+Nothing in the contract layer names Vercel.
+
+These vision docs name `vercel backend` and `vercel platform frontend
+wrapper` because Pax-historia is the substrate's only consumer today, and
+abstract role names ("operator," "host product") produced ambiguity in
+the legacy README. If a second consumer ever shows up — running on AWS, on
+bare metal, anywhere — the contract surface drops in unchanged; only the
+concrete party names in this layer need substitution.
+
+So: "vercel backend" is shorthand for "the substrate's host backend
+counterparty, which today is the pax-historia Next.js server on Vercel."
+Future readers should mentally substitute their own host backend if reusing
+the substrate, not edit the vocabulary.

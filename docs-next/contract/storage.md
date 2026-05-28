@@ -173,6 +173,46 @@ Anything that wants to be a seventh top-level noun is an alarm bell. The
 blob namespace's internal keying is structure within the namespace, not
 a new noun — the same way a database table has rows.
 
+## Engineering latitude
+
+The contract above states **what bundles and the vercel backend can
+rely on**: whole-object 128 KB state with a configurable flush window;
+keyed blob with caps; zero loss on planned transitions; durable-on-resolve
+puts; namespace-as-a-unit semantics.
+
+The mechanics that satisfy those guarantees are implementation choices,
+not contract:
+
+- Whether the flush path uses conditional writes, generation numbers,
+  ETags, or local sequence counters to suppress lost-update races on
+  concurrent flushes.
+- Whether failed Tigris PUTs are retried with backoff, deferred to a
+  background reaper, or surfaced immediately as `storageUnavailable`.
+- Whether stale local caches are invalidated by polling, pub-sub
+  invalidation, or read-through revalidation on cold wake.
+- Whether the bundle pointer flip and the `c.state` flush coordinate
+  via a single Redis write, a control-plane reconciliation loop, or a
+  parent-actor handshake.
+
+The substrate is free to evolve these mechanics as long as the
+scenario-runner's guarantee oracles (#11, #12, #14) continue to pass.
+
+What the substrate does **not** claim:
+
+- **No cross-store atomic commit.** Tigris and Redis are two stores
+  with independent failure modes; the substrate does not promise that a
+  multi-key blob write and a Redis index update either both succeed or
+  both fail. Instead, write-ordered operations are recoverable: bytes
+  land in Tigris first, the smallest possible Redis commit is the
+  finalize step, and orphan Tigris objects from interrupted writes are
+  garbage-collected. See [`subsystems/bundle-storage.md`](../subsystems/bundle-storage.md)
+  for the bundle-upload-specific instance.
+- **No transactional `blob.put` across multiple keys.** Each `put` is
+  durable on its own resolve. A bundle that needs two keys to "land or
+  not land together" needs to model that with a finalize key, a
+  generation marker, or its own naming convention. The substrate does
+  not expose multi-key transactions.
+
 ## Cross-references
 
 - [`why/why-tigris-canonical.md`](../why/why-tigris-canonical.md) — why

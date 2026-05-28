@@ -207,6 +207,7 @@ multiple messages.
 - [`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md) —
   session lifecycle hooks
 - [`jwt-claims.md`](jwt-claims.md) — JWT shape
+- [`placement-api.md`](placement-api.md) — `POST /placement` wire reference
 - [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — WS server side
-- [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md) — placement HTTP
+- [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md) — placement flow
 - [`vision/guarantees.md`](../vision/guarantees.md) #2, #3, #6

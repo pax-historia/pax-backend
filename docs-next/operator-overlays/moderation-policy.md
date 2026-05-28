@@ -7,8 +7,12 @@ ban list. It does provide three primitives that make any moderation
 policy implementable:
 
 1. **`removeAllowedPlayer`** — substrate-enforced; force-disconnects.
-2. **`DELETE /admin/players/:playerId`** — atomic across all games;
-   removes from every allowed-players list.
+2. **`DELETE /admin/players/:playerId`** — a single substrate operation
+   that iterates every game the player is allowed in and runs
+   `removeAllowedPlayer` on each. The caller sees one 202 response;
+   the substrate emits one `player.deleted` history event after all the
+   per-game removals fan out (push-with-202; see
+   [`subsystems/control-plane-admin-api.md`](../subsystems/control-plane-admin-api.md)).
 3. **Host events** — wake-on-delivery for moderation-triggered events
    that the bundle should know about (e.g. "this player was just banned;
    eject them from this game").

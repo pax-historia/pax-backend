@@ -86,7 +86,7 @@ X-Gateway-Envelope-Version: 2
 X-Gateway-Request-Id: <uuid>
 X-Gateway-Game-Id: <gameId>
 X-Gateway-Kind: <kindName>
-X-Gateway-Mode: live | replay
+X-Gateway-Mode: live
 traceparent: <W3C trace context>
 
 {
@@ -101,12 +101,18 @@ traceparent: <W3C trace context>
     ],
     "bundleName": "...",
     "bundleCompatTag": "...",
-    "runId": "...",
+    "runId": "..." | null,
     "traceId": "..." | null,
     "idempotencyKey": "..." | null
   }
 }
 ```
+
+The `X-Gateway-Mode` header is **always `live`** from the URL service's
+perspective. The substrate short-circuits replay before any HTTP call is
+made; URL services never receive a `replay` value on the wire. Internally,
+the substrate records `mode: 'live' | 'replay'` on the `api.invoke.wire`
+history event for oracle purposes.
 
 Response (success):
 ```http

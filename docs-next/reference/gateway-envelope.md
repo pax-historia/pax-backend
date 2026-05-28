@@ -40,7 +40,7 @@ interface GatewayHttpRequestBody {
     connectedSessions: readonly ConnectedSessionSnapshot[];
     bundleName: string;
     bundleCompatTag: string;
-    runId: string;
+    runId: string | null;                    // scenario-runner runs only; null in production
     traceId: string | null;
     idempotencyKey: string | null;
   };
@@ -60,11 +60,11 @@ interface ConnectedSessionSnapshot {
 | `args` | Bundle (`c.api.invoke(kind, args)`) | Substrate doesn't inspect; URL service defines its own schema |
 | `context.gameId` | Substrate | The calling game |
 | `context.triggeringSessionId` | Substrate | Set when the call originates from `onPlayerMessage`; `null` for lifecycle-triggered calls (`onWake`, `onSleep`, `onCapacityWarning`, `onHostEvent`) |
-| `context.triggeringJwtClaims` | Substrate (verbatim from JWT) | The full claims object the vercel backend signed; `null` when `triggeringSessionId` is `null` |
+| `context.triggeringJwtClaims` | Substrate (verbatim from the router-signed WS JWT, including the vercel-backend-supplied `passthrough` block) | `null` when `triggeringSessionId` is `null` |
 | `context.connectedSessions` | Substrate | Snapshot at dispatch time. Accurate per guarantee #4 |
 | `context.bundleName` | Substrate | The bundle that issued the invoke |
 | `context.bundleCompatTag` | Substrate | `== bundle.manifest.compatTagProduced` |
-| `context.runId` | Substrate | Always set; scenario-runner-specific value in tests; substrate-generated id in production |
+| `context.runId` | Substrate | Scenario-runner run id when the call is part of a scenario invocation; `null` in production. URL services that want a stable per-call identifier should use `X-Gateway-Request-Id` instead |
 | `context.traceId` | Substrate | W3C trace_id (mirrors `traceparent` header); `null` if no trace context arrived |
 | `context.idempotencyKey` | Bundle (via `options.idempotencyKey`) | Pass-through; substrate doesn't dedupe |
 

@@ -60,10 +60,15 @@ Called once when the child process is forked and the isolate boots. The
 bundle has zero in-memory state at this point — anything from before must
 come out of `c.state` or `c.blob`.
 
+`runId` is scenario-only: it carries the scenario-runner's run identifier
+when the wake is part of a test run, and is `null` in production. Bundles
+that want a per-wake correlation handle should rely on the substrate's
+history `pax_seq` window or their own state-stored counter, not `runId`.
+
 ```ts
 interface OnWakePayload {
   reason: WakeReason;
-  runId: string;
+  runId: string | null;          // scenario-runner runs only; null in production
   bundleName: string;
   bundleCompatTag: string;       // == this bundle's manifest.compatTagProduced
   blobCompatTag?: string;        // undefined on cold-start
@@ -190,9 +195,11 @@ interface OnPlayerConnectPayload {
 }
 ```
 
-`jwtClaims` is the verbatim claims object the vercel backend signed —
-opaque to the substrate. The bundle reads whatever Pax-historia stuffs in
-(typically Firebase claims, game role hints, etc.).
+`jwtClaims` is the verbatim claims object from the router-signed WS JWT,
+including the `passthrough` block the vercel backend supplied at
+placement time (typically Firebase claims, game role hints, etc.). The
+substrate forwards `passthrough` verbatim; the bundle reads whatever
+Pax-historia stuffs in. See [`reference/jwt-claims.md`](../reference/jwt-claims.md).
 
 ## `onPlayerDisconnect(c, payload)`
 
@@ -301,6 +308,26 @@ and games do **not** progress while asleep (see
 Long-duration deadlines use the mark-timestamp pattern: write the
 `fireAt` to `c.state`, check on every `onWake` and every
 `onPlayerMessage`.
+
+## Host events are the one off-connection wake primitive
+
+The substrate has exactly one mechanism for waking a sleeping game when
+no player is connected: `POST /admin/games/:id/host-event` with
+`wakeOnDelivery: true`. The vercel backend issues this. The substrate
+does not expose any other off-connection wake primitive (no `onTimer`,
+no `c.schedule.*`, no cron channel to the bundle).
+
+This is by design — see [`why/why-no-async-games.md`](../why/why-no-async-games.md)
+and [`why/why-no-scheduled-wakeups.md`](../why/why-no-scheduled-wakeups.md).
+Anything that would be a substrate-side scheduled wake is instead a
+vercel-backend cron that POSTs a host event.
+
+**v1 stance on host-event rate limits.** The substrate trusts authenticated
+host-backend POSTs and does not enforce a host-event rate limit per game
+in v1. The vercel backend is platform-trusted; if a future consumer is less
+trusted, or operational evidence demands it, a per-game host-event budget
+joins the eight compute budgets without breaking the contract. Until then,
+the limit is whatever the vercel backend's own cron schedules can produce.
 
 ## Wake reasons by triggering condition (cheat sheet)
 

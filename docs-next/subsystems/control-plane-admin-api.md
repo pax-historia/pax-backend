@@ -107,12 +107,19 @@ without side effects, returning the would-be 409 body or `{ ok: true }`.
    `compatTagProduced ∈ compatTagsAccepted`,
    `runtimeContractRequired > 0`,
    non-empty strings). On failure: `400 manifestInvalid`.
-3. Refuse if the bundle name already exists (write-once).
+3. Refuse if a Redis index row already exists for the bundle name
+   (write-once; the Redis row is the source of truth for existence).
 4. Refuse if the bundle name violates the immutability/monotonicity
    policy (see [`bundle-storage.md`](bundle-storage.md)).
-5. Upload the binary to Tigris at the bundle's canonical path.
-6. Write the manifest row to Redis.
+5. Upload the binary bytes to Tigris at the bundle's canonical path.
+6. **Finalize**: write the manifest row to Redis. This single commit is
+   the moment the bundle becomes visible to placement, flip, and fetch.
 7. Emit `bundle.uploaded`.
+
+The substrate writes Tigris first and finalizes via Redis because
+Tigris and Redis are independent stores; see
+[`bundle-storage.md`](bundle-storage.md) §"Cross-store commit model"
+for the recoverable-finalize pattern and the orphan-cleanup sweep.
 
 ### Host events (`POST /admin/games/:id/host-event`)
 
@@ -221,8 +228,10 @@ compromise.
   if `c.blob` is large; supports `?includeBlob=false` to skip.
 - **History pagination is cursor-stable**: the same `cursor` always
   returns the same page (idempotent re-read).
-- **Bundle uploads are atomic**: either the binary + metadata both
-  land, or neither does.
+- **Bundle uploads are recoverable.** The Redis index commit is the
+  visibility point; interrupted uploads leave Tigris orphans, which the
+  GC sweep cleans up. See [`bundle-storage.md`](bundle-storage.md)
+  §"Cross-store commit model".
 - **Host-event `wakeOnDelivery: true` is at-least-once** within 30-day
   TTL (guarantee #17).
 

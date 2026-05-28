@@ -102,9 +102,11 @@ docs-next/
     historia-default.md
   reference/                             ← wire contracts and catalogs
     admin-api.md
+    placement-api.md
     gateway-envelope.md
     ws-subprotocol.md
     jwt-claims.md
+    ipc-protocol.md
     event-schema.md
     metrics-catalog.md
     error-codes.md
