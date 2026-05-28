@@ -10,6 +10,7 @@ import {
   loadScenarioManifest,
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
+import { appendArchivedHistory } from "./history-archive.mjs";
 import { executeLiveWorkload } from "./live-executor.mjs";
 import { buildScenarioResult } from "./result.mjs";
 import { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
@@ -62,12 +63,19 @@ export async function runReplayFromCatalog(
     if (!workloadPlan || !runtimeEnvironment) {
       throw new Error(`${scenarioManifest.scenarioId} has no workload plan to execute`);
     }
+    const liveStartedAtMs = Date.now();
     await executeLiveWorkload(
       hydratedInput,
       scenarioManifest,
       workloadPlan,
       runtimeEnvironment,
     );
+    const liveFinishedAtMs = Date.now();
+    await appendArchivedHistory({
+      historyPath: hydratedInput.historyPath,
+      startedAtMs: liveStartedAtMs,
+      finishedAtMs: liveFinishedAtMs,
+    });
   }
   return runReplayFromHistory({
     ...hydratedInput,

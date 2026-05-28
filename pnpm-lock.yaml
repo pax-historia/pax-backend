@@ -220,6 +220,9 @@ importers:
 
   testing/scenario-runner:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.940.0
+        version: 3.1055.0
       '@pax-backend/oracles-lib':
         specifier: workspace:*
         version: link:../oracles-lib
