@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -38,6 +38,8 @@ const INITIAL_VALUE_FETCH_TIMEOUT_MS = parsePositiveInteger(
   process.env["PAX_INITIAL_VALUE_FETCH_TIMEOUT_MS"] ?? "10000",
   10_000,
 );
+const CONTROL_PLANE_SHARD_ID = "control-plane";
+const nextControlPaxSeqByPath = new Map<string, number>();
 
 export interface ControlPlaneConfig {
   readonly bindHost: string;
@@ -719,10 +721,58 @@ function appendControlHistory(
   fields: Readonly<Record<string, unknown>>,
 ): void {
   mkdirSync(dirname(config.historyPath), { recursive: true });
+  const paxSeq = nextControlPaxSeq(config.historyPath);
   appendFileSync(
     config.historyPath,
-    `${JSON.stringify({ ts: new Date().toISOString(), shardId: "control-plane", event, ...fields })}\n`,
+    `${JSON.stringify({
+      ...fields,
+      ts: new Date().toISOString(),
+      shardId: CONTROL_PLANE_SHARD_ID,
+      pax_seq: paxSeq,
+      event,
+    })}\n`,
   );
+}
+
+function nextControlPaxSeq(historyPath: string): number {
+  const existing = nextControlPaxSeqByPath.get(historyPath);
+  if (existing !== undefined) {
+    nextControlPaxSeqByPath.set(historyPath, existing + 1);
+    return existing;
+  }
+  const next = loadLastPaxSeqForShard(historyPath, CONTROL_PLANE_SHARD_ID) + 1;
+  nextControlPaxSeqByPath.set(historyPath, next + 1);
+  return next;
+}
+
+function loadLastPaxSeqForShard(path: string, shardId: string): number {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = raw.trimEnd().split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line) as {
+        readonly shardId?: unknown;
+        readonly pax_seq?: unknown;
+      };
+      if (
+        parsed.shardId === shardId &&
+        typeof parsed.pax_seq === "number" &&
+        Number.isInteger(parsed.pax_seq)
+      ) {
+        return parsed.pax_seq;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return 0;
 }
 
 function asRecord(raw: unknown, label: string): Record<string, unknown> {
