@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist",
+    "composite": true,
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["manifest.ts", "src/**/*.mts", "src/**/*.d.ts"],
+  "references": [
+    { "path": "../../../sdk/runtime-sdk" }
+  ]
+}

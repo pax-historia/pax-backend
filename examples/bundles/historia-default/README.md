@@ -1,11 +1,10 @@
 # `historia-default`
 
-> **Status: planned, not yet implemented.** This README documents the
-> scope, contracts, and iteration loop. The bundle itself (modules,
-> workflow runtime, default workflow strings, scenarios) lands in a
-> follow-up implementation pass. The plan is in
-> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md);
-> the substrate-additions RFC is in
+> **Status: scaffolded.** The package, manifest, TypeScript config, runtime
+> ambient declarations, and minimal lifecycle entrypoint are present and
+> build to `dist/bundle.js`. Modules, workflow runtime, default workflow
+> strings, scenarios, and bundle oracles land in follow-up Phase 3 tasks.
+> The plan is in
 > [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md).
 
 `historia-default` is the reference creator bundle for the historia game
@@ -136,22 +135,22 @@ anything the bundle needed durable-on-write should have used
 | `onPlayerDisconnect` | Update presence; if no participants online, mark game idle |
 | `onPlayerMessage` | Dispatch on `body.type` to the relevant module handler |
 | `onCapacityWarning` | Shed load (typically by skipping non-essential workflow runs) |
-| `onHostEvent` (after substrate addition lands) | Dispatch on `eventType`; primary use today is `participationChanged` from `participation.v1`, and `moderationEject` with `wakeOnDelivery: true` |
+| `onHostEvent` | Dispatch on `eventType`; primary use today is `participationChanged` from `participation.v1`, and `moderationEject` with `wakeOnDelivery: true` |
 
-## Required substrate additions
+## Substrate hooks this proof relies on
 
-The proof needs two small substrate additions. Both are documented in
+The proof relies on two substrate behaviors that already landed before the
+bundle scaffold. Both are documented in
 [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md):
 
-1. **Sleep grace period** — `SLEEP_GRACE_MS = 60_000` substrate constant.
-   Game stays warm for 60s after the last disconnect.
+1. **Sleep grace period** — game stays warm for 60s after the last
+   disconnect.
 2. **Host event channel** — `POST /admin/games/:id/host-event` + bundle
    `onHostEvent` lifecycle hook; supports `wakeOnDelivery: true` for
    moderation ejects that need to reach sleeping games.
 
-Bundle scaffolding (modules, workflow runtime, default workflows) is
-unblocked without these — the bundle can be authored against the
-existing substrate contract and integrate the additions when they land.
+The current scaffold wires `onHostEvent`; later Phase 3 work will add the
+participation and moderation dispatchers that use it.
 
 ## File layout (planned)
 

@@ -1,8 +1,9 @@
-# `examples/bundles/` — first-party hello-world creator bundles
+# `examples/bundles/` — first-party creator bundles
 
-One bundle per substrate feature. Each is the **minimal** demonstration
-of one or two channels — not a real game. See [`../README.md`](../README.md)
-for the broader rules about the `examples/` zone.
+Small hello bundles demonstrate individual substrate features; larger proof
+bundles live here when they exercise the creator contract end-to-end. See
+[`../README.md`](../README.md) for the broader rules about the `examples/`
+zone.
 
 | Bundle | What it exercises | Status |
 |---|---|---|
@@ -11,6 +12,7 @@ for the broader rules about the `examples/` zone.
 | `hello-state-rw/` | The managed `c.state` tier; reads/writes the whole object and includes an explicit `await c.state.flush()` before a crash-test point. Exercises Tigris-canonical state and the flush-window guarantee. | source added (untested) |
 | `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |
 | `hello-multifeature/` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable integration bundle. | source added (untested) |
+| `historia-default/` | The Pax-historia proof bundle. Scaffolded with the `historia:v1`→`historia:v5` manifest, lifecycle handlers, and build output path; module/workflow/state/scenario work is tracked in Phase 3. | scaffolded |
 
 ## Per-bundle layout
 
@@ -18,6 +20,7 @@ for the broader rules about the `examples/` zone.
 <bundle-name>/
   package.json
   tsconfig.json
+  manifest.ts        # optional; larger bundles keep the manifest separate
   src/
     index.mts         # the source — ESM, imports defineBundle from SDK
     ambient.d.ts      # declares the runtime-injected globals (__pax_install)
