@@ -9,11 +9,15 @@ export function bundleCompatibilitySafety(history: readonly HistoryEvent[]): Ora
   let observed = 0;
 
   for (const event of history) {
-    if (event.event === "bundle.flip.rejected") {
+    if (event.event === "bundle.flip.rejected" || event.event === "bundle.coldWake.rejected") {
       observed += 1;
       if (stringField(event, "error") !== "compatTagOutOfRange") {
         findings.push(
-          finding("unexpected-flip-rejection", "bundle flip rejection was not compatTagOutOfRange", event),
+          finding(
+            "unexpected-compat-rejection",
+            "bundle compat rejection was not compatTagOutOfRange",
+            event,
+          ),
         );
       }
       continue;

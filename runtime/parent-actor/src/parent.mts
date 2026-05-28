@@ -287,6 +287,13 @@ function extractManifestFromSource(source: string): BundleRecord["manifest"] {
   return captured;
 }
 
+function bundleAcceptsBlobCompatTag(
+  manifest: BundleRecord["manifest"],
+  blobCompatTag: string | undefined,
+): boolean {
+  return blobCompatTag === undefined || manifest.compatTagsAccepted.includes(blobCompatTag);
+}
+
 // --- Per-game state ----------------------------------------------------
 
 interface SessionRecord {
@@ -471,8 +478,10 @@ async function sendWakeAfterHydration(
       readGameStorage(inst, "state"),
       readGameStorage(inst, "blob"),
     ]);
+    const reason =
+      inst.blobCompatTag && inst.blobCompatTag !== inst.bundleCompatTag ? "upgrade" : "cold-start";
     sendTyped(child, "onWake", {
-      reason: "cold-start",
+      reason,
       runId: inst.runId,
       bundleName: inst.bundleName,
       bundleCompatTag: inst.bundleCompatTag,
@@ -484,7 +493,9 @@ async function sendWakeAfterHydration(
       actorId: inst.actorId,
       gameId: inst.gameId,
       runId: inst.runId,
-      reason: "cold-start",
+      reason,
+      bundleName: inst.bundleName,
+      bundleCompatTag: inst.bundleCompatTag,
       stateBytes: state.bytes,
       blobBytes: blob.bytes,
       blobCompatTag: inst.blobCompatTag,
@@ -1438,6 +1449,29 @@ const runner = new Runner({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ gameId, err: msg }, "redis games lookup failed");
+    }
+    const bundle = loadBundle(bundleName);
+    if (!bundleAcceptsBlobCompatTag(bundle.manifest, blobCompatTag)) {
+      history("bundle.coldWake.rejected", {
+        actorId,
+        gameId,
+        bundleName,
+        bundleCompatTag: bundle.manifest.compatTagProduced,
+        error: "compatTagOutOfRange",
+        blobCompatTag,
+        bundleCompatTagsAccepted: bundle.manifest.compatTagsAccepted,
+      });
+      log.warn(
+        {
+          actorId,
+          gameId,
+          bundleName,
+          blobCompatTag,
+          bundleCompatTagsAccepted: bundle.manifest.compatTagsAccepted,
+        },
+        "cold wake refused by bundle compat gate",
+      );
+      return;
     }
     const inst = ensureGame(actorId, gameId, bundleName, blobCompatTag);
     wakeMetrics.recentWakes += 1;
