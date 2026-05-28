@@ -184,3 +184,7 @@ The verification audit found one scale-plan wording/semantics drift: `targetDura
 ## 2026-05-28 16:28 PDT
 
 Fifth detached monitor snapshot landed at `2026-05-28T23:27:23.444Z`. The active heartbeat `ivm` no-faults case was still alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory with `scripts/fly/pull-soak-artifacts.sh` and summarized it locally; the summary had one in-progress case, 1000 placements across all 10 shards, `gates_ok=true`, and five clean monitor snapshots.
+
+## 2026-05-28 16:33 PDT
+
+Sixth detached monitor snapshot landed at `2026-05-28T23:32:23.565Z`, about 45 minutes into the no-faults hold. The runner wrapper, tsx process, and monitor process were alive; sampled metrics endpoints for control/router/gateway plus parent and engine on shards 1, 5, and 10 answered from the driver. The pulled local summary still showed one in-progress no-faults case, 1000 placements across all 10 shards, `gates_ok=true`, six clean monitor snapshots, no `exit.code`, and zero failures/session closes/session errors.
