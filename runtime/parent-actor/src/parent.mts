@@ -185,7 +185,7 @@ const log: Logger = pino({
 
 mkdirSync(dirname(HISTORY_PATH), { recursive: true });
 const historyFd = openSync(HISTORY_PATH, "a");
-let nextPaxSeq = loadLastPaxSeq(HISTORY_PATH) + 1;
+let nextPaxSeq = loadLastPaxSeqForShard(HISTORY_PATH, SHARD_ID) + 1;
 
 interface HistoryFields {
   readonly actorId?: string;
@@ -210,7 +210,7 @@ function history(event: string, fields: HistoryFields): void {
   writeSync(historyFd, line);
 }
 
-function loadLastPaxSeq(path: string): number {
+function loadLastPaxSeqForShard(path: string, shardId: string): number {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
@@ -222,8 +222,15 @@ function loadLastPaxSeq(path: string): number {
     const line = lines[index];
     if (!line) continue;
     try {
-      const parsed = JSON.parse(line) as { readonly pax_seq?: unknown };
-      if (typeof parsed.pax_seq === "number" && Number.isInteger(parsed.pax_seq)) {
+      const parsed = JSON.parse(line) as {
+        readonly shardId?: unknown;
+        readonly pax_seq?: unknown;
+      };
+      if (
+        parsed.shardId === shardId &&
+        typeof parsed.pax_seq === "number" &&
+        Number.isInteger(parsed.pax_seq)
+      ) {
         return parsed.pax_seq;
       }
     } catch {
