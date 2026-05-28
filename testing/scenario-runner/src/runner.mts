@@ -67,6 +67,7 @@ export async function runReplayFromCatalog(
     if (!workloadPlan || !runtimeEnvironment) {
       throw new Error(`${scenarioManifest.scenarioId} has no workload plan to execute`);
     }
+    const gameIds = scenarioGameIds(workloadPlan);
     const liveStartedAtMs = Date.now();
     await executeLiveWorkload(
       hydratedInput,
@@ -79,11 +80,12 @@ export async function runReplayFromCatalog(
       historyPath: hydratedInput.historyPath,
       startedAtMs: liveStartedAtMs,
       finishedAtMs: liveFinishedAtMs,
+      gameIds,
     });
     await appendControlPlaneHistory({
       historyPath: hydratedInput.historyPath,
       controlPlaneUrl: hydratedInput.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"],
-      gameIds: scenarioGameIds(workloadPlan),
+      gameIds,
       startedAtMs: liveStartedAtMs,
       finishedAtMs: liveFinishedAtMs,
     });

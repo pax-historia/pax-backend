@@ -22,6 +22,7 @@ export interface ArchivedHistoryInput {
   readonly historyPath: string;
   readonly startedAtMs: number;
   readonly finishedAtMs: number;
+  readonly gameIds?: readonly string[];
   readonly windowPaddingMs?: number;
   readonly flushWaitMs?: number;
   readonly env?: NodeJS.ProcessEnv;
@@ -62,6 +63,7 @@ export async function appendArchivedHistory(input: ArchivedHistoryInput): Promis
   const paddingMs = positiveInt(env["PAX_SCENARIO_ARCHIVE_WINDOW_PADDING_MS"], input.windowPaddingMs ?? 60_000);
   const fromMs = input.startedAtMs - paddingMs;
   const toMs = input.finishedAtMs + paddingMs;
+  const gameIdFilter = input.gameIds && input.gameIds.length > 0 ? new Set(input.gameIds) : undefined;
   const client = new S3Client({
     region: env["AWS_REGION"] ?? "auto",
     endpoint,
@@ -79,7 +81,9 @@ export async function appendArchivedHistory(input: ArchivedHistoryInput): Promis
   for (const row of selectedObjects) {
     if (!row.Key) continue;
     const objectEvents = await readHistoryObject(client, bucket, row.Key);
-    const inWindow = objectEvents.filter((event) => eventInWindow(event, fromMs, toMs));
+    const inWindow = objectEvents.filter(
+      (event) => eventInWindow(event, fromMs, toMs) && eventMatchesGameFilter(event, gameIdFilter),
+    );
     if (inWindow.length === 0) continue;
     matchedObjects.push(row.Key);
     events.push(...inWindow);
@@ -293,6 +297,15 @@ function parseEmbeddedMessage(raw: string): Record<string, unknown> | undefined 
 function eventInWindow(event: HistoryEvent, fromMs: number, toMs: number): boolean {
   const ts = typeof event.ts === "string" ? Date.parse(event.ts) : NaN;
   return Number.isFinite(ts) && ts >= fromMs && ts <= toMs;
+}
+
+function eventMatchesGameFilter(
+  event: HistoryEvent,
+  gameIdFilter: ReadonlySet<string> | undefined,
+): boolean {
+  if (!gameIdFilter) return true;
+  const gameId = (event as { readonly gameId?: unknown }).gameId;
+  return typeof gameId === "string" && gameIdFilter.has(gameId);
 }
 
 function loadExistingEventKeys(path: string): Set<string> {
