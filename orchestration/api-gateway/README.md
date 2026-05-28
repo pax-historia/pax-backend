@@ -15,6 +15,9 @@ The substrate's only egress to operator-owned URL services. Implements
    response plus the wire record to the parent.
 7. Replay mode: lookup recorded inbound by fingerprint; **hard-fail with
    `replayCoverageGap` if no match** (no silent fall-through to live).
+   `PAX_API_REPLAY_FIXTURES_PATH` may point at a `.json`, `.jsonl`, or
+   directory of fixture records; fixture lookup runs before the normal
+   JSONL record path, while replay attempts still append to the JSONL path.
 
 `/metrics` exposes Prometheus text counters for total invokes, successful
 invokes, substrate-owned error outcomes, and the co-located reference URL
@@ -31,7 +34,9 @@ Current source passes include:
 - Sliding-window `api-invocations-per-min` enforcement.
 - Live and replay dispatch modes with wire-record JSONL storage and parent
   handoff for `api.invoke.wire` history events.
+- Replay fixture loading from `PAX_API_REPLAY_FIXTURES_PATH`.
 - Provider timeout handling via `PAX_API_PROVIDER_TIMEOUT_MS`.
 
 Still pending: richer deployment configuration, production scrape wiring, and
-driver-owned replay fixture loading.
+driver orchestration that wires scenario `api-responses` fixtures into the
+gateway environment.

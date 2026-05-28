@@ -16,12 +16,13 @@ for the broader rules about the `testing/` zone (kind-folders,
 <scenario>/
   bundle/                # creator code (or a ref to examples/bundles/)
   clients/               # client-side script
-  fixtures/              # initial state, allowed-players, url-service responses
+  fixtures/              # initial state, allowed-players, api-responses
   oracles.ts             # which oracle-lib oracles fire
   manifest.ts            # PRNG seed, determinism level, etc.
 ```
 
 Current source pass adds the first scenario manifests, declarative client
 workload plans, default nemesis selection, oracle selections, and inline
-fixtures for the three planned first-party scenarios. Workload execution and
-bundle wiring still land in later passes.
+fixtures for the three planned first-party scenarios. `api-responses` fixtures
+are gateway wire-record JSON/JSONL files keyed by outbound fingerprint.
+Workload execution and bundle wiring still land in later passes.

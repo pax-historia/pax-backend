@@ -6,7 +6,11 @@ export type DeterminismLevel = "low" | "medium" | "high";
 export type OracleScope = "all" | "scenario" | "explicit";
 export type SamplingProfile = "ramp" | "cliff_hold" | "replay";
 export type NemesisKind = "no-faults" | "shard-death-every-5m";
-export type WorkloadFixtureKind = "allowed-players" | "initial-state" | "initial-blob";
+export type WorkloadFixtureKind =
+  | "allowed-players"
+  | "initial-state"
+  | "initial-blob"
+  | "api-responses";
 
 export interface ScenarioManifest {
   readonly scenarioId: string;

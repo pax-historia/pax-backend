@@ -43,7 +43,7 @@ oracles-lib/src/guarantees/
 scenarios/<scenario>/
   bundle/                # creator code (or a ref to examples/bundles/)
   clients/               # client-side script
-  fixtures/              # initial state, allowed-players, url-service responses
+  fixtures/              # initial state, allowed-players, api-responses
   oracles.ts             # which oracle-lib oracles fire
   manifest.ts            # PRNG seed, determinism level, etc.
 

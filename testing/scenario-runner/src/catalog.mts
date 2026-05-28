@@ -140,6 +140,7 @@ function validateScenarioWorkloadPlan(value: unknown, path: string): ScenarioWor
       "allowed-players",
       "initial-state",
       "initial-blob",
+      "api-responses",
     ]);
     requireString(fixture["path"], path, `fixtures[${index}].path`);
   }

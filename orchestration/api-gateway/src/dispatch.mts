@@ -90,9 +90,16 @@ export class ApiGateway {
       }
       const record: ApiInvokeWireRecord = {
         ...recorded,
+        event: "api.invoke",
         mode: "replay",
         requestId: envelope.requestId,
+        kind: input.kind,
+        gameId: input.gameId,
+        runId: input.runId,
         rawOutbound: envelope.rawOutbound,
+        rawInbound: recorded.rawInbound,
+        statusCode: recorded.statusCode,
+        error: recorded.error,
         recordedAt: new Date().toISOString(),
       };
       await this.#records.record(record);

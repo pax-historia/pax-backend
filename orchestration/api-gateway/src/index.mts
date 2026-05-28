@@ -29,6 +29,8 @@ export {
   loadRegistryFromEnv,
 } from "./registry.mjs";
 export {
+  CompositeWireRecordStore,
+  FixtureWireRecordStore,
   InMemoryWireRecordStore,
   JsonlWireRecordStore,
   type WireRecordStore,

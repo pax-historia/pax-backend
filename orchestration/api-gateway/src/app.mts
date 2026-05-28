@@ -19,7 +19,12 @@ import {
 import { budgetFromEnv } from "./budgets.mjs";
 import { ApiGateway, type ApiGatewayMetricsSnapshot } from "./dispatch.mjs";
 import { loadRedisRegistryFromEnv, type ApiKindRegistry } from "./registry.mjs";
-import { JsonlWireRecordStore } from "./record-replay.mjs";
+import {
+  CompositeWireRecordStore,
+  FixtureWireRecordStore,
+  JsonlWireRecordStore,
+  type WireRecordStore,
+} from "./record-replay.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
@@ -29,6 +34,7 @@ export interface ApiGatewayServerConfig {
   readonly bindPort: number;
   readonly baseUrl: string;
   readonly recordsPath: string;
+  readonly replayFixturesPath?: string;
   readonly defaultMode: "live" | "replay";
   readonly providerTimeoutMs: number;
   readonly referenceServices: ReferenceServiceConfig;
@@ -46,12 +52,14 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ApiGatewayServerConfig {
   const baseUrl = env["PAX_API_GATEWAY_BASE_URL"] ?? `http://${bind.host}:${bind.port}`;
   const recordsPath =
     env["PAX_API_WIRE_RECORDS_PATH"] ?? join(REPO_ROOT, "var", "api-invoke-records.jsonl");
+  const replayFixturesPath = readOptionalEnv(env, "PAX_API_REPLAY_FIXTURES_PATH");
   const mode = env["PAX_API_GATEWAY_MODE"] === "replay" ? "replay" : "live";
   return {
     bindHost: bind.host,
     bindPort: bind.port,
     baseUrl,
     recordsPath,
+    replayFixturesPath,
     defaultMode: mode,
     providerTimeoutMs: parsePositiveInteger(env["PAX_API_PROVIDER_TIMEOUT_MS"] ?? "30000", 30_000),
     referenceServices: referenceServiceConfigFromEnv(env),
@@ -66,7 +74,7 @@ export function createApiGatewayServer(
   const gateway = new ApiGateway({
     registry,
     budget: budgetFromEnv(process.env),
-    records: new JsonlWireRecordStore(config.recordsPath),
+    records: wireRecordStoreFromConfig(config),
     defaultMode: config.defaultMode,
     providerTimeoutMs: config.providerTimeoutMs,
   });
@@ -76,6 +84,15 @@ export function createApiGatewayServer(
   });
 
   return { server, gateway, registry, config };
+}
+
+function wireRecordStoreFromConfig(config: ApiGatewayServerConfig): WireRecordStore {
+  const jsonlStore = new JsonlWireRecordStore(config.recordsPath);
+  if (!config.replayFixturesPath) return jsonlStore;
+  return new CompositeWireRecordStore(
+    [new FixtureWireRecordStore(config.replayFixturesPath), jsonlStore],
+    jsonlStore,
+  );
 }
 
 export async function startApiGatewayServer(
@@ -356,6 +373,11 @@ function readNumber(record: Readonly<Record<string, unknown>>, field: string): n
     throw new HttpError(400, "badRequest", { field, expected: "finite number" });
   }
   return value;
+}
+
+function readOptionalEnv(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = env[key]?.trim();
+  return value && value.length > 0 ? value : undefined;
 }
 
 function parseBind(raw: string): { host: string; port: number } {
