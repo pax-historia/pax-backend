@@ -88,6 +88,7 @@ normalize_machine_env() {
     --env "RIVET_GUARD_HOST=::"
     --env "RIVET_API_PEER_HOST=::"
     --env "RIVET_METRICS_HOST=::"
+    --env "PAX_PARENT_METRICS_BIND=:::7700"
     --yes
     --skip-health-checks
   )
