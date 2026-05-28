@@ -87,6 +87,11 @@ export class NemesisRuntime {
   }
 
   start(): void {
+    this.historyWriter.append("nemesis.profile.started", {
+      nemesisId: this.manifest.nemesisId,
+      runId: this.runId ?? null,
+      actionTypes: this.manifest.actions.map((action) => action.type),
+    });
     for (const runtime of this.#killShardRuntimes) {
       this.#scheduleKillShard(runtime);
     }
@@ -161,6 +166,16 @@ export class NemesisRuntime {
     minimumOccurrences: number,
     timeoutMs: number,
   ): Promise<void> {
+    if (!this.#hasAction(action)) {
+      this.historyWriter.append("nemesis.await.skipped", {
+        nemesisId: this.manifest.nemesisId,
+        runId: this.runId ?? null,
+        action,
+        minimumOccurrences,
+        reason: "action-not-configured",
+      });
+      return;
+    }
     const deadline = performance.now() + timeoutMs;
     while (performance.now() <= deadline) {
       this.throwIfFailed();
@@ -428,6 +443,11 @@ export class NemesisRuntime {
       return this.#killShardRuntimes.reduce((sum, runtime) => sum + runtime.occurrences, 0);
     }
     return this.#apiKindPartitionRuntimes.reduce((sum, runtime) => sum + runtime.occurrences, 0);
+  }
+
+  #hasAction(action: AwaitableNemesisAction): boolean {
+    if (action === "kill-shard") return this.#killShardRuntimes.length > 0;
+    return this.#apiKindPartitionRuntimes.length > 0;
   }
 }
 

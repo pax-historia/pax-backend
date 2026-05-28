@@ -9,8 +9,8 @@ The scenario-runner is the substrate's testing surface. It is **dual-role**:
    → fix → repeat.
 2. **Substrate CI** uses it as the production release gate. Every push
    runs the full scenario suite under each runtime (ivm + noivm) plus
-   every nemesis profile, and a guarantee-oracle failure on any scenario
-   blocks the release.
+   every nemesis profile, and a selected guarantee-oracle failure on any
+   scenario blocks the release.
 
 Same artifact, two consumers.
 
@@ -20,8 +20,9 @@ Same artifact, two consumers.
 - Spin up a substrate runtime (live or in-memory).
 - Drive the substrate through the workload phases.
 - Optionally inject faults via a nemesis profile.
-- Run all 17 substrate-side oracles plus any scenario-local
-  bundle-correctness oracles.
+- Run the scenario manifest's selected substrate-side oracles plus any
+  scenario-local bundle-correctness oracles. Full all-oracle replays are
+  available for audits against histories that exercise every surface.
 - Emit `result.json` with pass/fail per oracle, attribution sentences,
   and per-surface metric snapshots.
 - Run a scenario catalog as a suite matrix, emitting one history/result pair
@@ -125,10 +126,11 @@ over its public surfaces (admin REST, WS), and aborts on phase failure
 
 ## Nemesis profiles
 
-Orthogonal to the scenario. Two ship today:
+Orthogonal to the scenario. Three ship today:
 
 | Nemesis | Behavior |
 |---|---|
+| `api-kind-partition-burst` | Temporarily rewire `mock-ai.v1` to an unroutable provider URL, then restore the prior registration |
 | `no-faults` | Identity nemesis. Useful for steady-state validation |
 | `shard-death-every-5m` | Kill a random shard machine every 5 minutes |
 
@@ -264,6 +266,7 @@ steps:
         --suite testing/scenarios \
         --runtime ${{ matrix.runtime }} \
         --nemeses all \
+        --oracles scenario \
         --output-dir var/scenario-suite/${{ matrix.runtime }}/testing
 ```
 
@@ -281,8 +284,10 @@ local-mac substrate that has no production secrets.
 
 ## End-state contract
 
-- **All 17 oracles run on every scenario by default.** A failure on any
-  is a release blocker.
+- **Every scenario declares the guarantee oracles it exercises.** A
+  failure in that selected set, or in any scenario-local oracle, is a
+  release blocker. The all-oracles mode remains available for targeted
+  audit runs against broad histories.
 - **`replayCoverageGap` is a hard failure** (guarantee #5).
 - **`result.json` is reproducible** under fixed `PAX_TEST_SEED` for
   property/fuzz modes.

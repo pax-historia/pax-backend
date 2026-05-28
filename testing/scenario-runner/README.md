@@ -28,10 +28,14 @@ Current source pass provides the first runner shell:
   `expect-history-events`
 - schedules nemesis profile actions alongside the live workload; the
   `shard-death-every-5m` profile currently maps `kill-shard` to the
-  production admin drain endpoint (`POST /admin/shards/:id/drain`)
+  production admin drain endpoint (`POST /admin/shards/:id/drain`), while
+  `api-kind-partition-burst` temporarily rewires an API kind through
+  `POST /admin/api-kinds`
 - summarizes `metrics.emit` and capacity warnings into a replay attribution sentence
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
-- can narrow replay checks with `--oracles scenario` or an explicit comma-separated list
+- can narrow replay checks with `--oracles scenario` or an explicit comma-separated list;
+  CI uses `--oracles scenario` so adversarial negative scenarios only gate on the
+  guarantee oracles their manifests declare plus scenario-local oracles
 - can override fixture resolution with `--fixture-base-dir`
 - can override workload game IDs with `--game-id-prefix`
 - can target non-default live endpoints with `--control-url`, `--router-url`,
@@ -61,6 +65,7 @@ pnpm exec tsx testing/scenario-runner/src/cli.mts \
   --suite testing/scenarios \
   --runtime ivm \
   --nemeses all \
+  --oracles scenario \
   --output-dir var/scenario-suite/ivm/testing
 ```
 
@@ -77,4 +82,5 @@ PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios \
 
 The script restarts the local stack once with `PAX_CHILD_RUNNER_KIND=ivm` and
 once with `PAX_CHILD_RUNNER_KIND=noivm`, then invokes suite mode for each
-catalog. CI can use the same contract with an explicit runtime matrix.
+catalog. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`, `PAX_SCENARIO_SUITE_NEMESES`,
+or `PAX_SCENARIO_SUITE_ORACLES` when iterating locally. CI uses the same contract.

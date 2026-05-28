@@ -7,8 +7,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_ROOT="${PAX_SCENARIO_SUITE_OUTPUT_ROOT:-$REPO_ROOT/var/scenario-suite}"
 RUNTIMES="${PAX_SCENARIO_SUITE_RUNTIMES:-ivm,noivm}"
 CATALOGS="${PAX_SCENARIO_SUITE_CATALOGS:-testing/scenarios}"
+SCENARIOS="${PAX_SCENARIO_SUITE_SCENARIOS:-all}"
 NEMESES="${PAX_SCENARIO_SUITE_NEMESES:-all}"
+ORACLES="${PAX_SCENARIO_SUITE_ORACLES:-scenario}"
 PHASE_TIMEOUT_MS="${PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS:-30000}"
+CONTROL_URL="${PAX_SCENARIO_SUITE_CONTROL_URL:-${PAX_CONTROL_URL:-http://127.0.0.1:9070}}"
+API_GATEWAY_URL="${PAX_SCENARIO_SUITE_API_GATEWAY_URL:-${PAX_API_GATEWAY_BASE_URL:-http://127.0.0.1:9081}}"
+ROUTER_URL="${PAX_SCENARIO_SUITE_ROUTER_URL:-${PAX_ROUTER_URL:-http://127.0.0.1:9080}}"
 
 cd "$REPO_ROOT"
 
@@ -40,7 +45,12 @@ for runtime in "${RUNTIME_LIST[@]}"; do
     pnpm exec tsx testing/scenario-runner/src/cli.mts \
       --suite "$catalog" \
       --runtime "$runtime" \
+      --scenarios "$SCENARIOS" \
       --nemeses "$NEMESES" \
+      --oracles "$ORACLES" \
+      --control-url "$CONTROL_URL" \
+      --api-gateway-url "$API_GATEWAY_URL" \
+      --router-url "$ROUTER_URL" \
       --output-dir "$output_dir" \
       --output "$output_dir/suite.cli.json" \
       --phase-timeout-ms "$PHASE_TIMEOUT_MS"

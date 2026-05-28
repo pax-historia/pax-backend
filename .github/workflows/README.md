@@ -6,6 +6,7 @@ something the layout itself cannot:
 | Workflow | What it defends |
 |---|---|
 | `smoke.yml` | The vertical-smoke acceptance gate. Boots the local stack and runs `pnpm smoke` end-to-end. Red = no release. |
+| `scenario-suite.yml` | The adversarial release gate. Runs `testing/scenarios` across `ivm` and `noivm` with every nemesis profile; uploads histories/results/logs on failure. |
 | `typescript-strict.yml` | `tsc -b` across the workspace must pass with strict mode. Catches IPC envelope drift and bundle handler signature mistakes at compile time. |
 | `deploy-shards.yml` | Deploys `runtime/` to `pax-backend-shards`. Uses `FLY_API_TOKEN_SHARDS` (scoped, no permission on control or driver apps). Triggered on `runtime/**` or `vendor/rivet/**` changes. |
 | `deploy-control.yml` | Deploys `orchestration/` to `pax-backend-control`. Uses `FLY_API_TOKEN_CONTROL`. Triggered on `orchestration/**` changes. |

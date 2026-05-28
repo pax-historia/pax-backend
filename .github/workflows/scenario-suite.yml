@@ -1,0 +1,93 @@
+# Full adversarial scenario-suite release gate.
+#
+# Boots the local substrate stack for each child runtime and runs the
+# first-party scenario catalog against every nemesis profile. Result JSON,
+# histories, and local service logs are uploaded for failed runs.
+name: scenario-suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scenario-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario-suite:
+    runs-on: macos-14
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: pnpm
+
+      - name: Install pnpm deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build vendor rivetkit TS dist
+        run: ./scripts/build/build-vendor-ts.sh
+
+      - name: Build creator bundles
+        run: ./scripts/build/build-bundles.sh
+
+      - name: Cache rivet-engine binary
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/rivet-engine
+          key: rivet-engine-${{ hashFiles('vendor/rivet/UPSTREAM.md', 'vendor/rivet/Cargo.lock') }}
+
+      - name: Build rivet-engine
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build/build-engine.sh
+
+      - name: Cache placement-router binary
+        id: router-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/router
+          key: router-${{ hashFiles('orchestration/placement-router/**/*.rs', 'orchestration/placement-router/Cargo.lock') }}
+
+      - name: Build placement-router
+        if: steps.router-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build/build-router.sh
+
+      - name: Run scenario suite
+        env:
+          PAX_SCENARIO_SUITE_OUTPUT_ROOT: var/scenario-suite
+          PAX_SCENARIO_SUITE_RUNTIMES: ivm,noivm
+          PAX_SCENARIO_SUITE_CATALOGS: testing/scenarios
+          PAX_SCENARIO_SUITE_NEMESES: all
+          PAX_SCENARIO_SUITE_ORACLES: scenario
+          PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS: "60000"
+        run: ./scripts/test/scenario-suite-local.sh
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-suite-failure-${{ github.run_id }}
+          path: |
+            var/scenario-suite/
+            var/local-up/
+            var/history.jsonl
+            var/api-invoke-records.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
