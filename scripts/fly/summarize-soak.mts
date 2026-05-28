@@ -39,12 +39,28 @@ interface CaseSummary {
   readonly attribution_sentence?: string;
 }
 
+interface MonitorSummary {
+  readonly path: string;
+  readonly snapshots: number;
+  readonly parse_errors: readonly string[];
+  readonly first_snapshot_at?: string;
+  readonly last_snapshot_at?: string;
+  readonly last_process_alive?: boolean;
+  readonly last_exit_code?: string | number | null;
+  readonly last_shard_count?: number;
+  readonly last_active_games?: number;
+  readonly last_failures?: number;
+  readonly last_session_closed?: number;
+  readonly last_session_errors?: number;
+}
+
 interface SoakSummary {
   readonly schema_version: 1;
   readonly kind: "phase-5-soak-summary";
   readonly generated_at: string;
   readonly soak_dir: string;
   readonly cases: readonly CaseSummary[];
+  readonly monitor?: MonitorSummary;
   readonly summary: {
     readonly total_cases: number;
     readonly result_files: number;
@@ -63,6 +79,10 @@ const options = parseArgs(process.argv.slice(2));
 const soakDir = resolve(options.soakDir);
 const files = await listFiles(soakDir);
 const historyPaths = files.filter((path) => path.endsWith(".history.jsonl")).sort();
+const monitor = await summarizeMonitor(
+  soakDir,
+  files.find((path) => path === join(soakDir, "monitor", "status.jsonl")),
+);
 const resultByCase = new Map(
   files
     .filter((path) => path.endsWith(".result.json"))
@@ -84,6 +104,7 @@ const summary: SoakSummary = {
   generated_at: new Date().toISOString(),
   soak_dir: soakDir,
   cases,
+  monitor,
   summary: {
     total_cases: cases.length,
     result_files: cases.filter((entry) => entry.result_path).length,
@@ -198,6 +219,52 @@ async function readScenarioResult(
   };
 }
 
+async function summarizeMonitor(root: string, path: string | undefined): Promise<MonitorSummary | undefined> {
+  if (!path) return undefined;
+  const raw = await readFile(path, "utf8");
+  const parseErrors: string[] = [];
+  let snapshots = 0;
+  let firstSnapshotAt: string | undefined;
+  let lastSnapshotAt: string | undefined;
+  let lastSnapshot: Record<string, unknown> | undefined;
+
+  for (const [index, line] of raw.split(/\r?\n/).entries()) {
+    if (line.trim().length === 0) continue;
+    let snapshot: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (!isRecord(parsed)) throw new Error("monitor line must be a JSON object");
+      snapshot = parsed;
+    } catch (err) {
+      parseErrors.push(`${relative(root, path)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`);
+      continue;
+    }
+    snapshots += 1;
+    const timestamp = stringValue(snapshot["ts"]);
+    if (timestamp && !firstSnapshotAt) firstSnapshotAt = timestamp;
+    if (timestamp) lastSnapshotAt = timestamp;
+    lastSnapshot = snapshot;
+  }
+
+  const histories = Array.isArray(lastSnapshot?.["histories"]) ? lastSnapshot["histories"] : [];
+  const lastHistoryRows = histories.filter(isRecord);
+  const lastShards = isRecord(lastSnapshot?.["shards"]) ? lastSnapshot["shards"] : undefined;
+  return {
+    path: relative(root, path),
+    snapshots,
+    parse_errors: parseErrors,
+    first_snapshot_at: firstSnapshotAt,
+    last_snapshot_at: lastSnapshotAt,
+    last_process_alive: booleanValue(lastSnapshot?.["processAlive"]),
+    last_exit_code: scalarOrNull(lastSnapshot?.["exitCode"]),
+    last_shard_count: numberValue(lastShards?.["count"]),
+    last_active_games: numberValue(lastShards?.["total"]),
+    last_failures: sumNumeric(lastHistoryRows, "failures"),
+    last_session_closed: sumNumeric(lastHistoryRows, "sessionClosed"),
+    last_session_errors: sumNumeric(lastHistoryRows, "sessionErrors"),
+  };
+}
+
 function gateFailuresFor(
   options: CliOptions,
   cases: readonly CaseSummary[],
@@ -302,6 +369,24 @@ function positiveIntOption(
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function scalarOrNull(value: unknown): string | number | null | undefined {
+  if (value === null) return null;
+  return typeof value === "string" || typeof value === "number" ? value : undefined;
+}
+
+function sumNumeric(rows: readonly Record<string, unknown>[], key: string): number | undefined {
+  if (rows.length === 0) return undefined;
+  return rows.reduce((sum, row) => sum + (numberValue(row[key]) ?? 0), 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

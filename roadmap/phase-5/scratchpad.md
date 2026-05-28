@@ -164,3 +164,7 @@ Confirmed the detached monitor cadence. The second monitor line landed at `2026-
 ## 2026-05-28 16:15 PDT
 
 Added `scripts/fly/pull-soak-artifacts.sh` so partial `fly machine exec` streams do not corrupt local evidence pulls. The helper base64-encodes a remote tar stream before decoding and merging into ignored `var/` locally; raw binary stdout through `fly machine exec` was not safe because it text-normalized gzip bytes. Verified it against `/data/phase-5/soak/ivm-20260528T222045Z`, then ran `scripts/fly/summarize-soak.mts` over the pulled copy; the in-progress summary saw one no-faults case, 1000 placements across all 10 shards, zero parse errors, and no failing/error cases yet.
+
+## 2026-05-28 16:18 PDT
+
+Extended `scripts/fly/summarize-soak.mts` to include `monitor/status.jsonl` when present, summarizing snapshot count, first/last monitor timestamp, last process/exit status, last shard count, active games, and aggregate workload failure/session close/session error counts. Verified it against the pulled active soak after the third monitor line at `2026-05-28T23:17:23.279Z`; the monitor summary showed three clean snapshots, last process alive, no exit code, 10 shards, 1000 active games, and zero failures/closes/errors.
