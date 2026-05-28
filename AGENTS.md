@@ -8,6 +8,8 @@
 
 The codebase is just code — don't scatter READMEs or heavy in-code documentation; if some high level decision / insight needs writing down, it belongs in `docs-next/` (the target) or `roadmap/` (progress toward it).
 
+## Commit frequency: Around once per task unless you judge committing more or less often for some particular stretch of time is more appropriate. 
+
 ## Standing constraints
 
 These are not optional and not negotiable inside the active phase.
