@@ -1,0 +1,11 @@
+{
+  "name": "@pax-backend/oracles-lib",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "scripts": {
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  }
+}

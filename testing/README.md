@@ -54,5 +54,6 @@ nemeses/<nemesis>/
 **Soft rules:** as in the zone READMEs — one-file-per-kind is a target,
 `_internal/` is the escape hatch, kind-folders are created on first use.
 
-Smoke today ships `smoke-bot/` only. The full scenario-runner +
-oracles-lib + scenarios + nemeses land in M4.
+Smoke today ships `smoke-bot/`, and `oracles-lib/` now has the first
+source-only guarantee oracle package. The full scenario-runner + scenarios +
+nemeses still land in a later pass.

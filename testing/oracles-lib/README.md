@@ -27,4 +27,7 @@ decouples filesystem identity from prose ordering in the plan README.
 See [`../README.md`](../README.md) for the full numbered list and the
 naming convention rationale.
 
-Stub. M4 lands the oracle library along with the scenario-runner.
+Current source pass ships the package skeleton plus one named oracle function
+per Strong Platform Guarantee. Each oracle reads structured history events and
+returns `pass`, `fail`, or `inconclusive`; the scenario-runner will decide how
+strictly to treat inconclusive results for each run mode.

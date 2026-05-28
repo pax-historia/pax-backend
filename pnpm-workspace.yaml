@@ -6,4 +6,5 @@ packages:
   - "orchestration/api-gateway"
   - "sdk/runtime-sdk"
   - "examples/bundles/*"
+  - "testing/oracles-lib"
   - "testing/smoke-bot"
