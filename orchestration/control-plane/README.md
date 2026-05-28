@@ -26,7 +26,7 @@ Shard registry + the admin REST surface from [plan](../../README.md)
   running game's pending `c.state` writes to Tigris, so the redeploy
   runbook can rely on zero state loss on planned moves (see
   [README](../../../README.md) guarantee #11 and
-  [docs/ops/redeploy-runbook.md](../../docs/ops/redeploy-runbook.md)).
+  [docs-next/subsystems/redeploy-and-drain.md](../../docs-next/subsystems/redeploy-and-drain.md)).
 - API kind registration (`POST /admin/api-kinds`, `GET /admin/api-kinds`,
   `GET /admin/api-kinds/:kindName`, `DELETE /admin/api-kinds/:kindName`)
 - `GET /admin/history` (cursor-paginated; batch + live-tail)

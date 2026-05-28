@@ -4,9 +4,9 @@
 > scope, contracts, and iteration loop. The bundle itself (modules,
 > workflow runtime, default workflow strings, scenarios) lands in a
 > follow-up implementation pass. The plan is in
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md);
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md);
 > the substrate-additions RFC is in
-> [`docs/dev/substrate-additions-for-historia-port.md`](../../../docs/dev/substrate-additions-for-historia-port.md).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md).
 
 `historia-default` is the reference creator bundle for the historia game
 shape — chat-driven world-building with AI advisors, jump-forward
@@ -141,7 +141,7 @@ anything the bundle needed durable-on-write should have used
 ## Required substrate additions
 
 The proof needs two small substrate additions. Both are documented in
-[`substrate-additions-for-historia-port.md`](../../../docs/dev/substrate-additions-for-historia-port.md):
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md):
 
 1. **Sleep grace period** — `SLEEP_GRACE_MS = 60_000` substrate constant.
    Game stays warm for 60s after the last disconnect.
@@ -244,13 +244,13 @@ flowchart LR
 The substrate's existing scenario-runner
 ([`testing/scenario-runner/`](../../../testing/scenario-runner/)) hosts
 every piece of this loop. See
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §5b for the full breakdown of what's already there vs. what's
 bundle-specific authoring.
 
 **On a substrate-side oracle failure:** the bundle has a substrate-contract
 bug to file — record it as a finding in
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §6 and route to the substrate team.
 
 **On a bundle-side oracle failure:** the bundle has a game-logic bug to
@@ -259,7 +259,7 @@ fix in this directory.
 ## Scenarios (planned)
 
 The proof's representative coverage set; full descriptions in
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §5 Phase 6:
 
 | Scenario | What it exercises |
@@ -280,9 +280,9 @@ oracles green) is the finish line for the proof.
 
 ## Cross-references
 
-- Full proof plan: [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
-- Substrate-additions RFC: [`docs/dev/substrate-additions-for-historia-port.md`](../../../docs/dev/substrate-additions-for-historia-port.md)
-- Substrate creator contract: [`docs/contract/contract.md`](../../../docs/contract/contract.md)
-- Substrate formal spec: [`docs/contract/contract-spec.md`](../../../docs/contract/contract-spec.md)
+- Full proof plan: [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
+- Substrate-additions RFC: [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
+- Substrate creator contract: [`docs-next/contract/creator-runtime.md`](../../../docs-next/contract/creator-runtime.md)
+- Substrate formal spec: [`docs-next/contract/external-api-channel.md`](../../../docs-next/contract/external-api-channel.md)
 - Scenario-runner harness: [`testing/scenario-runner/`](../../../testing/scenario-runner/)
 - Reference bundle (smoke): [`examples/bundles/hello-ws-echo/`](../hello-ws-echo/)

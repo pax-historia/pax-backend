@@ -1,7 +1,7 @@
 # `ai.chat.v1`
 
 > **Status: schema-only spec.** Part of the historia-default proof (see
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)).
 > No live HTTP server runs for the proof — bundle calls are replayed from
 > canned `api-responses` fixtures via the scenario-runner's existing
 > replay-mode short-circuit. Production paxhistoria's
@@ -15,7 +15,7 @@ command (chat responses, advisor responses, jump-forward streams, action
 suggestions, moderation classification).
 
 The substrate forwards the standard gateway envelope per
-[`docs/contract/contract-spec.md`](../../../docs/contract/contract-spec.md)
+[`docs-next/contract/external-api-channel.md`](../../../docs-next/contract/external-api-channel.md)
 §"API gateway envelope" and records the wire-grain round trip. Everything
 inside `args` and `result` is opaque to the substrate.
 
@@ -103,7 +103,7 @@ For every `playerId` in `args.splitPlayerIDs`, the URL service MUST:
    *before* creators can ship arbitrary workflows in `blob.workflows`.
 
 All three checks live in `ai.chat.v1`'s implementation, NOT in the
-substrate, per `docs/why/why-no-billing.md`.
+substrate, per `docs-next/why/why-no-billing.md`.
 
 ## Provider routing, billing pipeline, telemetry
 

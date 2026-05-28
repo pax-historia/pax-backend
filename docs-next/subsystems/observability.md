@@ -291,8 +291,7 @@ The `scripts/observability/` config sets BetterStack as default; an
 operator who wants a different sink edits the Vector config and
 re-deploys. No substrate code changes.
 
-See [`docs/ops/observability-betterstack-setup.md`](../../docs/ops/observability-betterstack-setup.md)
-for the BetterStack-specific provisioning runbook (extant document).
+See `scripts/observability/` for the BetterStack-specific Vector configs.
 
 ## Offline / no-network fallback
 
@@ -340,5 +339,3 @@ See [`scenario-runner.md`](scenario-runner.md) §sampling profiles.
 - [`scenario-runner.md`](scenario-runner.md) — testing-mode behavior
 - [`why/why-rivet-vendored.md`](../why/why-rivet-vendored.md) — vendored
   shard engine observability pass-through
-- [`docs/ops/observability-betterstack-setup.md`](../../docs/ops/observability-betterstack-setup.md)
-  — BetterStack provisioning

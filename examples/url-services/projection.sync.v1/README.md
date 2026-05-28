@@ -1,7 +1,7 @@
 # `projection.sync.v1`
 
 > **Status: schema-only spec.** Part of the historia-default proof (see
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)).
 > No live HTTP server runs for the proof — bundle calls are replayed from
 > canned `api-responses` fixtures via the scenario-runner's existing
 > replay-mode short-circuit. Production paxhistoria's
@@ -22,7 +22,7 @@ the substrate's history stream is the wrong default for facts that only
 the bundle knows.
 
 See
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §2b for the three-bucket model: substrate-derivable vs.
 AI-service-derivable vs. bundle-only-knowable. This URL service is the
 bundle-only-knowable bucket.

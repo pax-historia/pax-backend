@@ -211,6 +211,3 @@ The scenario-runner provides every piece of this loop. See
 - [`operator-overlays/`](../operator-overlays/) — all the patterns the
   bundle composes
 - [`contract/`](../contract/) — the contract the bundle programs against
-- [`docs/dev/port-from-paxhistoria.md`](../../docs/dev/port-from-paxhistoria.md)
-  — the original planning doc (historical; this proof page is the
-  desired-state successor)

@@ -16,7 +16,7 @@ something the layout itself cannot:
 one zone" check — multi-zone PRs are encouraged (a feature that adds an
 admin endpoint, a manifest type, an oracle, and a demo bundle is ONE PR).
 The zones exist for discovery and deploy-token scoping, not for review
-restriction. See [`docs/dev/layout.md`](../../docs/dev/layout.md) for the
+restriction. See [`docs-next/vision/boundaries-and-layers.md`](../../docs-next/vision/boundaries-and-layers.md) for the
 full mental model.
 
 ## Scoped tokens (Fly + npm)

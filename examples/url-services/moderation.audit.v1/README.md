@@ -1,7 +1,7 @@
 # `moderation.audit.v1`
 
 > **Status: schema-only spec.** Part of the historia-default proof (see
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)).
 > No live HTTP server runs for the proof — bundle calls are replayed from
 > canned `api-responses` fixtures via the scenario-runner's existing
 > replay-mode short-circuit. Production paxhistoria's
@@ -14,7 +14,7 @@ bundle calls when its moderation workflow reaches a verdict or initiates
 a ban.
 
 The substrate forwards the standard gateway envelope per
-[`docs/contract/contract-spec.md`](../../../docs/contract/contract-spec.md)
+[`docs-next/contract/external-api-channel.md`](../../../docs-next/contract/external-api-channel.md)
 §"API gateway envelope" and records the wire-grain round trip. Everything
 inside `args` and `result` is opaque to the substrate.
 
@@ -75,7 +75,7 @@ service may rate-limit per `gameId` if desired.
 | Concern | Where it lives |
 |---|---|
 | Per-call ban-check (was paxhistoria's `checkBan`) | Not needed: substrate's `DELETE /admin/players/:id` force-disconnects banned players cluster-wide before the bundle ever sees them again |
-| Ban-saga-failed alerts (was paxhistoria's `alertBanFailed`) | Substrate observability via `c.log.emit` + the BetterStack pipeline (per [`docs/ops/observability.md`](../../../docs/ops/observability.md)) |
+| Ban-saga-failed alerts (was paxhistoria's `alertBanFailed`) | Substrate observability via `c.log.emit` + the BetterStack pipeline (per [`docs-next/subsystems/observability.md`](../../../docs-next/subsystems/observability.md)) |
 
 These were on an earlier 4-op draft and were dropped because the
 substrate's existing primitives cover them.
@@ -92,7 +92,7 @@ keyed by request fingerprint. Suggested coverage:
   recovery path).
 
 The `moderation-flow` scenario in
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §5 exercises the full path: content flagged → `recordVerdict` →
 `recordBan` → substrate `DELETE /admin/players/:id` → all games
 force-disconnect the player.

@@ -123,5 +123,3 @@ depth is a tunable we revisit once the shape is exercised.
   — implementation details
 - [`vision/trust-model.md`](../vision/trust-model.md) — full trust positions
 - [`vision/guarantees.md`](../vision/guarantees.md) #8 — crash blast radius
-- [`docs/ops/sandboxing-current-pick.md`](../../docs/ops/sandboxing-current-pick.md)
-  — the operational notes (pre-`docs-next/` material)

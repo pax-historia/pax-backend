@@ -3,13 +3,7 @@
 This tree is the canonical description of what the **substrate** is supposed to
 be when it ships. It is not a status report. It does not describe what code
 exists today; it describes what the system looks like once everything in it is
-built. If a page here disagrees with [`/Users/eli/Documents/GitHub/pax-backend/README.md`](../README.md), this tree is
-correct and the legacy doc is a historical artifact.
-
-The existing [`docs/`](../docs/) directory and the root README are frozen as
-implementation notes until this tree is internally coherent. Once it is, they
-get demoted to "historical / current-state" material and `docs-next/` is
-promoted to `docs/`.
+built. If a page here disagrees with [`README.md`](../README.md), this tree wins.
 
 ## How to read the tree
 

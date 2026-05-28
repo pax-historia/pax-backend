@@ -1,7 +1,7 @@
 # `participation.v1`
 
 > **Status: schema-only spec.** Part of the historia-default proof (see
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)).
 > No live HTTP server runs for the proof — bundle calls are replayed from
 > canned `api-responses` fixtures via the scenario-runner's existing
 > replay-mode short-circuit. Host-initiated writes (promotion) are
@@ -19,7 +19,7 @@ The substrate stays participation-agnostic — there is no
 state lives here.
 
 See
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §2c for the asymmetric write rules and the end-to-end claim flow.
 
 ## Stored shape
@@ -106,7 +106,7 @@ This delivers `onHostEvent({ eventType: "participationChanged", payload })`
 to the bundle (best-effort while-awake — `wakeOnDelivery: false`, the
 default). If the game is asleep, the event is dropped; the bundle
 re-fetches fresh state from `participation.v1.get` on next wake. See
-[`substrate-additions-for-historia-port.md`](../../../docs/dev/substrate-additions-for-historia-port.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §2 for the host-event channel spec.
 
 The URL service uses the substrate's admin token to call the host-event
@@ -122,7 +122,7 @@ rejected) IS the gate that the rest of the system depends on.
 ## End-to-end claim flow
 
 For reference; full walkthrough lives in
-[`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)
+[`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
 §2c.
 
 1. Player connects WS as spectator (default).

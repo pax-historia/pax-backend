@@ -1,7 +1,7 @@
 # `flag.search.v1`
 
 > **Status: schema-only spec.** Part of the historia-default proof (see
-> [`docs/dev/port-from-paxhistoria.md`](../../../docs/dev/port-from-paxhistoria.md)).
+> [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)).
 > No live HTTP server runs for the proof — bundle calls are replayed from
 > canned `api-responses` fixtures via the scenario-runner's existing
 > replay-mode short-circuit. Production paxhistoria's
@@ -14,7 +14,7 @@ calls during jump-forward when a workflow needs an entity flag (for
 newly-formed nations, conquered regions, custom entities, etc.).
 
 The substrate forwards the standard gateway envelope per
-[`docs/contract/contract-spec.md`](../../../docs/contract/contract-spec.md)
+[`docs-next/contract/external-api-channel.md`](../../../docs-next/contract/external-api-channel.md)
 §"API gateway envelope" and records the wire-grain round trip. Everything
 inside `args` and `result` is opaque to the substrate.
 

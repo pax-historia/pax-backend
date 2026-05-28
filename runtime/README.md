@@ -2,7 +2,7 @@
 
 **Deploys to `pax-backend-shards`.** One image per release, rolled across all
 shard machines (canary one, watch metrics 10–30 minutes, rolling
-drain-and-replace — see [redeploy runbook](../docs/ops/redeploy-runbook.md)).
+drain-and-replace — see [redeploy and drain](../docs-next/subsystems/redeploy-and-drain.md)).
 
 See the [plan](../README.md) §"Repo shape (proposed)" for the full layout
 rationale, §"Trust model" for who is allowed to talk to whom, and

@@ -10,8 +10,7 @@
 #
 # Why native: pax-rocks-spike measured cold local Docker (linux/amd64 via
 # Rosetta) at >20 min to 43 min for the same engine build. Native Apple
-# Silicon cargo skips the cross-compile entirely. See docs/dev/dev-loop.md
-# for the build-time evidence trail.
+# Silicon cargo skips the cross-compile entirely.
 
 set -euo pipefail
 

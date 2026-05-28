@@ -693,7 +693,7 @@ This split is *why* the substrate dropped billing concerns: tests against the su
 
 Observability is a co-architecture with Testability, not an afterthought. The substrate's job to narrate what happened faithfully is what enables both — oracles read the narration to assert guarantees, operators read it to attribute production bottlenecks to a named subsystem within minutes, not days. The sister spikes ([pax-rivet-refactor](/Users/eli/Documents/GitHub/pax-rivet-refactor/), [pax-spike-fly](/Users/eli/Documents/GitHub/pax-spike-fly/), [pax-sharded-spike](/Users/eli/Documents/GitHub/pax-sharded-spike/)) collectively spent days proving which observability primitives actually attribute cliffs and which ones merely *localize* them. We ship those lessons as a contract instead of rediscovering them.
 
-The full design lives in [docs/ops/observability.md](docs/ops/observability.md), with the operational provisioning runbook in [docs/ops/observability-betterstack-setup.md](docs/ops/observability-betterstack-setup.md). Load-bearing decisions:
+The full design lives in [docs-next/subsystems/observability.md](docs-next/subsystems/observability.md). Load-bearing decisions:
 
 - **Five surfaces** get the same four primitives. Placement router, parent actor, child runner, API gateway, and the vendored Rivet engine each emit structured logs (JSON), Prometheus metrics (`/metrics`), OTLP traces (W3C `traceparent`), and history events. The substrate's job is to make the seams between surfaces legible, not to invent a per-seam observability product.
 - **One correlation backbone**. A W3C `trace_id` flows from the client's HTTP placement request through the signed JWT, into the WS session, through the IPC envelope to the child, out the API gateway envelope to URL services, and into Rivet's own spans via the `RIVET_OTEL_ENABLED=1` path. The substrate also stamps `run_id` (scenario-runner only), `game_id`, `session_id`, and a monotonic-per-shard `pax_seq` on every event for causal ordering oracles can trust.
@@ -743,7 +743,7 @@ The substrate exists to be the trust seam for untrusted JavaScript and the faith
 - **`c.state` flush-window durability.** Sync-feeling API (read returns the in-process cached value; write is non-blocking against the cache) with eventually-durable semantics: writes flush to Tigris within a configurable window (default 1 s, tunable per preset down to single-digit ms). `await c.state.flush()` forces a synchronous flush. Planned sleep / drain / cross-shard migration always flushes before releasing the game — **zero loss on planned transitions**. Unplanned process / machine death loses at most the flush window of writes.
 - **`c.blob` is a keyed per-game namespace.** API surface is `put(key, bytes)` / `get(key)` / `delete(key)` / `list(prefix?)`; Tigris prefix is `blob/<gameId>/`. Caps: **≤ 1024 keys, ≤ 100 MB per game**. One `blobCompatTag` per game (namespace-level), not per key. Substrate-side operations (snapshot, delete-game) treat the namespace as a unit; there is no per-key admin surface.
 - **Sleep is dormancy.** Once state is Tigris-canonical, a sleeping game holds no resources on any shard; the next wake is a placement decision on whichever shard has capacity, followed by one Tigris GET. No new lifecycle stage and no shard-pinning of inactive games. Per-shard volume use is bounded by working set, not by lifetime game count.
-- **Six nouns of a game, by design.** `gameId`, bundle pointer, state, blob namespace, roster, plus ephemeral derived state (sessions, history, recent `api.invoke` records). Anything that wants to be a seventh top-level noun is an alarm bell. The blob namespace's internal keying is the namespace's structure, the same way a database table has rows — we still talk about "the database" and "the game's blob" as singular nouns. The client bundle, marketing site, billing, etc. all live outside the substrate by deliberate scope discipline (see [docs/why/why-no-billing.md](docs/why/why-no-billing.md)).
+- **Six nouns of a game, by design.** `gameId`, bundle pointer, state, blob namespace, roster, plus ephemeral derived state (sessions, history, recent `api.invoke` records). Anything that wants to be a seventh top-level noun is an alarm bell. The blob namespace's internal keying is the namespace's structure, the same way a database table has rows — we still talk about "the database" and "the game's blob" as singular nouns. The client bundle, marketing site, billing, etc. all live outside the substrate by deliberate scope discipline (see [docs-next/why/why-no-billing.md](docs-next/why/why-no-billing.md)).
 - **Wake reasons collapsed.** `cold-restart-after-shard-loss` is gone — its job is folded into the new `cold-restart-from-storage` reason, which covers both planned migration and unplanned machine death. Bundles get the last durable state in both cases; the substrate doesn't surface a needless distinction.
 
 ### The big-picture scope decision
@@ -816,7 +816,7 @@ None at the substrate-design layer. Implementation-time questions (specific volu
 Repo lives at `pax-historia/pax-backend` on GitHub. The convention in one
 sentence: **"where does it run?" answers the top-level folder; "what kind
 of thing is it?" answers the sub-folder.** The full three-sentence mental
-model is in [`docs/dev/layout.md`](docs/dev/layout.md).
+model is in [`docs-next/vision/boundaries-and-layers.md`](docs-next/vision/boundaries-and-layers.md).
 
 ```
 pax-backend/
@@ -890,7 +890,7 @@ pax-backend/
     rivet/                       # Vendored from pax-rivet-refactor's pin
       UPSTREAM.md                # provenance + re-pin procedure
 
-  docs/                          # markdown only
+  docs-next/                     # canonical architecture tree
     contract/                    # contract.md, contract-spec.md, api-kinds-catalog.md,
                                  #   bundle-compatibility.md, compute-budgets-catalog.md
     ops/                         # redeploy-runbook.md, fly-topology.md, sandboxing-current-pick.md
@@ -914,7 +914,7 @@ pax-backend/
 Seven zones. Three of them are deployable (`runtime/`, `orchestration/`,
 `testing/`); the rest are either consumed elsewhere (`sdk/` ships to npm,
 `vendor/` rebuilds into the shard image), pure documentation (`examples/`,
-`docs/`), or cross-zone infrastructure (`shared/`, `scripts/`,
+`docs-next/`), or cross-zone infrastructure (`shared/`, `scripts/`,
 `.github/`). Multi-zone PRs are encouraged — the zones exist for
 discovery and deploy-token scoping, not for review restriction.
 
@@ -963,6 +963,6 @@ The fourth surface (frontend / client bundles) is not our problem.
     - `hello-ws-echo` — echoes every `onPlayerMessage` body back to the sending player via `c.ws.send`. Exercises the WS tunnel, idempotency keys, and sessionId stability.
     - `hello-ai-call` — once per minute, invokes `c.api.invoke('mock-ai.v1', { messages: [...] })` for each connected player. Exercises the API gateway, the context envelope (the URL service sees `connectedSessions`), the URL service round trip, and the wire-grain recording end-to-end. Whatever the URL service does with billing (if anything) is its own affair.
     - `hello-multifeature` — combines all of the above slowly enough to be readable in a tail of the history. The integration smoke for the substrate.
-10. Stand up the v1 Fly footprint: 10 Rivet shard machines, 1 control+gateway machine (with the four-plus reference URL services co-located as HTTP routes), and any other URL services on demand. **No in-app Postgres in v1** — the substrate has no ledger to back. Spin up scenario-runner driver machines on demand for load runs and tear them down after. Document the current footprint and scale-up procedure in `docs/ops/fly-topology.md`.
-11. Document the contract in `docs/contract/contract.md` (plain language for creators) and `docs/contract/contract-spec.md` (formal spec the runtime/harness implement against). Both must be explicit that the substrate has no billing primitives and point at the URL-service pattern for anything billing-shaped. Both must also explain the compat-tag model: opaque strings, set membership, two gates, operator-owned naming conventions, worked examples. `docs/contract/contract-spec.md` documents the `BundleManifest` shape, the two enforcement gates, and the dry-run / histogram admin endpoints. The harness's oracle library and the spec doc must be in lock-step.
+10. Stand up the v1 Fly footprint: 10 Rivet shard machines, 1 control+gateway machine (with the four-plus reference URL services co-located as HTTP routes), and any other URL services on demand. **No in-app Postgres in v1** — the substrate has no ledger to back. Spin up scenario-runner driver machines on demand for load runs and tear them down after. Document the current footprint and scale-up procedure under [`docs-next/`](docs-next/).
+11. Document the contract under [`docs-next/contract/`](docs-next/contract/) and [`docs-next/reference/`](docs-next/reference/). Both must be explicit that the substrate has no billing primitives and point at the URL-service pattern for anything billing-shaped. Both must also explain the compat-tag model: opaque strings, set membership, two gates, operator-owned naming conventions, worked examples. The harness's oracle library and the contract docs must be in lock-step.
 12. Sister spikes are read-only references. Patterns lifted, code rewritten in-repo.
