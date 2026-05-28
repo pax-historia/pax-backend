@@ -285,8 +285,8 @@ function gateFailuresFor(
   runExitCode: string | undefined,
 ): readonly string[] {
   const failures: string[] = [];
-  if (options.expectCases !== undefined && cases.length < options.expectCases) {
-    failures.push(`expected at least ${options.expectCases} case(s), saw ${cases.length}`);
+  if (options.expectCases !== undefined && cases.length !== options.expectCases) {
+    failures.push(`expected exactly ${options.expectCases} case(s), saw ${cases.length}`);
   }
   if (options.expectCaseIds.length > 0) {
     const seen = new Set(cases.map((entry) => entry.case_id));
