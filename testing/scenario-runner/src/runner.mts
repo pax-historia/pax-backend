@@ -1,4 +1,5 @@
 import {
+  type OracleResult,
   readHistoryJsonl,
   runAllGuaranteeOracles,
   runNamedGuaranteeOracles,
@@ -38,7 +39,7 @@ export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult
       metrics: input.metrics ?? analysis.metrics,
       attribution: input.attribution ?? analysis.attribution,
     },
-    [...oracleResults, ...scenarioOracleResults],
+    [...oracleResults, ...scenarioOracleResults, ...(input.extraOracleResults ?? [])],
     startedAtMs,
     finishedAtMs,
   );
@@ -71,6 +72,7 @@ export async function runReplayFromCatalog(
   };
   let liveMetrics: ScenarioMetrics | undefined;
   let liveAttribution: ScenarioAttribution | undefined;
+  let liveFailure: OracleResult | undefined;
   if (input.mode !== "replay") {
     if (!workloadPlan || !runtimeEnvironment) {
       throw new Error(`${scenarioManifest.scenarioId} has no workload plan to execute`);
@@ -103,6 +105,22 @@ export async function runReplayFromCatalog(
         startedAtMs: liveStartedAtMs,
         finishedAtMs: liveFinishedAtMs,
       });
+    } catch (err) {
+      const liveFinishedAtMs = Date.now();
+      liveFailure = workloadExecutionFailure(err);
+      await appendArchivedHistory({
+        historyPath: hydratedInput.historyPath,
+        startedAtMs: liveStartedAtMs,
+        finishedAtMs: liveFinishedAtMs,
+        gameIds,
+      });
+      await appendControlPlaneHistory({
+        historyPath: hydratedInput.historyPath,
+        controlPlaneUrl: hydratedInput.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"],
+        gameIds,
+        startedAtMs: liveStartedAtMs,
+        finishedAtMs: liveFinishedAtMs,
+      });
     } finally {
       const collection = await metricsCollector.stop();
       liveMetrics = collection.metrics;
@@ -113,6 +131,9 @@ export async function runReplayFromCatalog(
     ...hydratedInput,
     metrics: hydratedInput.metrics ?? liveMetrics,
     attribution: hydratedInput.attribution ?? liveAttribution,
+    extraOracleResults: liveFailure
+      ? [...(hydratedInput.extraOracleResults ?? []), liveFailure]
+      : hydratedInput.extraOracleResults,
   });
 }
 
@@ -121,4 +142,20 @@ function scenarioGameIds(workload: NonNullable<ScenarioRunnerInput["workloadPlan
     { length: workload.maxGames },
     (_unused, index) => `${workload.gameIdPrefix}-${index + 1}`,
   );
+}
+
+function workloadExecutionFailure(err: unknown): OracleResult {
+  const message = err instanceof Error ? err.message : String(err);
+  return {
+    oracle: "workload-execution",
+    guarantee: 0,
+    status: "fail",
+    checkedEvents: 0,
+    findings: [
+      {
+        code: "workload-execution-failed",
+        message,
+      },
+    ],
+  };
 }

@@ -200,6 +200,7 @@ export interface ScenarioRunnerInput {
   readonly phaseTimeoutMs?: number;
   readonly metrics?: ScenarioMetrics;
   readonly attribution?: ScenarioAttribution;
+  readonly extraOracleResults?: readonly OracleResult[];
   readonly metricsScrapeIntervalMs?: number;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
