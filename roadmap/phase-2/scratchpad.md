@@ -291,3 +291,22 @@ Updated the runner to support per-wave message fanout and changed the Phase 2
 no-fault workload to spread each send-json wave across 30 seconds, with 31
 one-minute waves. This keeps the proof at a 30-minute sustained window while
 removing the artificial per-wave burst that was saturating the shard.
+
+## 2026-05-28 07:32 PDT
+
+No-fault medium proof `phase2-no-fault-20260528135419` completed green on Fly.
+The run opened 100 `hello-multifeature` games on shard `shard-fly-iad-1`,
+delivered 100 host events, sent 100 bundle flips, held the paced message phase
+for 1,830,218 ms, closed all sessions, and observed the shard return to
+`activeGames: 0` during the post-close wait.
+
+All 17 guarantee oracles passed over 70,491 checked events. Artifacts:
+
+- `var/phase-2/phase2-no-fault-20260528135419.history.jsonl` (84 MB)
+- `var/phase-2/phase2-no-fault-20260528135419.result.json`
+
+Live monitoring during the sustained window repeatedly sampled the shard
+registry at 100 active games and found no `handlerError`, timeout, disconnect,
+internal-error, span-drop, or workflow-backlog signatures in Fly logs. The
+runner result's top attribution candidate was
+`parent.compute.memory-bytes.usage_ratio` with max 2.06, but no oracle failed.
