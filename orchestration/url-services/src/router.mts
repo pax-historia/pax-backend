@@ -1,5 +1,5 @@
 import type { ApiKindRegistration, GatewayHttpRequestBody } from "@pax-backend/ipc-protocol";
-import { withPaxSpan } from "@pax-backend/node-telemetry";
+import { withPaxSpanFromTraceId } from "@pax-backend/node-telemetry";
 
 import { delayService } from "./services/delay.mjs";
 import { echoService } from "./services/echo.mjs";
@@ -55,7 +55,7 @@ export async function handleReferenceService(
     };
   }
 
-  return withPaxSpan(
+  return withPaxSpanFromTraceId(
     `urlsvc.${service.kindName}.invoke`,
     {
       kind: service.kindName,
@@ -64,6 +64,7 @@ export async function handleReferenceService(
       bundle_name: request.context.bundleName,
       bundle_compat_tag: request.context.bundleCompatTag,
     },
+    request.context.traceId,
     async (span) => {
       const metrics = metricsFor(service.kindName);
       metrics.invocationsTotal += 1;

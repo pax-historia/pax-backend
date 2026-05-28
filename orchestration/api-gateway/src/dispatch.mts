@@ -6,7 +6,7 @@ import {
   type ApiInvokeWireRecord,
   type GatewayHttpResponseBody,
 } from "@pax-backend/ipc-protocol";
-import { withPaxSpan } from "@pax-backend/node-telemetry";
+import { withPaxSpanFromTraceId } from "@pax-backend/node-telemetry";
 
 import type { ApiInvocationBudget } from "./budgets.mjs";
 import { buildGatewayEnvelope, stableSerialize } from "./envelope.mjs";
@@ -62,7 +62,7 @@ export class ApiGateway {
   }
 
   async invoke(input: ApiGatewayDispatchInput): Promise<ApiGatewayInvokeResult> {
-    return withPaxSpan(
+    return withPaxSpanFromTraceId(
       "gateway.invoke",
       {
         kind: input.kind,
@@ -72,6 +72,7 @@ export class ApiGateway {
         bundle_name: input.bundleName,
         bundle_compat_tag: input.bundleCompatTag,
       },
+      input.traceId,
       async (span) => {
         const result = await this.#invokeWithMetrics(input);
         span.setAttribute("result", result.response.ok ? "ok" : result.response.error);

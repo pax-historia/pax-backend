@@ -1,7 +1,9 @@
 import {
+  context,
   diag,
   DiagConsoleLogger,
   DiagLogLevel,
+  propagation,
   SpanStatusCode,
   trace,
   type Span,
@@ -76,21 +78,50 @@ export async function withPaxSpan<T>(
   fn: (span: Span) => Promise<T> | T,
 ): Promise<T> {
   return trace.getTracer("pax-backend").startActiveSpan(name, { attributes }, async (span) => {
-    try {
-      const value = await fn(span);
-      span.setStatus({ code: SpanStatusCode.OK });
-      return value;
-    } catch (err) {
-      span.recordException(err instanceof Error ? err : new Error(String(err)));
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    } finally {
-      span.end();
-    }
+    return runPaxSpan(span, fn);
   });
+}
+
+export async function withPaxSpanFromTraceId<T>(
+  name: string,
+  attributes: SpanAttributes,
+  traceId: string | null | undefined,
+  fn: (span: Span) => Promise<T> | T,
+): Promise<T> {
+  const parentContext = isTraceId(traceId)
+    ? propagation.extract(context.active(), {
+        traceparent: `00-${traceId}-0000000000000001-01`,
+      })
+    : context.active();
+  return trace
+    .getTracer("pax-backend")
+    .startActiveSpan(name, { attributes }, parentContext, async (span) => {
+      return runPaxSpan(span, fn);
+    });
+}
+
+async function runPaxSpan<T>(
+  span: Span,
+  fn: (span: Span) => Promise<T> | T,
+): Promise<T> {
+  try {
+    const value = await fn(span);
+    span.setStatus({ code: SpanStatusCode.OK });
+    return value;
+  } catch (err) {
+    span.recordException(err instanceof Error ? err : new Error(String(err)));
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  } finally {
+    span.end();
+  }
+}
+
+function isTraceId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
 }
 
 function telemetryDisabled(): boolean {

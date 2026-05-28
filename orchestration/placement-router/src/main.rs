@@ -53,7 +53,7 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn, Span};
+use tracing::{info, warn, Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -318,11 +318,17 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-#[tracing::instrument(
-    name = "router.placement",
-    skip(state, q, headers),
-    err,
-    fields(
+async fn placement(
+    State(state): State<AppState>,
+    Path(game_id): Path<String>,
+    Query(q): Query<PlacementQuery>,
+    headers: HeaderMap,
+) -> Result<Json<PlacementResponse>, PlacementError> {
+    let parent_context = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(&headers))
+    });
+    let span = tracing::info_span!(
+        "router.placement",
         otel.kind = "server",
         game_id = %game_id,
         user_id = tracing::field::Empty,
@@ -331,17 +337,19 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         bundle_name = tracing::field::Empty,
         runtime_contract = tracing::field::Empty,
         shard_id = tracing::field::Empty,
-    )
-)]
-async fn placement(
-    State(state): State<AppState>,
-    Path(game_id): Path<String>,
-    Query(q): Query<PlacementQuery>,
+    );
+    let _ = span.set_parent(parent_context);
+    placement_inner(state, game_id, q, headers)
+        .instrument(span)
+        .await
+}
+
+async fn placement_inner(
+    state: AppState,
+    game_id: String,
+    q: PlacementQuery,
     headers: HeaderMap,
 ) -> Result<Json<PlacementResponse>, PlacementError> {
-    let _ = Span::current().set_parent(global::get_text_map_propagator(|propagator| {
-        propagator.extract(&HeaderExtractor(&headers))
-    }));
     let mut timings = BTreeMap::new();
     let t0 = std::time::Instant::now();
     state
