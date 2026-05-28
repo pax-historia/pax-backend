@@ -66,7 +66,6 @@ interface ScenarioSession {
   readonly playerId: string;
   readonly sessionId: string;
   readonly ws: WebSocket;
-  readonly frames: unknown[];
 }
 
 interface LiveExecutorContext {
@@ -373,15 +372,13 @@ async function openOneSession(
   playerId: string,
 ): Promise<ScenarioSession> {
   const placement = await requestPlacement(ctx, gameId, playerId);
-  const frames: unknown[] = [];
   const ws = new WebSocket(placement.webSocketUrl, [...rivetProtocols(gameId)]);
-  const ready = await waitForReady(ws, frames, ctx.phaseTimeoutMs, gameId, playerId);
+  const ready = await waitForReady(ws, ctx.phaseTimeoutMs, gameId, playerId);
   return {
     gameId,
     playerId,
     sessionId: ready.sessionId,
     ws,
-    frames,
   };
 }
 
@@ -420,7 +417,6 @@ async function requestPlacement(
 
 function waitForReady(
   ws: WebSocket,
-  frames: unknown[],
   timeoutMs: number,
   gameId: string,
   playerId: string,
@@ -431,24 +427,31 @@ function waitForReady(
       fail(new Error(`timeout waiting for ready frame for ${gameId}/${playerId}`));
     }, timeoutMs);
 
-    const fail = (err: Error): void => {
-      if (settled) return;
-      settled = true;
+    function cleanup(): void {
       clearTimeout(timeout);
-      rejectReady(err);
-    };
-    const succeed = (frame: ReadyFrame): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolveReady(frame);
-    };
+      ws.off("message", onMessage);
+    }
 
-    ws.on("message", (data: WebSocket.RawData) => {
+    function fail(err: Error): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      rejectReady(err);
+    }
+
+    function succeed(frame: ReadyFrame): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolveReady(frame);
+    }
+
+    function onMessage(data: WebSocket.RawData): void {
       const parsed = parseWsFrame(data);
-      frames.push(parsed);
       if (isReadyFrame(parsed)) succeed(parsed);
-    });
+    }
+
+    ws.on("message", onMessage);
     ws.once("error", (err: Error) => fail(err));
     ws.once("close", (code: number, reason: Buffer) => {
       fail(
@@ -478,7 +481,9 @@ async function sendJson(
     const waveStartedAt = performance.now();
     for (const [sessionIndex, session] of ctx.sessions.entries()) {
       if (session.ws.readyState !== WebSocket.OPEN) {
-        throw new Error(`session ${session.sessionId} is not open`);
+        throw new Error(
+          `session ${session.sessionId} for ${session.gameId}/${session.playerId} is not open: readyState=${session.ws.readyState}`,
+        );
       }
       session.ws.send(JSON.stringify(body));
       if (perSessionDelayMs > 0 && sessionIndex + 1 < ctx.sessions.length) {

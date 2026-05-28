@@ -94,3 +94,9 @@ Added `scripts/fly/summarize-soak.mts` for the eventual soak completion audit. I
 ## 2026-05-28 13:06 PDT
 
 The `ivm` soak reached the v1 target and entered hold. At `/data/phase-5/soak/ivm-20260528T193858Z`, the no-faults history had 1000 `placement.accepted` events and `open-sessions` completed at `2026-05-28T20:05:29.705Z` with `durationMs=1540879` (about 25m 41s). The run then started `send-json`, which is the 8-hour hold phase for the first nemesis case. The slower-than-configured 10-minute ramp is expected to be investigated in attribution after the run, but it is not a blocker while the hold remains alive.
+
+## 2026-05-28 13:18 PDT
+
+The first `ivm` soak attempt produced an early runner failure during the no-faults hold. The no-faults case reached 1000 placements across all 10 shards, but `send-json` later appended `workload.phase.failed` with a closed-session error. A repaired control-plane snapshot at `/data/phase-5/soak/ivm-20260528T193858Z/snapshots/shards-20260528T201253Z.json` captured 9 registered shards and 903 active games at the moment of inspection; later checks showed the suite had already advanced into the shard-death case, so this attempt is evidence, not the passing Task 6 soak.
+
+Root-cause work found a scenario-runner issue: `waitForReady` left its WebSocket `message` listener attached after the ready frame and retained every echoed frame in `ScenarioSession.frames`. At 1000 sessions and a 1-second message interval, the driver would retain millions of frames over an 8-hour case. Removed the post-ready retention path and improved the closed-session error with game/player/readyState context. Verification: `pnpm --filter @pax-backend/scenario-runner build`.
