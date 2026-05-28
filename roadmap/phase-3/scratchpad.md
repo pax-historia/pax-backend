@@ -43,3 +43,7 @@ This is not the finished module port yet. The handlers are intentionally small a
 Made the first-pass module handlers stateful. `GameContext` now owns a mutation boundary over loaded state: modules can append working events, patch game metadata, and set player participation records without reaching into substrate internals. Player-message handlers now persist the updated working state and blob snapshot after handled messages, and host-event routing handles `participationChanged`, `moderationEject`, and `moderation.ejected` by updating bundle state and broadcasting typed events.
 
 This still leaves policy tightening and richer scenario behavior for the next task slices, but the bundle is no longer only transient broadcast behavior. Verification: `pnpm --filter @pax-backend/bundle-historia-default check-types` and `pnpm --filter @pax-backend/bundle-historia-default build` passed.
+
+## 2026-05-28 09:02 PDT
+
+Closed the module/workflow task by adding the workflow task tracker and wiring it into the inline generator runner. The module port is still proof-local rather than a verbatim Pax-historia source move, because this repo does not contain the Pax-historia module source, but the Phase 3-required bundle surface is now present: seven module folders, supporting modules, default workflow strings, workflow engine, executors, and task tracking. Policy and hydration hardening moves to task 5. Verification: `pnpm --filter @pax-backend/bundle-historia-default check-types` and `pnpm --filter @pax-backend/bundle-historia-default build` passed.

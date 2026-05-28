@@ -2,6 +2,7 @@ import { defineBundle, type SubstrateContext } from "@pax-backend/runtime-sdk";
 
 import { manifest } from "../manifest.js";
 import { createGameContext, type HistoriaGameContext } from "./context.mjs";
+import { workflowTaskTracker } from "./ai/task-tracker.mjs";
 import {
   commitSnapshot,
   loadHistoriaState,
@@ -195,12 +196,13 @@ function requireLoadedState(): LoadedHistoriaState {
 
 function hydrationSummary(): Readonly<Record<string, unknown>> {
   if (!loadedState) return { status: "not-loaded" };
-  return {
+    return {
     status: loadedState.blob.game.status,
     title: loadedState.blob.game.title ?? null,
     currentRound: loadedState.blob.game.currentRound,
     players: Object.keys(loadedState.blob.game.players).length,
     pendingEvents: loadedState.workingState.currentRoundDeltas.length,
+    inFlightWorkflows: workflowTaskTracker.snapshot().length,
     migratedFrom: loadedState.migratedFrom ?? null,
   };
 }
