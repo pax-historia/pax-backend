@@ -150,3 +150,18 @@ Validation checkpoint before deploy:
 - `fly config validate` passed for all three Fly configs.
 - `docker buildx build --check` passed for all three Dockerfiles.
 - `git diff --check` passed.
+
+The first `PAX_OBSERVABILITY=on` deploy proved the sidecar boots and its sink
+health checks run, but Better Stack rejected writes with HTTP 401. Better
+Stack's generated setup script for the supplied token says the source token was
+not found, so this is not a valid telemetry source token for the Logs/Telemetry
+ingest endpoint. Left the token in Infisical as requested, but switched Fly to
+`PAX_OBSERVABILITY=buffer` until a valid source token and ingest host are
+available.
+
+Refactored the Vector config so app-role scrape profiles are shared by both
+the Better Stack `on` path and the buffer path. The buffer path keeps
+production-shaped Tigris archival for history and OTLP traces, and also writes
+local JSONL files under `/data/observability` for quick inspection on Fly
+machines. This gives task 3 a verifiable sink while Better Stack credentials
+are corrected.

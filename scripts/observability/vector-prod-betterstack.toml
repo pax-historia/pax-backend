@@ -1,0 +1,19 @@
+[sinks.better_stack]
+type = "http"
+method = "post"
+inputs = ["stdout_enrich", "history_enrich", "metric_tag_limit", "otlp.logs", "otlp.traces"]
+uri = "https://${BETTERSTACK_INGESTING_HOST:?BETTERSTACK_INGESTING_HOST is required when Better Stack is enabled}/"
+compression = "gzip"
+healthcheck.enabled = true
+
+  [sinks.better_stack.encoding]
+  codec = "json"
+
+  [sinks.better_stack.auth]
+  strategy = "bearer"
+  token = "${BETTERSTACK_SOURCE_TOKEN:?BETTERSTACK_SOURCE_TOKEN is required when Better Stack is enabled}"
+
+  [sinks.better_stack.buffer]
+  type = "disk"
+  max_size = 536870912
+  when_full = "block"

@@ -14,10 +14,12 @@ case "$mode" in
       config_args=(--config "$PAX_VECTOR_CONFIG")
     elif [[ -n "${PAX_VECTOR_PROFILE:-}" ]] \
       && [[ -f "$APP_ROOT/scripts/observability/vector-prod-base.toml" ]] \
-      && [[ -f "$APP_ROOT/scripts/observability/vector-prod-$PAX_VECTOR_PROFILE.toml" ]]; then
+      && [[ -f "$APP_ROOT/scripts/observability/vector-prod-$PAX_VECTOR_PROFILE.toml" ]] \
+      && [[ -f "$APP_ROOT/scripts/observability/vector-prod-betterstack.toml" ]]; then
       config_args=(
         --config "$APP_ROOT/scripts/observability/vector-prod-base.toml"
         --config "$APP_ROOT/scripts/observability/vector-prod-$PAX_VECTOR_PROFILE.toml"
+        --config "$APP_ROOT/scripts/observability/vector-prod-betterstack.toml"
       )
     else
       config_args=(--config "$APP_ROOT/scripts/observability/vector-prod.toml")
@@ -25,7 +27,20 @@ case "$mode" in
     ;;
   buffer)
     export VECTOR_REQUIRE_HEALTHY="${VECTOR_REQUIRE_HEALTHY:-false}"
-    config_args=(--config "${PAX_VECTOR_CONFIG:-$APP_ROOT/scripts/observability/vector-local-dev.toml}")
+    if [[ -n "${PAX_VECTOR_CONFIG:-}" ]]; then
+      config_args=(--config "$PAX_VECTOR_CONFIG")
+    elif [[ -n "${PAX_VECTOR_PROFILE:-}" ]] \
+      && [[ -f "$APP_ROOT/scripts/observability/vector-prod-base.toml" ]] \
+      && [[ -f "$APP_ROOT/scripts/observability/vector-prod-$PAX_VECTOR_PROFILE.toml" ]] \
+      && [[ -f "$APP_ROOT/scripts/observability/vector-buffer-sinks.toml" ]]; then
+      config_args=(
+        --config "$APP_ROOT/scripts/observability/vector-prod-base.toml"
+        --config "$APP_ROOT/scripts/observability/vector-prod-$PAX_VECTOR_PROFILE.toml"
+        --config "$APP_ROOT/scripts/observability/vector-buffer-sinks.toml"
+      )
+    else
+      config_args=(--config "$APP_ROOT/scripts/observability/vector-local-dev.toml")
+    fi
     ;;
   *)
     echo "[observability] invalid PAX_OBSERVABILITY=$mode; expected off, buffer, or on" >&2

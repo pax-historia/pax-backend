@@ -9,7 +9,7 @@ kill_timeout = "60s"
 [env]
   NODE_ENV = "production"
   PAX_ENVIRONMENT = "production"
-  PAX_OBSERVABILITY = "on"
+  PAX_OBSERVABILITY = "buffer"
   PAX_VECTOR_PROFILE = "shards"
   PAX_SHARD_ID = "shard-fly-iad-1"
   PAX_SHARD_PUBLIC_URL = "https://pax-backend-shards.fly.dev"

@@ -117,26 +117,6 @@ limit_exceeded_action = "drop_tag"
   [transforms.metric_tag_limit.internal_metrics]
   include_extended_tags = false
 
-[sinks.better_stack]
-type = "http"
-method = "post"
-inputs = ["stdout_enrich", "history_enrich", "metric_tag_limit", "otlp.logs", "otlp.traces"]
-uri = "https://${BETTERSTACK_INGESTING_HOST:-in.logs.betterstack.com}/"
-compression = "gzip"
-healthcheck.enabled = true
-
-  [sinks.better_stack.encoding]
-  codec = "json"
-
-  [sinks.better_stack.auth]
-  strategy = "bearer"
-  token = "${BETTERSTACK_SOURCE_TOKEN:?BETTERSTACK_SOURCE_TOKEN is required when PAX_OBSERVABILITY is on}"
-
-  [sinks.better_stack.buffer]
-  type = "disk"
-  max_size = 536870912
-  when_full = "block"
-
 [sinks.history_tigris]
 type = "aws_s3"
 inputs = ["history_enrich"]
@@ -156,6 +136,29 @@ healthcheck.enabled = true
   codec = "json"
 
   [sinks.history_tigris.buffer]
+  type = "disk"
+  max_size = 536870912
+  when_full = "block"
+
+[sinks.trace_tigris]
+type = "aws_s3"
+inputs = ["otlp.traces"]
+bucket = "${BUCKET_NAME:?BUCKET_NAME is required for Tigris trace archive}"
+region = "${AWS_REGION:-auto}"
+endpoint = "${AWS_ENDPOINT_URL_S3:?AWS_ENDPOINT_URL_S3 is required for Tigris trace archive}"
+key_prefix = "traces/date=%Y-%m-%d/"
+compression = "gzip"
+content_encoding = "gzip"
+content_type = "application/gzip"
+filename_extension = "jsonl.gz"
+filename_time_format = "%s"
+filename_append_uuid = true
+healthcheck.enabled = true
+
+  [sinks.trace_tigris.encoding]
+  codec = "json"
+
+  [sinks.trace_tigris.buffer]
   type = "disk"
   max_size = 536870912
   when_full = "block"

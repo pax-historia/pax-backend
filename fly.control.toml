@@ -9,7 +9,7 @@ kill_timeout = "30s"
 [env]
   NODE_ENV = "production"
   PAX_ENVIRONMENT = "production"
-  PAX_OBSERVABILITY = "on"
+  PAX_OBSERVABILITY = "buffer"
   PAX_VECTOR_PROFILE = "control"
   PAX_ROUTER_BIND = "0.0.0.0:9080"
   PAX_CONTROL_BIND = "0.0.0.0:9070"

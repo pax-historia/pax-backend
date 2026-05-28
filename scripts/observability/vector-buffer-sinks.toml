@@ -1,0 +1,19 @@
+[sinks.signals_local]
+type = "file"
+inputs = ["stdout_enrich", "history_enrich", "otlp.logs", "otlp.traces"]
+path = "${PAX_VECTOR_SIGNAL_FILE:-/data/observability/signals-%Y-%m-%d.jsonl}"
+compression = "none"
+idle_timeout_secs = 5
+
+  [sinks.signals_local.encoding]
+  codec = "json"
+
+[sinks.metrics_local]
+type = "file"
+inputs = ["metric_tag_limit"]
+path = "${PAX_VECTOR_METRICS_FILE:-/data/observability/metrics-%Y-%m-%d.jsonl}"
+compression = "none"
+idle_timeout_secs = 5
+
+  [sinks.metrics_local.encoding]
+  codec = "json"
