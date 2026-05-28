@@ -282,9 +282,9 @@ WS handshake refused.
 
 | Field | Notes |
 |---|---|
-| `gameId?` | from JWT, if parseable |
+| `gameId?` | target game, when the parent has enough context |
 | `playerId?` | from JWT, if parseable |
-| `reason` | `'jwtInvalid' \| 'jwtExpired' \| 'playerNotAllowed' \| 'gameDeleted' \| 'shardWrong'` |
+| `reason` | `'notAllowed' \| 'wrongGame' \| 'wrongShard' \| 'gameDeleted'` |
 
 ## Player I/O events
 
@@ -526,7 +526,7 @@ Control plane rolled back to the previous bundle.
 
 ### `placement.accepted`
 
-Router signed a JWT and returned `wsUrl`.
+Router signed a placement token and returned `webSocketUrl`.
 
 | Field | Notes |
 |---|---|

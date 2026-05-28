@@ -48,7 +48,7 @@ actor on the chosen shard.
 
 | Destination | What |
 |---|---|
-| Vercel platform frontend wrapper | Signed JWT + `wsUrl` pointing at the chosen shard's WS endpoint |
+| Vercel platform frontend wrapper | `webSocketUrl` with signed `placementToken` pointing at the chosen shard's WS endpoint |
 | Control plane (history sink) | `placement.accepted` and `placement.refused` history events |
 | Itself (Prometheus) | `pax_router_*` metrics (placement latency, gate rejections, contention) |
 
@@ -76,7 +76,7 @@ actor on the chosen shard.
 6. Pick a shard by capacity score.
 7. Write a placement claim to Redis (atomic SETNX or equivalent).
 8. Sign a JWT with { gameId, playerId, traceId, runId?, sessionTtl, shardId }.
-9. Return { wsUrl, jwt }.
+9. Return { webSocketUrl, placementToken }.
 10. Emit placement.accepted history event.
 ```
 
@@ -178,7 +178,7 @@ A consumer (the vercel platform frontend wrapper, or the control plane
 in the host-event case) can rely on:
 
 - **`POST /placement` returns within 100 ms p99** in steady state.
-- **The returned `wsUrl` is good for the JWT's TTL** (default 5 min).
+- **The returned `webSocketUrl` is good for the placement token's TTL** (default 5 min).
 - **A successful placement is recorded to history** before the response
   returns.
 - **A refusal cites the specific gate** that failed (`contractOutOfRange`,

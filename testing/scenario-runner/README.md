@@ -23,8 +23,8 @@ Current source pass provides the first runner shell:
   `PAX_API_REPLAY_FIXTURES_PATH` when an `api-responses` fixture is present
 - executes the first live workload phase set against a running local/live
   substrate: `seed-fixtures`, `register-api-kinds`, `open-sessions`,
-  `send-json`, `send-host-events`, `flip-bundles`, `wait`,
-  `close-sessions`, `await-nemesis`, and `expect-history-events`
+  `expect-ws-refusals`, `send-json`, `send-host-events`, `flip-bundles`,
+  `wait`, `close-sessions`, `await-nemesis`, and `expect-history-events`
 - schedules nemesis profile actions alongside the live workload; the
   `shard-death-every-5m` profile currently maps `kill-shard` to the
   production admin drain endpoint (`POST /admin/shards/:id/drain`)

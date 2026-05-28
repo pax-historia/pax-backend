@@ -73,15 +73,15 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "wsUrl": "wss://shard-N.pax-backend-shards.fly.dev/ws/<gameId>",
-  "jwt": "<HS256 signed token>"
+  "webSocketUrl": "wss://shard-N.pax-backend-shards.fly.dev/gateway/pax-game?...",
+  "placementToken": "<HS256 signed token>"
 }
 ```
 
 | Field | Notes |
 |---|---|
-| `wsUrl` | The fully-qualified WS endpoint on the chosen shard. The frontend opens a WebSocket to `<wsUrl>?token=<jwt>` (the JWT travels as a query-string parameter, not a header — browser WS APIs do not support custom request headers) |
-| `jwt` | HS256-signed substrate JWT. Default TTL 5 minutes from `iat`. See [`jwt-claims.md`](jwt-claims.md) for the full claim set |
+| `webSocketUrl` | The fully-qualified WS endpoint on the chosen shard. It already includes `placementToken` and Rivet routing parameters in the query string |
+| `placementToken` | HS256-signed substrate JWT. Default TTL 5 minutes from `iat`. See [`jwt-claims.md`](jwt-claims.md) for the full claim set |
 
 The JWT contains the chosen `shardId`; the parent actor on the receiving
 shard cross-checks it against its own shard identity at handshake time
@@ -138,7 +138,7 @@ cost optimization the router applies opportunistically.
 A caller of `POST /placement` can rely on:
 
 - **`POST /placement` returns within 100 ms p99** in steady state.
-- **The returned `wsUrl` is good for the JWT's TTL** (default 5 min).
+- **The returned `webSocketUrl` is good for the placement token's TTL** (default 5 min).
 - **A successful placement is recorded to history** before the response
   returns (`placement.accepted`).
 - **A refusal cites the specific gate** that failed via `error` code.

@@ -39,4 +39,5 @@ export type {
   WorkerArtifact,
   WorkloadFixture,
   WorkloadFixtureKind,
+  WsRefusalAttempt,
 } from "./types.mjs";

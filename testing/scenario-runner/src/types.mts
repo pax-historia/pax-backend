@@ -72,6 +72,16 @@ export interface ApiKindWorkloadRegistration {
   readonly url: string;
 }
 
+export interface WsRefusalAttempt {
+  readonly placementGameIndex: number;
+  readonly connectGameIndex?: number;
+  readonly playerId: string;
+  readonly tokenMutation?: "none" | "tamper-signature";
+  readonly expectedCode?: number;
+  readonly expectedCodes?: readonly number[];
+  readonly expectedReasonIncludes?: string;
+}
+
 export type ScenarioWorkloadPhase =
   | {
       readonly type: "seed-fixtures";
@@ -86,6 +96,10 @@ export type ScenarioWorkloadPhase =
       readonly playerSource: "allowed-players";
       readonly sessionsPerGame: number;
       readonly rampMs: number;
+    }
+  | {
+      readonly type: "expect-ws-refusals";
+      readonly attempts: readonly WsRefusalAttempt[];
     }
   | {
       readonly type: "send-json";

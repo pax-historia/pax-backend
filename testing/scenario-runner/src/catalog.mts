@@ -221,6 +221,70 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requirePositiveNumber(value["sessionsPerGame"], path, `${prefix}.sessionsPerGame`);
       requireNonNegativeNumber(value["rampMs"], path, `${prefix}.rampMs`);
       return normalized;
+    case "expect-ws-refusals":
+      if (!Array.isArray(value["attempts"]) || value["attempts"].length === 0) {
+        throw new Error(`${path} field ${prefix}.attempts must be a non-empty array`);
+      }
+      for (const [attemptIndex, attempt] of value["attempts"].entries()) {
+        if (!isRecord(attempt)) {
+          throw new Error(`${path} field ${prefix}.attempts[${attemptIndex}] must be an object`);
+        }
+        requirePositiveNumber(
+          attempt["placementGameIndex"],
+          path,
+          `${prefix}.attempts[${attemptIndex}].placementGameIndex`,
+        );
+        if (attempt["connectGameIndex"] !== undefined) {
+          requirePositiveNumber(
+            attempt["connectGameIndex"],
+            path,
+            `${prefix}.attempts[${attemptIndex}].connectGameIndex`,
+          );
+        }
+        requireString(attempt["playerId"], path, `${prefix}.attempts[${attemptIndex}].playerId`);
+        if (attempt["expectedCode"] === undefined && attempt["expectedCodes"] === undefined) {
+          throw new Error(
+            `${path} field ${prefix}.attempts[${attemptIndex}] must define expectedCode or expectedCodes`,
+          );
+        }
+        if (attempt["expectedCode"] !== undefined) {
+          requirePositiveNumber(
+            attempt["expectedCode"],
+            path,
+            `${prefix}.attempts[${attemptIndex}].expectedCode`,
+          );
+        }
+        if (attempt["expectedCodes"] !== undefined) {
+          if (!Array.isArray(attempt["expectedCodes"]) || attempt["expectedCodes"].length === 0) {
+            throw new Error(
+              `${path} field ${prefix}.attempts[${attemptIndex}].expectedCodes must be a non-empty array`,
+            );
+          }
+          for (const [codeIndex, code] of attempt["expectedCodes"].entries()) {
+            requirePositiveNumber(
+              code,
+              path,
+              `${prefix}.attempts[${attemptIndex}].expectedCodes[${codeIndex}]`,
+            );
+          }
+        }
+        if (attempt["tokenMutation"] !== undefined) {
+          requireOneOf(
+            attempt["tokenMutation"],
+            path,
+            `${prefix}.attempts[${attemptIndex}].tokenMutation`,
+            ["none", "tamper-signature"],
+          );
+        }
+        if (attempt["expectedReasonIncludes"] !== undefined) {
+          requireString(
+            attempt["expectedReasonIncludes"],
+            path,
+            `${prefix}.attempts[${attemptIndex}].expectedReasonIncludes`,
+          );
+        }
+      }
+      return normalized;
     case "send-json":
       requireOneOf(value["channel"], path, `${prefix}.channel`, ["websocket"]);
       requirePositiveNumber(value["messagesPerSession"], path, `${prefix}.messagesPerSession`);

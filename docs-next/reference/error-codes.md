@@ -149,7 +149,7 @@ WebSocket close codes:
 | `1000` | Normal closure |
 | `1001` | Going away (substrate shutting down) |
 | `4401` | JWT invalid or expired |
-| `4403` | Player not in `allowedPlayers` |
+| `4403` | Wrong shard, wrong game, or player not in `allowedPlayers` |
 | `4404` | Game not found or deleted |
 | `4503` | Shard unhealthy or draining |
 

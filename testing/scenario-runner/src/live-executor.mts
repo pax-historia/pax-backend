@@ -16,6 +16,7 @@ import type {
   ScenarioWorkloadPhase,
   ScenarioWorkloadPlan,
   WorkloadFixtureKind,
+  WsRefusalAttempt,
 } from "./types.mjs";
 
 const DEFAULT_CONTROL_PLANE_URL = "http://127.0.0.1:9070";
@@ -177,6 +178,9 @@ async function executePhase(
       return;
     case "open-sessions":
       await openSessions(ctx, phase.sessionsPerGame, phase.rampMs);
+      return;
+    case "expect-ws-refusals":
+      await expectWsRefusals(ctx, phase.attempts);
       return;
     case "send-json":
       await sendJson(
@@ -363,6 +367,24 @@ async function openOneSession(
   gameId: string,
   playerId: string,
 ): Promise<ScenarioSession> {
+  const placement = await requestPlacement(ctx, gameId, playerId);
+  const frames: unknown[] = [];
+  const ws = new WebSocket(placement.webSocketUrl, [...rivetProtocols(gameId)]);
+  const ready = await waitForReady(ws, frames, ctx.phaseTimeoutMs, gameId, playerId);
+  return {
+    gameId,
+    playerId,
+    sessionId: ready.sessionId,
+    ws,
+    frames,
+  };
+}
+
+async function requestPlacement(
+  ctx: LiveExecutorContext,
+  gameId: string,
+  playerId: string,
+): Promise<PlacementResponse> {
   const placementUrl = `${ctx.routerUrl}/games/${encodeURIComponent(
     gameId,
   )}/placement?userId=${encodeURIComponent(playerId)}`;
@@ -388,17 +410,7 @@ async function openOneSession(
     runtimeContractRequired: placement.runtimeContractRequired,
     runtimeContractsSupported: placement.runtimeContractsSupported,
   });
-
-  const frames: unknown[] = [];
-  const ws = new WebSocket(placement.webSocketUrl, [...rivetProtocols(gameId)]);
-  const ready = await waitForReady(ws, frames, ctx.phaseTimeoutMs, gameId, playerId);
-  return {
-    gameId,
-    playerId,
-    sessionId: ready.sessionId,
-    ws,
-    frames,
-  };
+  return placement;
 }
 
 function waitForReady(
@@ -472,6 +484,100 @@ async function sendJson(
       await sleep(Math.max(0, intervalMs - (performance.now() - waveStartedAt)));
     }
   }
+}
+
+async function expectWsRefusals(
+  ctx: LiveExecutorContext,
+  attempts: readonly WsRefusalAttempt[],
+): Promise<void> {
+  const gameIds = scenarioGameIds(ctx.workload);
+  const allowedPlayers = readStringArrayFixture(ctx, "allowed-players");
+  for (const attempt of attempts) {
+    const placementGameId = gameIdAt(gameIds, attempt.placementGameIndex);
+    const connectGameId = gameIdAt(gameIds, attempt.connectGameIndex ?? attempt.placementGameIndex);
+    const playerId = attempt.playerId || allowedPlayers[0] || "player";
+    await ensureGame(ctx, placementGameId, allowedPlayers, undefined, undefined);
+    await ensureGame(ctx, connectGameId, allowedPlayers, undefined, undefined);
+    const placement = await requestPlacement(ctx, placementGameId, playerId);
+    const url = new URL(placement.webSocketUrl);
+    if (connectGameId !== placementGameId) {
+      url.searchParams.set("rvt-key", connectGameId);
+    }
+    if (attempt.tokenMutation === "tamper-signature") {
+      tamperPlacementToken(url);
+    }
+    const observed = await waitForRejectedWebSocket(url, connectGameId, ctx.phaseTimeoutMs);
+    ctx.historyWriter.append("workload.ws-refusal.observed", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      placementGameId,
+      connectGameId,
+      playerId,
+      tokenMutation: attempt.tokenMutation ?? "none",
+      expectedCode: attempt.expectedCode,
+      expectedCodes: wsRefusalExpectedCodes(attempt),
+      expectedReasonIncludes: attempt.expectedReasonIncludes ?? null,
+      observedCode: observed.code,
+      observedReason: observed.reason,
+    });
+    const expectedCodes = wsRefusalExpectedCodes(attempt);
+    if (!expectedCodes.includes(observed.code)) {
+      throw new Error(
+        `expected WS refusal code ${expectedCodes.join(" or ")} for ${placementGameId}->${connectGameId}, got ${observed.code} (${observed.reason})`,
+      );
+    }
+    if (
+      attempt.expectedReasonIncludes &&
+      !observed.reason.includes(attempt.expectedReasonIncludes)
+    ) {
+      throw new Error(
+        `expected WS refusal reason to include ${attempt.expectedReasonIncludes}, got ${observed.reason}`,
+      );
+    }
+  }
+}
+
+function wsRefusalExpectedCodes(attempt: WsRefusalAttempt): readonly number[] {
+  return attempt.expectedCodes ?? (attempt.expectedCode === undefined ? [] : [attempt.expectedCode]);
+}
+
+function gameIdAt(gameIds: readonly string[], oneBasedIndex: number): string {
+  const gameId = gameIds[oneBasedIndex - 1];
+  if (!gameId) {
+    throw new Error(`workload does not define game index ${oneBasedIndex}`);
+  }
+  return gameId;
+}
+
+function tamperPlacementToken(url: URL): void {
+  const key = url.searchParams.has("placementToken") ? "placementToken" : "token";
+  const token = url.searchParams.get(key);
+  if (!token) throw new Error("placement URL missing placement token");
+  const last = token[token.length - 1] ?? "a";
+  const replacement = last === "a" ? "b" : "a";
+  url.searchParams.set(key, `${token.slice(0, -1)}${replacement}`);
+}
+
+function waitForRejectedWebSocket(
+  url: URL,
+  protocolGameId: string,
+  timeoutMs: number,
+): Promise<{ readonly code: number; readonly reason: string }> {
+  return new Promise((resolveClose, rejectClose) => {
+    const ws = new WebSocket(url.toString(), [...rivetProtocols(protocolGameId)]);
+    let lastError: string | undefined;
+    const timeout = setTimeout(() => {
+      ws.terminate();
+      rejectClose(new Error(`timeout waiting for rejected websocket: ${lastError ?? url.toString()}`));
+    }, timeoutMs);
+    ws.once("error", (err: Error) => {
+      lastError = err.message;
+    });
+    ws.once("close", (code: number, reason: Buffer) => {
+      clearTimeout(timeout);
+      resolveClose({ code, reason: reason.toString("utf8") });
+    });
+  });
 }
 
 async function sendHostEvents(

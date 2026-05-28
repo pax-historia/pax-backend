@@ -52,7 +52,7 @@ Same artifact, two consumers.
 | Source | What |
 |---|---|
 | Scenario manifest | `manifest.mts`: scenario id, mode (load/property/fuzz/replay), bundle name, default nemesis, oracles to gate on |
-| Scenario workload | `clients/workload.mts`: declarative phases (`seed-fixtures`, `open-sessions`, `send-json`, `expect-history-events`, etc.) |
+| Scenario workload | `clients/workload.mts`: declarative phases (`seed-fixtures`, `open-sessions`, `expect-ws-refusals`, `send-json`, `expect-history-events`, etc.) |
 | Scenario fixtures | `fixtures/initial-state.json`, `fixtures/initial-blob.json`, `fixtures/allowed-players.json`, `fixtures/api-responses/` (canned URL service responses keyed by fingerprint) |
 | Nemesis profile | `fault-profile.mts`: timed actions like "kill shard every 5min" |
 | Substrate history file | `var/history.jsonl` from a live or replay run |
@@ -110,6 +110,7 @@ export const workload = [
   { type: 'seed-fixtures', fixtureKinds: ['allowed-players'] },
   { type: 'register-api-kinds', kinds: [{ kindName: 'mock-ai.v1', url: 'http://localhost:9081/_url-services/mock-ai-v1/invoke' }] },
   { type: 'open-sessions', playerSource: 'allowed-players', sessionsPerGame: 5, rampMs: 1000 },
+  { type: 'expect-ws-refusals', attempts: [{ placementGameIndex: 1, connectGameIndex: 2, playerId: 'player-1', expectedCodes: [4403, 1011] }] },
   { type: 'send-json', channel: 'websocket', messagesPerSession: 1, intervalMs: 0, body: { type: 'chat', content: 'hi' } },
   { type: 'expect-history-events', events: ['session.opened', 'onPlayerMessage', 'ws.send'], minimumPerGame: 1 },
   { type: 'wait', durationMs: 1000 },

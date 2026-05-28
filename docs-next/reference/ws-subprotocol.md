@@ -9,7 +9,8 @@ governed by the substrate's runtime contract version (Axis A).
 
 ## Handshake
 
-The frontend obtains a `wsUrl` and a `jwt` from the placement router:
+The frontend obtains a `webSocketUrl` and a `placementToken` from the
+placement router:
 
 ```http
 POST <router>/placement
@@ -23,30 +24,33 @@ Content-Type: application/json
 
 → 200 OK
 {
-  "wsUrl": "wss://shard-N.pax-backend-shards.fly.dev/ws/<gameId>",
-  "jwt": "<HS256 signed token>"
+  "webSocketUrl": "wss://shard-N.pax-backend-shards.fly.dev/gateway/pax-game?...",
+  "placementToken": "<HS256 signed token>"
 }
 ```
 
-The frontend opens a WebSocket to `wsUrl?token=<jwt>`. The JWT is
-passed as a query-string parameter (not a header) because the WS
-protocol doesn't generally support custom request headers from a
-browser.
+The router-built `webSocketUrl` already includes `placementToken` as a
+query-string parameter. The JWT travels in the query string (not a header)
+because browser WebSocket APIs do not generally support custom request
+headers.
 
 ## JWT verification
 
 The parent actor on the receiving shard:
 
-1. Reads `token` from the query string.
+1. Reads `placementToken` from the query string. (`token` is accepted as a
+   legacy alias.)
 2. Verifies the signature against `PAX_JWT_SECRET` (HS256).
 3. Verifies `exp` (expiry).
 4. Extracts `gameId`, `playerId`, `traceId?`, `runId?`, `shardId`,
    plus pass-through claims (Firebase, etc.).
-5. Verifies the `gameId` from the JWT matches the URL path.
+5. Verifies the `gameId` from the JWT matches the actor key selected by the
+   WebSocket URL.
 6. Verifies `playerId ∈ allowedPlayers(gameId)`.
 
-On any failure: WS close with code 4403 + reason; emit
-`connection.refused` history event.
+On signature or expiry failure: WS close with code 4401. On wrong-shard,
+wrong-game, or not-allowed failure: WS close with code 4403. When the parent
+has enough game context, it emits a `connection.refused` history event.
 
 See [`reference/jwt-claims.md`](jwt-claims.md) for the JWT shape.
 
@@ -146,20 +150,24 @@ reason. The substrate closes the underlying WS frame immediately after.
 | `1000` | Normal closure | Frontend or substrate cleanly closed |
 | `1001` | Going away | Substrate shutting down |
 | `4401` | Unauthorized | JWT signature failed or expired |
-| `4403` | Forbidden | `playerId` not in `allowedPlayers` |
+| `4403` | Forbidden | Wrong shard, wrong game, or `playerId` not in `allowedPlayers` |
 | `4404` | Game not found | `gameId` doesn't exist or has been deleted |
 | `4503` | Service unavailable | Shard is unhealthy or draining (frontend should re-call placement) |
 | `4404 + reason: 'gameDeleted'` | Game was deleted | Frontend shows "game ended" UX |
 
 Close codes in the `4xxx` range are substrate-defined application
 codes (per RFC 6455 §7.4.2 reserved-for-applications).
+When a parent rejects a WebSocket before the Rivet guard has established the
+client-side socket, the public client can see the guard's service-unavailable
+close instead; `connection.refused` history remains the authoritative typed
+reason when the parent had game context.
 
 ## Reconnect semantics
 
 If the WS closes for any reason except deliberate frontend closure or
 `gameDeleted`, the frontend should:
 
-1. Re-call `POST /placement` to get a fresh JWT and `wsUrl`.
+1. Re-call `POST /placement` to get a fresh `placementToken` and `webSocketUrl`.
 2. Reopen the WS.
 3. Receive a new `sessionId` in the `ready` frame.
 

@@ -3,6 +3,7 @@ import type { HistoryEvent, OracleFinding, OracleResult } from "../types.mjs";
 
 const ORACLE = "allowed-only-connection";
 const GUARANTEE = 2;
+const ALLOWED_REFUSAL_REASONS = new Set(["notAllowed", "wrongGame", "wrongShard"]);
 
 export function allowedOnlyConnection(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
@@ -25,7 +26,8 @@ export function allowedOnlyConnection(history: readonly HistoryEvent[]): OracleR
 
     if (event.event === "connection.refused") {
       observed += 1;
-      if (stringField(event, "reason") !== "notAllowed") {
+      const reason = stringField(event, "reason");
+      if (!reason || !ALLOWED_REFUSAL_REASONS.has(reason)) {
         findings.push(
           finding("unexpected-refusal-reason", "connection.refused used an unexpected reason", event),
         );

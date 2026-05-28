@@ -395,7 +395,7 @@ true` within 30-day TTL.
 
 `POST /placement` is **not** part of the admin surface. It's called by
 the vercel platform frontend wrapper directly (via the vercel backend's
-proxy in some flows) to obtain a JWT + `wsUrl`. See
+proxy in some flows) to obtain a `placementToken` + `webSocketUrl`. See
 [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md).
 
 ## What's NOT here

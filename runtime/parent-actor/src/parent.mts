@@ -3159,9 +3159,9 @@ const runner = new Runner({
       ws.close(1008, "bad request url");
       return;
     }
-    const placementTokenStr = url.searchParams.get("placementToken");
+    const placementTokenStr = url.searchParams.get("placementToken") ?? url.searchParams.get("token");
     if (!placementTokenStr) {
-      ws.close(1008, "missing placementToken");
+      ws.close(4401, "missing placementToken");
       return;
     }
     let claims: PlacementClaims;
@@ -3170,11 +3170,11 @@ const runner = new Runner({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err: msg }, "placement token invalid");
-      ws.close(1008, "invalid placementToken");
+      ws.close(4401, "invalid placementToken");
       return;
     }
     if (claims.shardId !== SHARD_ID) {
-      ws.close(1008, "wrong shard");
+      ws.close(4403, "wrong shard");
       return;
     }
 
@@ -3182,6 +3182,18 @@ const runner = new Runner({
     if (!inst) {
       log.error({ actorId }, "websocket arrived before actor start");
       ws.close(1011, "actor not ready");
+      return;
+    }
+    if (claims.gameId !== inst.gameId) {
+      history("connection.refused", {
+        actorId,
+        gameId: inst.gameId,
+        playerId: claims.userId,
+        traceId: claims.traceId,
+        reason: "wrongGame",
+        tokenGameId: claims.gameId,
+      });
+      ws.close(4403, "wrong game");
       return;
     }
     const playerId = claims.userId;
@@ -3194,7 +3206,7 @@ const runner = new Runner({
         traceId: claims.traceId,
         reason: "notAllowed",
       });
-      ws.close(1008, "player not allowed");
+      ws.close(4403, "player not allowed");
       return;
     }
     await forkChild(inst);

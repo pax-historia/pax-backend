@@ -110,16 +110,17 @@ that).
 1. WS handshake arrives on the parent's WS endpoint.
 2. Parent verifies the JWT using PAX_JWT_SECRET.
 3. Parent extracts (gameId, playerId, traceId, runId?) from JWT claims.
-4. Parent looks up allowed-players for gameId.
-5. If playerId ∉ allowedPlayers: close WS with 4403 + emit connection.refused.
-6. Else: generate a fresh sessionId; emit session.opened.
-7. If no child is running for this game: fork child, send bootstrap, wait for ready, send onWake.
-8. Send onPlayerConnect to the child.
-9. For each incoming WS message: generate seq; emit onPlayerMessage; send to child.
-10. On WS close: emit session.closed with reason.
-11. If last session: start 60s sleep-grace timer.
-12. On grace expiry: send onSleep with deadline = now + budget.
-13. After lifecycle.sleepComplete (or deadline): flush c.state, terminate child, emit lifecycle.sleepComplete.
+4. Parent verifies the token's gameId matches the actor key selected by the WS URL.
+5. Parent looks up allowed-players for gameId.
+6. If playerId ∉ allowedPlayers: close WS with 4403 + emit connection.refused.
+7. Else: generate a fresh sessionId; emit session.opened.
+8. If no child is running for this game: fork child, send bootstrap, wait for ready, send onWake.
+9. Send onPlayerConnect to the child.
+10. For each incoming WS message: generate seq; emit onPlayerMessage; send to child.
+11. On WS close: emit session.closed with reason.
+12. If last session: start 60s sleep-grace timer.
+13. On grace expiry: send onSleep with deadline = now + budget.
+14. After lifecycle.sleepComplete (or deadline): flush c.state, terminate child, emit lifecycle.sleepComplete.
 ```
 
 ## The `c.state` cache and flush scheduler
