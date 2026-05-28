@@ -120,3 +120,11 @@ The full Fly suite passed all ten scenarios with `--oracles all` and zero oracle
 | `role-destroy-flow` | 18 | 58 |
 | `spectator-billing-block` | 18 | 44 |
 | `workflow-override-loaded` | 19 | 68 |
+
+## 2026-05-28 10:17 PDT
+
+Completed Phase 3 verification. Re-read the Phase 3 directive and exit signal, walked the `docs-next/` map with focus on the historia proof, URL-service overlays/specs, gateway envelope/replay, scenario-runner, history schema, and guarantee oracle docs, then checked the code paths touched by the phase: `examples/bundles/historia-default/`, `examples/url-services/`, `testing/scenario-runner/`, `testing/oracles-lib/`, `orchestration/api-gateway/`, and `shared/ipc-protocol/`.
+
+The verification found and fixed documentation drift from the actual implementation: replay fingerprints are the stable `sha256(canonicalize({ kind, args }))` key, `api.invoke.wire` records use `rawOutbound`/`rawInbound`, the historia proof uses deterministic gateway reference responses plus replay fixtures rather than operator-owned URL-service servers, and the bundle README now describes the completed proof instead of the initial scaffold.
+
+Validated the proof artifacts directly. Both `var/phase-3/local-proof/` and `var/phase-3/fly-proof/` contain all ten official scenarios, each result has every `G1` through `G17` substrate guarantee passing, and every scenario has at least one passing `G0` bundle-local oracle. Focused typechecks also passed for `@pax-backend/bundle-historia-default`, `@pax-backend/scenario-runner`, `@pax-backend/api-gateway`, and `@pax-backend/oracles-lib`.
