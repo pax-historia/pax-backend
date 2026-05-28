@@ -259,3 +259,14 @@ that optional handler. The ivm child runner was treating a missing export as an
 skips absent handlers. Patched the ivm path to no-op when a handler export is
 `undefined` or `null`, while still reporting non-function exports as malformed
 handler definitions.
+
+## 2026-05-28 06:43 PDT
+
+Prepared the shard-death-every-5m run while the clean no-fault proof holds 100
+games. The current nemesis implementation models `kill-shard` as control-plane
+drain, with the Fly/orchestrator replacement hook layered over it. Added that
+replacement-ready hook to the runner: after `POST /admin/shards/:id/drain`, it
+waits `PAX_NEMESIS_REPLACEMENT_READY_MS` (default 60s), calls
+`DELETE /admin/shards/:id/drain`, and records
+`nemesis.kill-shard.replacement-ready`. A local HTTP smoke verified the runner
+issues both drain and un-drain calls and writes the nemesis history events.

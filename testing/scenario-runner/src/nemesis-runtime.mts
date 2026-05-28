@@ -23,6 +23,11 @@ interface KillShardRuntime {
 export class NemesisRuntime {
   readonly #killShardRuntimes: KillShardRuntime[];
   readonly #killedAtByShard = new Map<string, number>();
+  readonly #replacementTimersByShard = new Map<string, NodeJS.Timeout>();
+  readonly #replacementReadyDelayMs = positiveInt(
+    process.env["PAX_NEMESIS_REPLACEMENT_READY_MS"],
+    60_000,
+  );
   #roundRobinCursor = 0;
   #stopped = false;
   #failure: Error | undefined;
@@ -51,6 +56,10 @@ export class NemesisRuntime {
     for (const runtime of this.#killShardRuntimes) {
       if (runtime.timer) clearTimeout(runtime.timer);
     }
+    for (const timer of this.#replacementTimersByShard.values()) {
+      clearTimeout(timer);
+    }
+    this.#replacementTimersByShard.clear();
   }
 
   throwIfFailed(): void {
@@ -115,6 +124,46 @@ export class NemesisRuntime {
       replacement: runtime.action.replacement,
       adminAction: "POST /admin/shards/:id/drain",
     });
+    if (runtime.action.replacement === "let-orchestrator-replace") {
+      this.#scheduleReplacementReady(runtime, shard.shardId);
+    }
+  }
+
+  #scheduleReplacementReady(runtime: KillShardRuntime, shardId: string): void {
+    const existing = this.#replacementTimersByShard.get(shardId);
+    if (existing) return;
+    const timer = setTimeout(() => {
+      this.#replacementTimersByShard.delete(shardId);
+      void this.#markReplacementReady(runtime, shardId).catch((err: unknown) => {
+        this.#failure = err instanceof Error ? err : new Error(String(err));
+        this.historyWriter.append("nemesis.action.failed", {
+          nemesisId: this.manifest.nemesisId,
+          runId: this.runId ?? null,
+          actionType: runtime.action.type,
+          actionIndex: runtime.actionIndex,
+          error: this.#failure.message,
+        });
+      });
+    }, this.#replacementReadyDelayMs);
+    this.#replacementTimersByShard.set(shardId, timer);
+  }
+
+  async #markReplacementReady(runtime: KillShardRuntime, shardId: string): Promise<void> {
+    if (this.#stopped) return;
+    await requestJson(
+      `${this.controlPlaneUrl}/admin/shards/${encodeURIComponent(shardId)}/drain`,
+      { method: "DELETE" },
+    );
+    this.historyWriter.append("nemesis.kill-shard.replacement-ready", {
+      nemesisId: this.manifest.nemesisId,
+      runId: this.runId ?? null,
+      actionIndex: runtime.actionIndex,
+      occurrence: runtime.occurrences,
+      shardId,
+      replacement: runtime.action.replacement,
+      delayMs: this.#replacementReadyDelayMs,
+      adminAction: "DELETE /admin/shards/:id/drain",
+    });
   }
 
   async #selectShard(
@@ -171,4 +220,10 @@ async function requestJson<T = unknown>(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, Math.max(0, ms)));
+}
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
