@@ -108,7 +108,9 @@ Each rung records target game count, shard-machine count, target duration,
 nemesis set, sampling profile, attribution sentences, and per-case history and
 result paths. The runner applies the rung target to the scenario workload by
 overriding `maxGames`, `open-sessions` ramp/session count, and `send-json`
-message count derived from the target duration.
+message count derived from the target duration. Rungs may also override the
+`send-json` interval and fanout window so long soaks can preserve total message
+rate without concentrating every session send at the same instant.
 
 For live runs, `sampling_profile` controls metric scrape cadence: `ramp` samples
 every 30 seconds and `cliff_hold` every second. The collector aggregates online

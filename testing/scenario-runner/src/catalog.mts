@@ -94,7 +94,9 @@ function applyWorkloadOverrides(
     input.workloadDurationMs === undefined &&
     input.workloadSessionsPerGame === undefined &&
     input.workloadOpenSessionsRampMs === undefined &&
-    input.workloadSendJsonMessagesPerSession === undefined
+    input.workloadSendJsonMessagesPerSession === undefined &&
+    input.workloadSendJsonIntervalMs === undefined &&
+    input.workloadSendJsonFanoutMs === undefined
   ) {
     return plan;
   }
@@ -121,12 +123,15 @@ function applyWorkloadPhaseOverrides(
   }
 
   if (phase.type === "send-json") {
+    const intervalMs = input.workloadSendJsonIntervalMs ?? phase.intervalMs;
     return {
       ...phase,
       messagesPerSession:
         input.workloadSendJsonMessagesPerSession ??
-        deriveSendJsonMessagesPerSession(input.workloadDurationMs, phase) ??
+        deriveSendJsonMessagesPerSession(input.workloadDurationMs, intervalMs) ??
         phase.messagesPerSession,
+      intervalMs,
+      fanoutMs: input.workloadSendJsonFanoutMs ?? phase.fanoutMs,
     };
   }
 
@@ -135,10 +140,10 @@ function applyWorkloadPhaseOverrides(
 
 function deriveSendJsonMessagesPerSession(
   durationMs: number | undefined,
-  phase: Extract<ScenarioWorkloadPlan["phases"][number], { readonly type: "send-json" }>,
+  intervalMs: number,
 ): number | undefined {
-  if (durationMs === undefined || phase.intervalMs <= 0) return undefined;
-  return Math.max(1, Math.ceil(durationMs / phase.intervalMs));
+  if (durationMs === undefined || intervalMs <= 0) return undefined;
+  return Math.max(1, Math.ceil(durationMs / intervalMs));
 }
 
 async function importDefault(path: string): Promise<unknown> {

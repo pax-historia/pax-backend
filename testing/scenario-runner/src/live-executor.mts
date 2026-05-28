@@ -487,7 +487,8 @@ async function sendJson(
       }
       session.ws.send(JSON.stringify(body));
       if (perSessionDelayMs > 0 && sessionIndex + 1 < ctx.sessions.length) {
-        await sleep(perSessionDelayMs);
+        const targetElapsedMs = perSessionDelayMs * (sessionIndex + 1);
+        await sleep(waveStartedAt + targetElapsedMs - performance.now());
       }
     }
     if (messageIndex + 1 < messagesPerSession && intervalMs > 0) {

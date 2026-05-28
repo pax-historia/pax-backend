@@ -259,7 +259,9 @@ with rungs from 100 games on one shard machine through the v1 soak target
 of 1000 games on 10 shard machines. The scale runner executes a selected
 rung by cloning the scenario workload with rung-specific `maxGames`,
 `open-sessions` ramp/session count, target duration, nemesis set, and
-sampling profile. During live runs it scrapes router, control-plane,
+sampling profile. Rungs can also override the `send-json` interval and fanout
+window to keep long soaks from creating artificial burst cliffs. During live
+runs it scrapes router, control-plane,
 gateway, parent, and vendored-engine Prometheus endpoints, aggregates
 samples online, applies the `cliff_hold` fast-family allowlist to engine
 metrics, then ranks histogram/counter candidates for the attribution

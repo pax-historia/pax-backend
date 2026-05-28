@@ -190,6 +190,8 @@ export interface ScenarioRunnerInput {
   readonly workloadSessionsPerGame?: number;
   readonly workloadOpenSessionsRampMs?: number;
   readonly workloadSendJsonMessagesPerSession?: number;
+  readonly workloadSendJsonIntervalMs?: number;
+  readonly workloadSendJsonFanoutMs?: number;
   readonly fixtureBaseDir?: string;
   readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
   readonly controlPlaneUrl?: string;
@@ -278,6 +280,8 @@ export interface ScaleRungSpec {
   readonly targetDurationMs: number;
   readonly rampMs: number;
   readonly sessionsPerGame: number;
+  readonly sendJsonIntervalMs?: number;
+  readonly sendJsonFanoutMs?: number;
   readonly scenarioId?: string;
   readonly nemesisIds: readonly NemesisKind[];
   readonly samplingProfile?: SamplingProfile;
@@ -332,6 +336,8 @@ export interface ScaleRungResult {
   readonly sessions_per_game: number;
   readonly target_duration_ms: number;
   readonly ramp_ms: number;
+  readonly send_json_interval_ms?: number;
+  readonly send_json_fanout_ms?: number;
   readonly sampling_profile: SamplingProfile;
   readonly nemesis_ids: readonly NemesisKind[];
   readonly output_dir: string;

@@ -104,6 +104,8 @@ async function runScaleRung(
         workloadDurationMs: rung.targetDurationMs,
         workloadSessionsPerGame: rung.sessionsPerGame,
         workloadOpenSessionsRampMs: rung.rampMs,
+        workloadSendJsonIntervalMs: rung.sendJsonIntervalMs,
+        workloadSendJsonFanoutMs: rung.sendJsonFanoutMs,
         controlPlaneUrl: input.controlPlaneUrl,
         apiGatewayUrl: input.apiGatewayUrl,
         routerUrl: input.routerUrl,
@@ -157,6 +159,8 @@ async function runScaleRung(
     sessions_per_game: rung.sessionsPerGame,
     target_duration_ms: rung.targetDurationMs,
     ramp_ms: rung.rampMs,
+    send_json_interval_ms: rung.sendJsonIntervalMs,
+    send_json_fanout_ms: rung.sendJsonFanoutMs,
     sampling_profile: samplingProfile,
     nemesis_ids: rung.nemesisIds,
     output_dir: rungOutputDir,
@@ -256,6 +260,12 @@ function validateScaleRung(value: unknown, path: string, index: number): void {
   requirePositiveInteger(value["targetDurationMs"], path, `${prefix}.targetDurationMs`);
   requireNonNegativeNumber(value["rampMs"], path, `${prefix}.rampMs`);
   requirePositiveInteger(value["sessionsPerGame"], path, `${prefix}.sessionsPerGame`);
+  if (value["sendJsonIntervalMs"] !== undefined) {
+    requireNonNegativeNumber(value["sendJsonIntervalMs"], path, `${prefix}.sendJsonIntervalMs`);
+  }
+  if (value["sendJsonFanoutMs"] !== undefined) {
+    requireNonNegativeNumber(value["sendJsonFanoutMs"], path, `${prefix}.sendJsonFanoutMs`);
+  }
   if (value["scenarioId"] !== undefined) {
     requireString(value["scenarioId"], path, `${prefix}.scenarioId`);
   }

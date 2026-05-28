@@ -1,5 +1,10 @@
 import type { ScaleLadderPlan } from "@pax-backend/scenario-runner";
 
+const smoothedSendJson = {
+  sendJsonIntervalMs: 1_000,
+  sendJsonFanoutMs: 1_000,
+} as const;
+
 export default {
   schemaVersion: 1,
   ladderId: "phase-5-v1-soak",
@@ -19,10 +24,11 @@ export default {
       targetDurationMs: 28_800_000,
       rampMs: 600_000,
       sessionsPerGame: 1,
+      ...smoothedSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "cliff_hold",
       notes:
-        "Three 8-hour nemesis cases form one 24-hour exit-soak suite at the v1 target.",
+        "Three 8-hour nemesis cases form one 24-hour exit-soak suite at the v1 target; each websocket send wave is spread across its interval to avoid synthetic per-second bursts.",
     },
   ],
 } satisfies ScaleLadderPlan;
