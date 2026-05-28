@@ -17,6 +17,7 @@ export const RUNTIME_CONTRACT_VERSION = 1 as const;
 
 export const ACTIVE_GAMES_KEY_PREFIX = "active_games:" as const;
 export const SHARD_REGISTRY_KEY_PREFIX = "shards:" as const;
+export const SHARD_DRAIN_KEY_PREFIX = "shard_drain:" as const;
 export const PLACEMENT_RECENT_WAKES_KEY_PREFIX = "placement_recent_wakes:" as const;
 export const BUNDLE_KEY_PREFIX = "bundles:" as const;
 export const GAME_KEY_PREFIX = "games:" as const;

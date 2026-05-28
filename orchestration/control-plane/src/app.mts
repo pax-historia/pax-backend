@@ -118,6 +118,16 @@ async function handleRequest(
       return;
     }
 
+    if (parts[0] === "admin" && parts[1] === "shards" && parts.length === 2) {
+      await handleShardsCollection(req, res, store);
+      return;
+    }
+
+    if (parts[0] === "admin" && parts[1] === "shards" && parts.length >= 3) {
+      await handleShardResource(req, res, store, parts);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/admin/games/compat-tags") {
       await handleCompatTags(res, store);
       return;
@@ -311,6 +321,48 @@ async function handleGameResource(
       writeJson(res, 200, { ok: true, removed, gameId, playerId });
       return;
     }
+  }
+
+  throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });
+}
+
+async function handleShardsCollection(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+): Promise<void> {
+  if (req.method !== "GET") {
+    throw new HttpError(405, "methodNotAllowed", { method: req.method });
+  }
+  writeJson(res, 200, { ok: true, shards: await store.listShards() });
+}
+
+async function handleShardResource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  parts: readonly string[],
+): Promise<void> {
+  const shardId = parts[2] ?? "";
+  if (parts.length === 3 && req.method === "GET") {
+    const shard = await store.getShard(shardId);
+    if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
+    writeJson(res, 200, { ok: true, shard });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "drain" && req.method === "POST") {
+    const shard = await store.setShardDrain(shardId, true);
+    if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
+    writeJson(res, 200, { ok: true, draining: true, shard });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "drain" && req.method === "DELETE") {
+    const shard = await store.setShardDrain(shardId, false);
+    if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
+    writeJson(res, 200, { ok: true, draining: false, shard });
+    return;
   }
 
   throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });

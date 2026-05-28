@@ -51,6 +51,7 @@ import {
   type GameRecord,
   type ParentToChildEnvelope,
   RUNTIME_CONTRACT_VERSION,
+  SHARD_DRAIN_KEY_PREFIX,
   SHARD_REGISTRY_KEY_PREFIX,
   SHARD_REGISTRY_TTL_SECONDS,
   STATE_KEY_PREFIX,
@@ -181,11 +182,13 @@ const wakeMetrics = {
 let activeGameCount = 0;
 
 async function registerShard(): Promise<void> {
+  const drainRequested =
+    (await redis.get(`${SHARD_DRAIN_KEY_PREFIX}${SHARD_ID}`)) === "true";
   const payload: ShardRegistration = {
     shardId: SHARD_ID,
     url: SHARD_PUBLIC_URL,
     healthy: true,
-    acceptingWakes: true,
+    acceptingWakes: !drainRequested,
     runtimeContractsSupported: RUNTIME_CONTRACTS_SUPPORTED,
     activeGames: activeGameCount,
     cpuPct: 0,

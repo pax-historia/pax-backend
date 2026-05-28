@@ -14,11 +14,15 @@ Shard registry + the admin REST surface from [plan](../../README.md)
   `GET /admin/sessions/:sessionId`)
 - Bundle upload (parses + validates `BundleManifest`; rejects if
   `compatTagProduced ∉ compatTagsAccepted`)
-- Shard registry + drain
+- Shard registry + drain (`GET /admin/shards`, `GET /admin/shards/:id`,
+  `POST /admin/shards/:id/drain`, `DELETE /admin/shards/:id/drain`)
 - API kind registration
 - `GET /admin/history` (cursor-paginated; batch + live-tail)
 
 **No ledger endpoints.** **No metadata endpoints.** See the plan's "Explicitly
 NOT in the admin surface" subsection.
 
-Stub.
+The current pass wires the shard registry and drain intent through Redis.
+Drained shards continue serving in-flight games, but parent self-registration
+publishes `acceptingWakes=false` so placement stops choosing them for new
+wakes.

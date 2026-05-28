@@ -7,6 +7,10 @@ import {
   type BundleRecord,
   GAME_KEY_PREFIX,
   type GameRecord,
+  SHARD_DRAIN_KEY_PREFIX,
+  SHARD_REGISTRY_KEY_PREFIX,
+  SHARD_REGISTRY_TTL_SECONDS,
+  type ShardRegistration,
   STATE_KEY_PREFIX,
 } from "@pax-backend/ipc-protocol";
 
@@ -71,6 +75,42 @@ export class ControlPlaneStore {
 
   async listAllowedPlayers(gameId: string): Promise<readonly string[]> {
     return (await this.redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`)).sort();
+  }
+
+  async listShards(): Promise<readonly ShardRegistration[]> {
+    const keys = await scanKeys(this.redis, `${SHARD_REGISTRY_KEY_PREFIX}*`);
+    if (keys.length === 0) return [];
+    const raws = await this.redis.mget(...keys);
+    return raws.flatMap((raw) => (raw ? [JSON.parse(raw) as ShardRegistration] : []));
+  }
+
+  async getShard(shardId: string): Promise<ShardRegistration | undefined> {
+    return getJson<ShardRegistration>(this.redis, `${SHARD_REGISTRY_KEY_PREFIX}${shardId}`);
+  }
+
+  async setShardDrain(
+    shardId: string,
+    draining: boolean,
+  ): Promise<ShardRegistration | undefined> {
+    const shard = await this.getShard(shardId);
+    if (!shard) return undefined;
+    if (draining) {
+      await this.redis.set(`${SHARD_DRAIN_KEY_PREFIX}${shardId}`, "true");
+    } else {
+      await this.redis.del(`${SHARD_DRAIN_KEY_PREFIX}${shardId}`);
+    }
+    const updated: ShardRegistration = {
+      ...shard,
+      acceptingWakes: !draining,
+      lastSeenAt: Date.now(),
+    };
+    await this.redis.set(
+      `${SHARD_REGISTRY_KEY_PREFIX}${shardId}`,
+      JSON.stringify(updated),
+      "EX",
+      SHARD_REGISTRY_TTL_SECONDS,
+    );
+    return updated;
   }
 
   async putStorageRaw(
