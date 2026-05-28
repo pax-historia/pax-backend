@@ -518,7 +518,7 @@ The host product calls into the substrate via a small, deliberate REST surface. 
 
 ### Game lifecycle
 
-- `POST /admin/games` — create a game. Body: `{ gameId, bundleName, initialState?, initialBlob? | initialBlobUrl?, allowedPlayers? }`. `allowedPlayers` may be empty; host adds players afterwards. State/blob may be inlined (small) or referenced by URL (substrate fetches and stores). On create the game has no `blobCompatTag` yet; the first successful sleep stamps it from the bundle's manifest.
+- `POST /admin/games` — create a game. Body: `{ gameId, bundleName, initialState? | initialStateUrl?, initialBlob? | initialBlobUrl?, allowedPlayers? }`. `allowedPlayers` may be empty; host adds players afterwards. State/blob may be inlined (small) or referenced by URL (substrate fetches JSON and stores it). On create the game has no `blobCompatTag` yet; the first successful sleep stamps it from the bundle's manifest.
 - `GET /admin/games/:id` — basic game info: status, current shard, current bundle, `blobCompatTag`, allowed-player count, connected-player count, created/last-activity timestamps.
 - `DELETE /admin/games/:id` — ends any active session; archives or drops state/blob per operator config; removes from directory.
 - `POST /admin/games/:id/bundle` — `{ newBundleName }`. Refuses with `409 compatTagOutOfRange` if `game.blobCompatTag ∉ newBundle.manifest.compatTagsAccepted`; the 409 body includes `{ blobCompatTag, bundleCompatTagsAccepted }` so operator tooling can plan a bridge. On success, triggers the snapshot-before-first-wake migration.

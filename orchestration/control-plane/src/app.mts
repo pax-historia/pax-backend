@@ -32,6 +32,10 @@ const BLOB_BYTES_LIMIT = Number.parseInt(
   process.env["PAX_BLOB_BYTES_LIMIT"] ?? String(DEFAULT_BLOB_BYTES_LIMIT),
   10,
 );
+const INITIAL_VALUE_FETCH_TIMEOUT_MS = parsePositiveInteger(
+  process.env["PAX_INITIAL_VALUE_FETCH_TIMEOUT_MS"] ?? "10000",
+  10_000,
+);
 
 export interface ControlPlaneConfig {
   readonly bindHost: string;
@@ -235,14 +239,18 @@ async function handleGamesCollection(
   const bundleName = readString(body, "bundleName");
   const bundle = await store.getBundle(bundleName);
   if (!bundle) throw new HttpError(404, "bundleNotFound", { bundleName });
-  if (Object.prototype.hasOwnProperty.call(body, "initialBlobUrl")) {
-    throw new HttpError(400, "unsupportedField", {
-      field: "initialBlobUrl",
-      message: "inline initialBlob is supported; URL ingestion is not wired in this pass",
-    });
-  }
-  const initialState = readOptionalStoredValue(body, "initialState", STATE_BYTES_LIMIT);
-  const initialBlob = readOptionalStoredValue(body, "initialBlob", BLOB_BYTES_LIMIT);
+  const initialState = await readOptionalStoredValue(
+    body,
+    "initialState",
+    "initialStateUrl",
+    STATE_BYTES_LIMIT,
+  );
+  const initialBlob = await readOptionalStoredValue(
+    body,
+    "initialBlob",
+    "initialBlobUrl",
+    BLOB_BYTES_LIMIT,
+  );
   const game: GameRecord = {
     gameId,
     bundleName,
@@ -656,12 +664,95 @@ function readOptionalStringArray(
 function readOptionalStoredValue(
   record: Readonly<Record<string, unknown>>,
   field: "initialState" | "initialBlob",
+  urlField: "initialStateUrl" | "initialBlobUrl",
   limit: number,
-): { readonly raw: string; readonly bytes: number } | undefined {
-  if (!Object.prototype.hasOwnProperty.call(record, field)) return undefined;
+): Promise<{ readonly raw: string; readonly bytes: number } | undefined> {
+  const hasInline = Object.prototype.hasOwnProperty.call(record, field);
+  const hasUrl = Object.prototype.hasOwnProperty.call(record, urlField);
+  if (hasInline && hasUrl) {
+    throw new HttpError(400, "badRequest", {
+      fields: [field, urlField],
+      expected: "provide either inline value or URL, not both",
+    });
+  }
+  if (hasUrl) {
+    return fetchStoredValueFromUrl(readString(record, urlField), field, limit);
+  }
+  if (!hasInline) return undefined;
+  return encodeStoredValue(record[field], field, limit);
+}
+
+async function fetchStoredValueFromUrl(
+  rawUrl: string,
+  field: "initialState" | "initialBlob",
+  limit: number,
+): Promise<{ readonly raw: string; readonly bytes: number }> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new HttpError(400, "badRequest", { field: `${field}Url`, expected: "absolute URL" });
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new HttpError(400, "badRequest", {
+      field: `${field}Url`,
+      expected: "http or https URL",
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), INITIAL_VALUE_FETCH_TIMEOUT_MS);
+  timeout.unref();
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new HttpError(502, "initialValueFetchFailed", {
+        field,
+        url: url.toString(),
+        status: response.status,
+      });
+    }
+    const contentLength = Number.parseInt(response.headers.get("content-length") ?? "", 10);
+    if (Number.isFinite(contentLength) && contentLength > limit) {
+      throw new HttpError(413, "sizeExceeded", { field, bytes: contentLength, limit });
+    }
+
+    const text = await response.text();
+    let value: unknown;
+    try {
+      value = JSON.parse(text) as unknown;
+    } catch (err) {
+      throw new HttpError(502, "initialValueFetchFailed", {
+        field,
+        url: url.toString(),
+        expected: "JSON response body",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return encodeStoredValue(value, field, limit);
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(502, "initialValueFetchFailed", {
+      field,
+      url: url.toString(),
+      message: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function encodeStoredValue(
+  value: unknown,
+  field: "initialState" | "initialBlob",
+  limit: number,
+): { readonly raw: string; readonly bytes: number } {
   let raw: string;
   try {
-    raw = JSON.stringify({ value: record[field] });
+    raw = JSON.stringify({ value });
   } catch (err) {
     throw new HttpError(400, "badRequest", {
       field,
@@ -674,6 +765,11 @@ function readOptionalStoredValue(
     throw new HttpError(413, "sizeExceeded", { field, bytes, limit });
   }
   return { raw, bytes };
+}
+
+function parsePositiveInteger(raw: string, fallback: number): number {
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function assertApiKindRegistration(registration: ApiKindRegistration): void {
