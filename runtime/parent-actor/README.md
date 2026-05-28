@@ -8,8 +8,9 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
 - Compute-plane quota enforcement (guarantee #7)
 - IPC broker between child and the rest of the cluster
 - Storage tier dispatch (`c.state`, `c.blob`)
+- `onWake` hydration and `onSleep` dispatch with a minimum flush budget
 - Forwarding `c.api.invoke` calls to the API gateway with the context envelope
 - Writing every channel call / lifecycle event / session transition / api
   round trip to the history (guarantee #14)
 
-Stub. Implementation lands in step 7 of the plan's kickoff.
+Current source passes implement the local actor loop used by the smoke path.

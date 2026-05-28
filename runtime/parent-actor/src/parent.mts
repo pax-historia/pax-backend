@@ -49,6 +49,7 @@ import {
   type DisconnectReason,
   GAME_KEY_PREFIX,
   type GameRecord,
+  type OnSleepPayload,
   type ParentToChildEnvelope,
   RUNTIME_CONTRACT_VERSION,
   SHARD_DRAIN_KEY_PREFIX,
@@ -114,6 +115,10 @@ const BLOB_BYTES_LIMIT = Number.parseInt(
 );
 const API_INVOCATIONS_PER_MIN_LIMIT = Number.parseInt(
   process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
+  10,
+);
+const SLEEP_MINIMUM_BUDGET_MS = Number.parseInt(
+  process.env["PAX_SLEEP_MINIMUM_BUDGET_MS"] ?? "5000",
   10,
 );
 
@@ -293,6 +298,7 @@ interface GameInstance {
   blobBytes: number;
   ready: boolean;
   bootstrapPromise: Promise<void> | null;
+  sleepTimer: NodeJS.Timeout | null;
 }
 
 // Minimal WebSocket-ish surface the engine-runner hands us. The vendored
@@ -347,6 +353,7 @@ function ensureGame(
     blobBytes: 0,
     ready: false,
     bootstrapPromise: null,
+    sleepTimer: null,
   };
   games.set(actorId, inst);
   activeGameCount = games.size;
@@ -385,6 +392,10 @@ function forkChild(inst: GameInstance): Promise<void> {
 
     child.on("exit", (code, signal) => {
       log.warn({ actorId: inst.actorId, code, signal }, "child exited");
+      if (inst.sleepTimer) {
+        clearTimeout(inst.sleepTimer);
+        inst.sleepTimer = null;
+      }
       history("child.exit", {
         actorId: inst.actorId,
         gameId: inst.gameId,
@@ -392,6 +403,8 @@ function forkChild(inst: GameInstance): Promise<void> {
         signal,
       });
       inst.ready = false;
+      inst.child = null;
+      inst.bootstrapPromise = null;
     });
 
     child.on("message", (raw: unknown) => {
@@ -535,10 +548,7 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       });
       return;
     case CHILD_TO_PARENT.lifecycleRequestSleep:
-      history("lifecycle.requestSleep", {
-        actorId: inst.actorId,
-        gameId: inst.gameId,
-      });
+      handleLifecycleRequestSleep(inst);
       return;
     case "child.fatal":
       history("child.fatal", {
@@ -654,6 +664,66 @@ function handleComputeBudget(
   if (inst.child) {
     sendTyped(inst.child, "compute.budget.response", { budget }, requestId);
   }
+}
+
+function handleLifecycleRequestSleep(inst: GameInstance): void {
+  history("lifecycle.requestSleep", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+  });
+  sendOnSleep(inst, "requestedBySleep");
+}
+
+function sendOnSleep(
+  inst: GameInstance,
+  reason: OnSleepPayload["reason"],
+): void {
+  if (!inst.child) {
+    history("onSleep.skipped", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason,
+      cause: "childMissing",
+    });
+    return;
+  }
+  if (inst.sleepTimer) {
+    history("onSleep.skipped", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason,
+      cause: "alreadySleeping",
+    });
+    return;
+  }
+  const configuredBudgetMs = Number.isFinite(SLEEP_MINIMUM_BUDGET_MS)
+    ? SLEEP_MINIMUM_BUDGET_MS
+    : 5_000;
+  const budgetMs = Math.max(1_000, configuredBudgetMs);
+  const deadline = Date.now() + budgetMs;
+  sendTyped(inst.child, "onSleep", { deadline, reason });
+  history("onSleep.sent", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    reason,
+    deadline,
+    budgetMs,
+  });
+  inst.sleepTimer = setTimeout(() => {
+    history("onSleep.deadline", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason,
+      deadline,
+    });
+    inst.child?.kill();
+  }, budgetMs);
+  inst.sleepTimer.unref();
 }
 
 async function handleStorageRead(
@@ -1338,11 +1408,7 @@ const runner = new Runner({
     if (!inst) return;
     log.info({ actorId, gameId: inst.gameId }, "actor stop");
     history("actor.stop", { actorId, gameId: inst.gameId });
-    try {
-      inst.child?.kill();
-    } catch {
-      /* ignore */
-    }
+    sendOnSleep(inst, "shutdown");
     games.delete(actorId);
     activeGameCount = games.size;
   },
