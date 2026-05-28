@@ -15,7 +15,7 @@ import {
 } from "@pax-backend/url-services";
 
 import { budgetFromEnv } from "./budgets.mjs";
-import { ApiGateway } from "./dispatch.mjs";
+import { ApiGateway, type ApiGatewayMetricsSnapshot } from "./dispatch.mjs";
 import { loadRedisRegistryFromEnv, type ApiKindRegistry } from "./registry.mjs";
 import { JsonlWireRecordStore } from "./record-replay.mjs";
 
@@ -104,6 +104,11 @@ async function handleRequest(
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/metrics") {
+      writeText(res, 200, metricsText(gateway.metricsSnapshot()));
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/admin/api-kinds") {
       writeJson(res, 200, { ok: true, kinds: await registry.list() });
       return;
@@ -180,6 +185,31 @@ function writeJson(res: ServerResponse, statusCode: number, body: unknown): void
     "content-length": Buffer.byteLength(raw),
   });
   res.end(raw);
+}
+
+function writeText(res: ServerResponse, statusCode: number, body: string): void {
+  res.writeHead(statusCode, {
+    "content-type": "text/plain; version=0.0.4; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function metricsText(snapshot: ApiGatewayMetricsSnapshot): string {
+  const lines = [
+    "# HELP pax_api_gateway_invocations_total Total c.api.invoke calls handled by the gateway.",
+    "# TYPE pax_api_gateway_invocations_total counter",
+    `pax_api_gateway_invocations_total ${snapshot.invocationsTotal}`,
+    "# HELP pax_api_gateway_invocations_ok_total Total successful c.api.invoke responses.",
+    "# TYPE pax_api_gateway_invocations_ok_total counter",
+    `pax_api_gateway_invocations_ok_total ${snapshot.okTotal}`,
+    "# HELP pax_api_gateway_invocations_error_total Total c.api.invoke failures by substrate error.",
+    "# TYPE pax_api_gateway_invocations_error_total counter",
+  ];
+  for (const [error, count] of Object.entries(snapshot.errorsTotal)) {
+    lines.push(`pax_api_gateway_invocations_error_total{error="${error}"} ${count}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function asDispatchInput(raw: unknown): ApiGatewayDispatchInput {

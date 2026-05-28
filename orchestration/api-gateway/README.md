@@ -15,6 +15,9 @@ The substrate's only egress to operator-owned URL services. Implements
 7. Replay mode: lookup recorded inbound by fingerprint; **hard-fail with
    `replayCoverageGap` if no match** (no silent fall-through to live).
 
+`/metrics` exposes Prometheus text counters for total invokes, successful
+invokes, and substrate-owned error outcomes.
+
 The gateway has **zero opinion** about `args` or `result` bodies. It does not
 interpret billing, validate kind-specific schemas, or model debits. Strong
 Platform Guarantee #5 is the contract.

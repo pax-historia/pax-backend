@@ -20,6 +20,12 @@ export interface ApiGatewayOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+export interface ApiGatewayMetricsSnapshot {
+  readonly invocationsTotal: number;
+  readonly okTotal: number;
+  readonly errorsTotal: Readonly<Record<ApiInvokeError, number>>;
+}
+
 export class ApiGateway {
   readonly #registry: ApiKindRegistry;
   readonly #budget: ApiInvocationBudget;
@@ -27,6 +33,9 @@ export class ApiGateway {
   readonly #defaultMode: "live" | "replay";
   readonly #fetch: typeof fetch;
   readonly #providerTimeoutMs: number;
+  #invocationsTotal = 0;
+  #okTotal = 0;
+  readonly #errorsTotal = new Map<ApiInvokeError, number>();
 
   constructor(options: ApiGatewayOptions) {
     this.#registry = options.registry;
@@ -37,7 +46,21 @@ export class ApiGateway {
     this.#providerTimeoutMs = options.providerTimeoutMs ?? 30_000;
   }
 
+  metricsSnapshot(): ApiGatewayMetricsSnapshot {
+    return {
+      invocationsTotal: this.#invocationsTotal,
+      okTotal: this.#okTotal,
+      errorsTotal: {
+        kindUnknown: this.#errorsTotal.get("kindUnknown") ?? 0,
+        providerError: this.#errorsTotal.get("providerError") ?? 0,
+        apiRateExceeded: this.#errorsTotal.get("apiRateExceeded") ?? 0,
+        replayCoverageGap: this.#errorsTotal.get("replayCoverageGap") ?? 0,
+      },
+    };
+  }
+
   async invoke(input: ApiGatewayDispatchInput): Promise<ApiInvokeResponse> {
+    this.#invocationsTotal += 1;
     const mode = input.replayMode === true ? "replay" : this.#defaultMode;
     const envelope = buildGatewayEnvelope(input, mode);
 
@@ -71,7 +94,9 @@ export class ApiGateway {
         rawOutbound: envelope.rawOutbound,
         recordedAt: new Date().toISOString(),
       });
-      return apiInvokeResponseFromHttp(recorded.statusCode, recorded.rawInbound);
+      const response = apiInvokeResponseFromHttp(recorded.statusCode, recorded.rawInbound);
+      this.#recordMetrics(response);
+      return response;
     }
 
     const controller = new AbortController();
@@ -100,6 +125,7 @@ export class ApiGateway {
         error: response.ok ? undefined : response.error,
         recordedAt: new Date().toISOString(),
       });
+      this.#recordMetrics(response);
       return response;
     } catch (err) {
       return this.#recordAndReturn(input, envelope, mode, 0, "providerError", {
@@ -120,6 +146,7 @@ export class ApiGateway {
     detail: unknown,
   ): Promise<ApiInvokeResponse> {
     const response: ApiInvokeResponse = { ok: false, error, detail };
+    this.#recordMetrics(response);
     const record: ApiInvokeWireRecord = {
       event: "api.invoke",
       requestId: envelope.requestId,
@@ -136,6 +163,14 @@ export class ApiGateway {
     };
     await this.#records.record(record);
     return response;
+  }
+
+  #recordMetrics(response: ApiInvokeResponse): void {
+    if (response.ok) {
+      this.#okTotal += 1;
+      return;
+    }
+    this.#errorsTotal.set(response.error, (this.#errorsTotal.get(response.error) ?? 0) + 1);
   }
 }
 
