@@ -458,6 +458,7 @@ function forkChild(inst: GameInstance): Promise<void> {
       history("child.exit", {
         actorId: inst.actorId,
         gameId: inst.gameId,
+        runId: inst.runId,
         code,
         signal,
       });

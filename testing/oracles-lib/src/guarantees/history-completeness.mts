@@ -9,6 +9,8 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "api.invoke.response": ["actorId", "gameId", "requestId", "kind"],
   "blob.read": ["actorId", "gameId", "requestId"],
   "blob.write": ["actorId", "gameId", "requestId"],
+  "child.exit": ["actorId", "gameId", "runId"],
+  "child.fatal": ["actorId", "gameId"],
   "child.handlerComplete": ["actorId", "gameId", "runId", "handler"],
   "child.handlerError": ["actorId", "gameId", "runId", "handler", "code"],
   "compute.budget.rejected": ["actorId", "gameId", "reason"],
