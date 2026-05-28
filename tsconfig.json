@@ -3,6 +3,7 @@
   "references": [
     { "path": "./shared/ipc-protocol" },
     { "path": "./sdk/runtime-sdk" },
+    { "path": "./sdk/runtime-sdk-test-harness" },
     { "path": "./orchestration/control-plane" },
     { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },

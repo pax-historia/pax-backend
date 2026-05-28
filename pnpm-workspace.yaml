@@ -5,6 +5,7 @@ packages:
   - "orchestration/control-plane"
   - "orchestration/api-gateway"
   - "sdk/runtime-sdk"
+  - "sdk/runtime-sdk-test-harness"
   - "examples/bundles/*"
   - "testing/oracles-lib"
   - "testing/scenario-runner"

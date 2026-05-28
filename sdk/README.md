@@ -34,6 +34,6 @@ bundle-tools/src/
   cli.ts
 ```
 
-Smoke today ships `runtime-sdk/` only (smoke-grade — just the types and
-`defineBundle` validator the hello-ws-echo bundle imports). The other two
-packages are zone slots for M4+.
+Current source passes ship `runtime-sdk/` plus the first
+`runtime-sdk-test-harness/` implementation. `bundle-tools/` remains a zone slot
+for a later pass.

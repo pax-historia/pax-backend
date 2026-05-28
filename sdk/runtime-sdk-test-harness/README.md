@@ -12,4 +12,11 @@ Local dev loop for creator bundles. Implements:
   lints out raw `Math.random` / `Date.now`, and exercises the bundle through
   the harness with a smoke scenario.
 
-Stub.
+Current source pass provides an in-memory `SubstrateContext` for bundle unit
+tests:
+
+- deterministic `c.rng()` / `c.now()`
+- in-memory allowed/connected players
+- in-memory `c.state` and `c.blob`
+- record/replay-style `c.api.invoke` fixtures keyed by argument fingerprint
+- lint helpers that reject raw `Date.now` and `Math.random`

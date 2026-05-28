@@ -1,0 +1,14 @@
+{
+  "name": "@pax-backend/runtime-sdk-test-harness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "scripts": {
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pax-backend/runtime-sdk": "workspace:*"
+  }
+}

@@ -28,7 +28,13 @@ export type {
   ComputeBudgetSnapshot,
   ConnectedSessionSnapshot,
   MetricsEmitPayload,
+  OnPlayerConnectPayload,
+  OnPlayerDisconnectPayload,
+  OnPlayerMessagePayload,
+  OnSleepPayload,
+  OnWakePayload,
   StorageWriteResponse,
+  WsTarget,
 } from "@pax-backend/ipc-protocol";
 
 // ----- The typed substrate context (`c`) ---------------------------------
