@@ -96,31 +96,37 @@ const ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS = Number.parseInt(
   process.env["PAX_ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS"] ?? "5000",
   10,
 );
-const CPU_MS_PER_TICK_LIMIT = Number.parseInt(
+const CPU_MS_PER_TICK_LIMIT = parsePositiveInteger(
   process.env["PAX_CPU_MS_PER_TICK_LIMIT"] ?? "1000",
-  10,
+  1_000,
 );
-const MEMORY_BYTES_LIMIT =
-  Number.parseInt(process.env["PAX_MEMORY_BYTES_LIMIT"] ?? "134217728", 10);
-const BANDWIDTH_BYTES_PER_SEC_LIMIT = Number.parseInt(
+const MEMORY_BYTES_LIMIT = parsePositiveInteger(
+  process.env["PAX_MEMORY_BYTES_LIMIT"] ?? "134217728",
+  134_217_728,
+);
+const CHILD_MEMORY_LIMIT_MB = Math.max(
+  1,
+  Math.floor(MEMORY_BYTES_LIMIT / (1024 * 1024)),
+);
+const BANDWIDTH_BYTES_PER_SEC_LIMIT = parsePositiveInteger(
   process.env["PAX_BANDWIDTH_BYTES_PER_SEC_LIMIT"] ?? "65536",
-  10,
+  65_536,
 );
-const WS_MESSAGES_PER_SEC_LIMIT = Number.parseInt(
+const WS_MESSAGES_PER_SEC_LIMIT = parsePositiveInteger(
   process.env["PAX_WS_MESSAGES_PER_SEC_LIMIT"] ?? "50",
-  10,
+  50,
 );
-const STATE_BYTES_LIMIT = Number.parseInt(
+const STATE_BYTES_LIMIT = parsePositiveInteger(
   process.env["PAX_STATE_BYTES_LIMIT"] ?? String(DEFAULT_STATE_BYTES_LIMIT),
-  10,
+  DEFAULT_STATE_BYTES_LIMIT,
 );
-const BLOB_BYTES_LIMIT = Number.parseInt(
+const BLOB_BYTES_LIMIT = parsePositiveInteger(
   process.env["PAX_BLOB_BYTES_LIMIT"] ?? String(DEFAULT_BLOB_BYTES_LIMIT),
-  10,
+  DEFAULT_BLOB_BYTES_LIMIT,
 );
-const API_INVOCATIONS_PER_MIN_LIMIT = Number.parseInt(
+const API_INVOCATIONS_PER_MIN_LIMIT = parsePositiveInteger(
   process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
-  10,
+  60,
 );
 const CAPACITY_WARNING_RATIO = parseCapacityWarningRatio(
   process.env["PAX_CAPACITY_WARNING_RATIO"] ?? "0.8",
@@ -156,6 +162,11 @@ function parseCapacityWarningRatio(raw: string): number {
 function parseNonNegativeInteger(raw: string, fallback: number): number {
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function parsePositiveInteger(raw: string, fallback: number): number {
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 // runtimeContractsSupported [min, max]. For smoke we ship version 1 and
@@ -491,7 +502,8 @@ function forkChild(inst: GameInstance): Promise<void> {
       bundleCompatTag: inst.bundleCompatTag,
       runId: inst.runId,
       gameId: inst.gameId,
-      memoryLimitMb: 128,
+      memoryLimitMb: CHILD_MEMORY_LIMIT_MB,
+      handlerTimeoutMs: CPU_MS_PER_TICK_LIMIT,
     });
   });
   return inst.bootstrapPromise;

@@ -315,11 +315,11 @@ All proxied via IPC to the parent, which:
 `console.{log,info,warn,error}` with shims that call `c.log.*` with
 `source: 'console'`.
 
-CPU-ms-per-tick measurement: replace today's
-[runtime/child-runner-ivm/src/child.mts](../../runtime/child-runner-ivm/src/child.mts)
-1s `ivm.run()` timeout stub with `process.hrtime.bigint()` straddling each
-handler invocation; emit `pax_parent_handler_duration_seconds` from the parent
-(the child only reports raw nanos, parent labels it).
+CPU-ms-per-tick measurement: child runners time bundle eval and handler
+invocation with the parent-provided `handlerTimeoutMs` budget. They emit
+`child.handlerComplete` / `child.handlerError` with `durationMs` and
+`timeoutMs`; the parent records those history events and folds the latest
+duration into `c.compute.budget()`.
 
 ### 5.4 API gateway (`orchestration/api-gateway/`)
 

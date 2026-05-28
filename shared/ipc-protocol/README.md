@@ -30,6 +30,9 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `ChildHandlerCompletePayload`, `ChildUnknownMessagePayload`.
 - Parent-to-child response payload types for request/response channels,
   including `WsSendResponsePayload` for typed bandwidth/rate rejections.
+- `BootstrapPayload` carries the parent-selected memory limit and
+  `handlerTimeoutMs` so child runner enforcement matches the advertised
+  `cpu-ms-per-tick` budget.
 - Redis key prefixes + TTLs: `ACTIVE_GAMES_KEY_PREFIX`,
   `SHARD_REGISTRY_KEY_PREFIX`, `PLACEMENT_RECENT_WAKES_KEY_PREFIX`,
   `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`.

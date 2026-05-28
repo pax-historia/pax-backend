@@ -284,6 +284,7 @@ export interface BootstrapPayload {
   readonly runId: string;
   readonly gameId: string;
   readonly memoryLimitMb: number;
+  readonly handlerTimeoutMs: number;
 }
 
 // ----- Child → parent envelopes -----------------------------------------

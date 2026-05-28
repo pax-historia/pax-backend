@@ -23,7 +23,7 @@ import {
 } from "@pax-backend/ipc-protocol";
 import type { BundleDefinition, SubstrateContext } from "@pax-backend/runtime-sdk";
 
-const PER_HANDLER_TIMEOUT_MS = 1_000;
+const DEFAULT_HANDLER_TIMEOUT_MS = 1_000;
 const PARENT_REQUEST_TIMEOUT_MS = 30_000;
 
 type ParentRequestType =
@@ -52,6 +52,7 @@ interface PaxGlobal {
 const pendingParentRequests = new Map<string, PendingParentRequest>();
 let bundleExports: BundleDefinition | undefined;
 let currentTriggeringSessionId: string | null = null;
+let handlerTimeoutMs = DEFAULT_HANDLER_TIMEOUT_MS;
 let nextRandom = makeMulberry32(1);
 let nextNow = 1_700_000_000_000;
 
@@ -84,6 +85,7 @@ async function bootstrap(cfg: BootstrapPayload): Promise<void> {
   const seed = hashSeed(`${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`);
   nextRandom = makeMulberry32(seed);
   nextNow = 1_700_000_000_000 + (seed % 1_000_000_000);
+  handlerTimeoutMs = validTimeoutMs(cfg.handlerTimeoutMs);
   const g = globalThis as PaxGlobal;
   g.__pax_bundle = null;
   g.__pax_install = (bundle) => {
@@ -244,14 +246,14 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
       Promise.resolve().then(() =>
         handler((globalThis as PaxGlobal).c as SubstrateContext, payload as never),
       ),
-      PER_HANDLER_TIMEOUT_MS,
+      handlerTimeoutMs,
       handlerName,
     );
     const durationMs = Date.now() - startedAt;
-    if (durationMs > PER_HANDLER_TIMEOUT_MS) {
+    if (durationMs > handlerTimeoutMs) {
       emitHandlerError(
         handlerName,
-        `${handlerName} exceeded ${PER_HANDLER_TIMEOUT_MS}ms`,
+        `${handlerName} exceeded ${handlerTimeoutMs}ms`,
         durationMs,
       );
       return false;
@@ -259,7 +261,7 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
     emitOne("child.handlerComplete", {
       handler: handlerName,
       durationMs,
-      timeoutMs: PER_HANDLER_TIMEOUT_MS,
+      timeoutMs: handlerTimeoutMs,
     });
     return true;
   } catch (err) {
@@ -389,7 +391,7 @@ function emitHandlerError(
     error,
     code: handlerErrorCode(error, durationMs),
     durationMs,
-    timeoutMs: PER_HANDLER_TIMEOUT_MS,
+    timeoutMs: handlerTimeoutMs,
   });
 }
 
@@ -397,9 +399,15 @@ function handlerErrorCode(
   error: string,
   durationMs: number,
 ): "handlerError" | "handlerTimeout" {
-  return durationMs >= PER_HANDLER_TIMEOUT_MS || error.includes("timed out after")
+  return durationMs >= handlerTimeoutMs || error.includes("timed out after")
     ? "handlerTimeout"
     : "handlerError";
+}
+
+function validTimeoutMs(value: number): number {
+  return Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.floor(value))
+    : DEFAULT_HANDLER_TIMEOUT_MS;
 }
 
 function triggeringSessionIdFor(

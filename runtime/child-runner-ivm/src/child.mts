@@ -29,7 +29,7 @@ import {
   envelope,
 } from "@pax-backend/ipc-protocol";
 
-const PER_HANDLER_TIMEOUT_MS = 1_000; // compute-plane cpu-ms-per-tick stub
+const DEFAULT_HANDLER_TIMEOUT_MS = 1_000;
 const PARENT_REQUEST_TIMEOUT_MS = 30_000;
 
 // --- IPC helpers ---------------------------------------------------------
@@ -65,6 +65,7 @@ let isolate: ivm.Isolate | undefined;
 let context: ivm.Context | undefined;
 let bundleExports: ivm.Reference | undefined;
 let currentTriggeringSessionId: string | null = null;
+let handlerTimeoutMs = DEFAULT_HANDLER_TIMEOUT_MS;
 
 interface PendingParentRequest {
   readonly resolve: (responseJson: string) => void;
@@ -106,6 +107,7 @@ function makeMulberry32(seed: number): () => number {
 }
 
 async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
+  handlerTimeoutMs = validTimeoutMs(cfg.handlerTimeoutMs);
   isolate = new ivm.Isolate({ memoryLimit: cfg.memoryLimitMb });
   context = await isolate.createContext();
   const jail = context.global;
@@ -314,7 +316,7 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   // the parent as plain script JS. ivm has no module loader, no async-top-
   // level, no fetch — that constraint is by design.
   try {
-    await context.eval(cfg.bundleSource, { timeout: PER_HANDLER_TIMEOUT_MS });
+    await context.eval(cfg.bundleSource, { timeout: handlerTimeoutMs });
   } catch (err) {
     panic("bundle eval failed", err);
     return;
@@ -358,13 +360,13 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
     await fnRef.apply(
       undefined,
       [cRef.derefInto(), new ivm.ExternalCopy(payload).copyInto()],
-      { timeout: PER_HANDLER_TIMEOUT_MS },
+      { timeout: handlerTimeoutMs },
     );
     const durationMs = Date.now() - startedAt;
-    if (durationMs > PER_HANDLER_TIMEOUT_MS) {
+    if (durationMs > handlerTimeoutMs) {
       emitHandlerError(
         handlerName,
-        `${handlerName} exceeded ${PER_HANDLER_TIMEOUT_MS}ms`,
+        `${handlerName} exceeded ${handlerTimeoutMs}ms`,
         durationMs,
       );
       return false;
@@ -372,7 +374,7 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
     emitOne("child.handlerComplete", {
       handler: handlerName,
       durationMs,
-      timeoutMs: PER_HANDLER_TIMEOUT_MS,
+      timeoutMs: handlerTimeoutMs,
     });
     return true;
   } catch (err) {
@@ -396,7 +398,7 @@ function emitHandlerError(
     error,
     code: handlerErrorCode(error, durationMs),
     durationMs,
-    timeoutMs: PER_HANDLER_TIMEOUT_MS,
+    timeoutMs: handlerTimeoutMs,
   });
 }
 
@@ -404,9 +406,15 @@ function handlerErrorCode(
   error: string,
   durationMs: number,
 ): "handlerError" | "handlerTimeout" {
-  return durationMs >= PER_HANDLER_TIMEOUT_MS || error.toLowerCase().includes("timed out")
+  return durationMs >= handlerTimeoutMs || error.toLowerCase().includes("timed out")
     ? "handlerTimeout"
     : "handlerError";
+}
+
+function validTimeoutMs(value: number): number {
+  return Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.floor(value))
+    : DEFAULT_HANDLER_TIMEOUT_MS;
 }
 
 function invokeApiFromBridge(

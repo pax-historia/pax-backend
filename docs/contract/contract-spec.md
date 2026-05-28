@@ -126,7 +126,10 @@ Handler budget failures are recorded as `child.handlerError` with
 `code: "handlerTimeout"`, `durationMs`, and `timeoutMs`, plus a paired
 `compute.budget.rejected` event for `cpu-ms-per-tick`.
 Successful handlers record `child.handlerComplete` with `durationMs` so
-`c.compute.budget()` reflects the last observed handler cost.
+`c.compute.budget()` reflects the last observed handler cost. The parent
+passes the configured `cpu-ms-per-tick` limit to each child runner during
+bootstrap as `handlerTimeoutMs`; the child uses that value for bundle eval,
+handler execution, and timeout telemetry.
 
 ## History contract
 
