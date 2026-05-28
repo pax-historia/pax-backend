@@ -156,11 +156,11 @@ shards.
 Initial Fly footprint:
 
 - **10 Rivet shard machines** on `pax-backend-shards`. One Fly Volume per
-  shard for Rivet engine internals; 5–10 GB each. Volume usage is bounded
-  by working set, not by lifetime game count.
-- **1 control + gateway machine** on `pax-backend-control` co-locating the
-  placement router, control plane, API gateway, and first-party reference
-  URL services. Split out as evidence demands.
+  shard for Rivet engine internals; 20 GB each in the current v1 proof.
+  Volume usage is bounded by working set, not by lifetime game count.
+- **1–2 control + gateway machines** on `pax-backend-control` co-locating
+  the placement router, control plane, API gateway, and first-party
+  reference URL services. Split out as evidence demands.
 - **Scenario-runner driver machines on demand** on `pax-backend-driver`.
 
 No in-app Postgres. The substrate has no ledger.

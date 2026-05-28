@@ -80,8 +80,8 @@ culls them before remote-write.
 - **Endpoints**: `GET /metrics` on every long-running process:
   - placement-router `:9080/metrics`
   - parent-actor `:7700/metrics`
-  - api-gateway `:7800/metrics`
-  - control-plane `:7900/metrics`
+  - api-gateway `:9081/metrics`
+  - control-plane `:9070/metrics`
   - URL services `:78xx/metrics`
   - vendored shard engine (Rivet) `:6430/metrics` (pass-through)
 - **Naming**: `pax_<surface>_*` for first-party; vendor-namespaced (`rivet_*`)
