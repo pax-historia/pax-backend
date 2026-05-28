@@ -55,6 +55,8 @@ RUN --mount=type=cache,target=/pnpm/store \
   && pnpm --filter @pax-backend/control-plane build \
   && pnpm --filter @pax-backend/api-gateway build
 
+FROM timberio/vector:0.55.0-debian AS vector
+
 FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
@@ -72,9 +74,11 @@ RUN apt-get update \
   && chown node:node /data
 
 COPY --from=router-builder /out/pax-backend-placement-router /usr/local/bin/pax-backend-placement-router
+COPY --from=vector /usr/bin/vector /usr/local/bin/vector
 COPY --chown=node:node --from=app-builder /app /app
 COPY --chown=node:node --chmod=0755 orchestration/control-image/entrypoint.sh /app/orchestration/control-image/entrypoint.sh
+RUN chmod 0755 /app/scripts/observability/start-vector.sh
 
-EXPOSE 9070 9080 9081
+EXPOSE 4317 4318 8686 9070 9080 9081
 USER node
 ENTRYPOINT ["tini", "--", "/app/orchestration/control-image/entrypoint.sh"]

@@ -120,3 +120,33 @@ its Fly check passing. Shard verification:
 Task 2 is complete. Next task is the production observability path: turn the
 Vector/OTel pipeline from scaffold into a deployed, verifiable trace and
 history archive path.
+
+## 2026-05-28 05:07 PDT
+
+Started task 3, the Fly observability trace path. The Better Stack source
+token and ingest host are now present in Infisical and synced to all three Fly
+apps; Fly secret digests match across `pax-backend-shards`,
+`pax-backend-control`, and `pax-backend-driver`.
+
+Wired Vector into the shard, control, and driver runtime images from the pinned
+`timberio/vector:0.55.0-debian` image. Each entrypoint starts Vector before the
+service processes when `PAX_OBSERVABILITY` is not `off`, exports the local OTLP
+endpoint defaults, and treats Vector exit as app failure so the production
+`on` path fails fast if Better Stack or Tigris are unreachable.
+
+The first review of `vector-prod.toml` showed that a single scrape config would
+try to scrape every surface on every Fly app. Added role-specific production
+profiles instead: control scrapes router/control/gateway metrics, shards
+scrape parent/Rivet metrics, and driver now exposes a tiny `/metrics` endpoint
+for its health loop. This keeps the scrape path production-shaped without
+duplicating metrics from unavailable surfaces or filling logs with scrape
+errors.
+
+Validation checkpoint before deploy:
+
+- `bash -n` passed for Vector/startup scripts and bootstrap.
+- Vector `0.55.0` validated the control, shards, driver, and legacy production
+  configs with dummy secret values and health checks skipped.
+- `fly config validate` passed for all three Fly configs.
+- `docker buildx build --check` passed for all three Dockerfiles.
+- `git diff --check` passed.

@@ -58,6 +58,8 @@ RUN --mount=type=cache,target=/pnpm/store \
   && pnpm --filter @pax-backend/parent-actor build \
   && pnpm build:bundles
 
+FROM timberio/vector:0.55.0-debian AS vector
+
 FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
@@ -75,6 +77,7 @@ RUN apt-get update \
   && chown node:node /data
 
 COPY --from=engine-builder /out/rivet-engine /usr/local/bin/rivet-engine
+COPY --from=vector /usr/bin/vector /usr/local/bin/vector
 COPY --chown=node:node --from=app-builder /app/package.json ./package.json
 COPY --chown=node:node --from=app-builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --chown=node:node --from=app-builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
@@ -85,7 +88,9 @@ COPY --chown=node:node --from=app-builder /app/runtime ./runtime
 COPY --chown=node:node --from=app-builder /app/shared ./shared
 COPY --chown=node:node --from=app-builder /app/sdk/runtime-sdk ./sdk/runtime-sdk
 COPY --chown=node:node --from=app-builder /app/examples/bundles ./examples/bundles
+COPY --chown=node:node --from=app-builder /app/scripts/observability ./scripts/observability
+RUN chmod 0755 /app/scripts/observability/start-vector.sh
 
-EXPOSE 6420 6421 6430 7700
+EXPOSE 4317 4318 6420 6421 6430 7700 8686
 USER node
 ENTRYPOINT ["tini", "--", "/app/runtime/shard-image/entrypoint.sh"]

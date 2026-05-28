@@ -1,0 +1,8 @@
+[sources.app_metrics]
+type = "prometheus_scrape"
+endpoints = [
+  "${PAX_ROUTER_METRICS_URL:-http://127.0.0.1:9080/metrics}",
+  "${PAX_CONTROL_METRICS_URL:-http://127.0.0.1:9070/metrics}",
+  "${PAX_GATEWAY_METRICS_URL:-http://127.0.0.1:9081/metrics}",
+]
+scrape_interval_secs = 15

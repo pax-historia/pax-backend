@@ -14,6 +14,12 @@ export PAX_PARENT_METRICS_BIND="${PAX_PARENT_METRICS_BIND:-0.0.0.0:7700}"
 export PAX_HISTORY_PATH="${PAX_HISTORY_PATH:-/data/history/history.jsonl}"
 export PAX_BUNDLE_CACHE_DIR="${PAX_BUNDLE_CACHE_DIR:-/data/bundle-cache}"
 export PAX_LOCAL_TIGRIS_DIR="${PAX_LOCAL_TIGRIS_DIR:-/data/tigris-local}"
+export PAX_SERVICE_NAME="${PAX_SERVICE_NAME:-pax-backend-shards}"
+export PAX_ZONE="${PAX_ZONE:-runtime}"
+export VECTOR_DATA_DIR="${VECTOR_DATA_DIR:-/data/vector}"
+export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4317}"
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-$OTEL_EXPORTER_OTLP_ENDPOINT}"
+export PAX_OTEL_EXPORTER_OTLP_ENDPOINT="${PAX_OTEL_EXPORTER_OTLP_ENDPOINT:-$OTEL_EXPORTER_OTLP_ENDPOINT}"
 if [[ "${PAX_OBSERVABILITY:-on}" == "off" ]]; then
   export RIVET_OTEL_ENABLED="${RIVET_OTEL_ENABLED:-0}"
 else
@@ -28,7 +34,9 @@ mkdir -p \
   "$PAX_ENGINE_DB_DIR" \
   "$(dirname "$PAX_HISTORY_PATH")" \
   "$PAX_BUNDLE_CACHE_DIR" \
-  "$PAX_LOCAL_TIGRIS_DIR"
+  "$PAX_LOCAL_TIGRIS_DIR" \
+  "$VECTOR_DATA_DIR" \
+  "${PAX_VECTOR_BUFFER_DIR:-/data/observability}"
 
 PAX_ENGINE_CONFIG="$PAX_ENGINE_CONFIG" \
 PAX_ENGINE_DB_DIR="$PAX_ENGINE_DB_DIR" \
@@ -103,10 +111,18 @@ terminate() {
   if [[ -n "${engine_pid:-}" ]] && kill -0 "$engine_pid" 2>/dev/null; then
     kill "-$signal" "$engine_pid" 2>/dev/null || true
   fi
+  if [[ -n "${vector_pid:-}" ]] && kill -0 "$vector_pid" 2>/dev/null; then
+    kill "-$signal" "$vector_pid" 2>/dev/null || true
+  fi
 }
 
 trap 'terminate TERM' TERM
 trap 'terminate INT' INT
+
+if [[ "${PAX_OBSERVABILITY:-on}" != "off" ]]; then
+  "$APP_ROOT/scripts/observability/start-vector.sh" &
+  vector_pid="$!"
+fi
 
 echo "[shard-image] engine config: $PAX_ENGINE_CONFIG"
 "$ENGINE_BINARY" --config "$PAX_ENGINE_CONFIG" start &
@@ -117,8 +133,16 @@ node "$APP_ROOT/node_modules/tsx/dist/cli.mjs" \
 parent_pid="$!"
 
 set +e
-wait -n "$engine_pid" "$parent_pid"
+if [[ -n "${vector_pid:-}" ]]; then
+  wait -n "$engine_pid" "$parent_pid" "$vector_pid"
+else
+  wait -n "$engine_pid" "$parent_pid"
+fi
 status="$?"
 terminate TERM
-wait "$engine_pid" "$parent_pid" 2>/dev/null
+if [[ -n "${vector_pid:-}" ]]; then
+  wait "$engine_pid" "$parent_pid" "$vector_pid" 2>/dev/null
+else
+  wait "$engine_pid" "$parent_pid" 2>/dev/null
+fi
 exit "$status"

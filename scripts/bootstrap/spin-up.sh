@@ -20,6 +20,8 @@
 #     shards + control
 #   - `FLY_API_TOKEN` minted org-scoped, 60-day expiry, captured into Infisical,
 #     synced to control + driver
+#   - `BETTERSTACK_SOURCE_TOKEN` and `BETTERSTACK_INGESTING_HOST`, when present,
+#     synced to all three apps for the Vector production sink
 #
 # Deliberately NOT provisioned: Postgres. The substrate has no ledger.
 # Operator billing services bring their own storage if they need any.
@@ -69,6 +71,8 @@ SHARED_SECRETS=(
   "PAX_JWT_SECRET:$SHARDS_APP,$CONTROL_APP"
   "PAX_LOCAL_ENGINE_ADMIN_TOKEN:$SHARDS_APP,$CONTROL_APP"
   "FLY_API_TOKEN:$CONTROL_APP,$DRIVER_APP"
+  "BETTERSTACK_SOURCE_TOKEN:$SHARDS_APP,$CONTROL_APP,$DRIVER_APP"
+  "BETTERSTACK_INGESTING_HOST:$SHARDS_APP,$CONTROL_APP,$DRIVER_APP"
 )
 
 # ---------------------------------------------------------------------------
@@ -434,6 +438,12 @@ if infi_has PAX_LOCAL_ENGINE_ADMIN_TOKEN; then
 fi
 if infi_has FLY_API_TOKEN; then
   sync_from_infi FLY_API_TOKEN "$CONTROL_APP" "$DRIVER_APP"
+fi
+if infi_has BETTERSTACK_SOURCE_TOKEN; then
+  sync_from_infi BETTERSTACK_SOURCE_TOKEN "$SHARDS_APP" "$CONTROL_APP" "$DRIVER_APP"
+fi
+if infi_has BETTERSTACK_INGESTING_HOST; then
+  sync_from_infi BETTERSTACK_INGESTING_HOST "$SHARDS_APP" "$CONTROL_APP" "$DRIVER_APP"
 fi
 
 say "Drift verification (cross-app digest equality)"

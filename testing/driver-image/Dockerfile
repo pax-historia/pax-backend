@@ -30,6 +30,8 @@ RUN --mount=type=cache,target=/pnpm/store \
   && pnpm --filter @pax-backend/smoke-bot build \
   && pnpm build:bundles
 
+FROM timberio/vector:0.55.0-debian AS vector
+
 FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
@@ -45,9 +47,11 @@ RUN apt-get update \
   && mkdir -p /data \
   && chown node:node /data
 
+COPY --from=vector /usr/bin/vector /usr/local/bin/vector
 COPY --chown=node:node --from=app-builder /app /app
 COPY --chown=node:node --chmod=0755 testing/driver-image/entrypoint.sh /app/testing/driver-image/entrypoint.sh
+RUN chmod 0755 /app/scripts/observability/start-vector.sh
 
-EXPOSE 9090
+EXPOSE 4317 4318 8686 9090
 USER node
 ENTRYPOINT ["tini", "--", "/app/testing/driver-image/entrypoint.sh"]

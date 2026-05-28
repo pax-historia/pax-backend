@@ -1,0 +1,4 @@
+[sources.app_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_DRIVER_METRICS_URL:-http://127.0.0.1:9090/metrics}"]
+scrape_interval_secs = 15
