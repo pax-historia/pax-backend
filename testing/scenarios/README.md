@@ -21,4 +21,6 @@ for the broader rules about the `testing/` zone (kind-folders,
   manifest.ts            # PRNG seed, determinism level, etc.
 ```
 
-Stub. M4 lands the scenario-runner + first scenarios.
+Current source pass adds the first scenario manifests, oracle selections, and
+inline fixtures for the three planned first-party scenarios. Client drivers and
+bundle wiring still land in later passes.
