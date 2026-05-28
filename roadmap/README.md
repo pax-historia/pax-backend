@@ -13,7 +13,7 @@ Per-phase notes live in `phase-N/task-tracker.md` (table of tasks with short pro
 | 2 — Fly medium-scale proof | `complete` | [phase-2/task-tracker.md](phase-2/task-tracker.md) | [phase-2/scratchpad.md](phase-2/scratchpad.md) |
 | 3 — historia-default port | `complete` | [phase-3/task-tracker.md](phase-3/task-tracker.md) | [phase-3/scratchpad.md](phase-3/scratchpad.md) |
 | 4 — Adversarial correctness | `complete` | [phase-4/task-tracker.md](phase-4/task-tracker.md) | [phase-4/scratchpad.md](phase-4/scratchpad.md) |
-| 5 — Scale climb to v1 | `to_do` | [phase-5/task-tracker.md](phase-5/task-tracker.md) | [phase-5/scratchpad.md](phase-5/scratchpad.md) |
+| 5 — Scale climb to v1 | `in_progress` | [phase-5/task-tracker.md](phase-5/task-tracker.md) | [phase-5/scratchpad.md](phase-5/scratchpad.md) |
 
 ## Phase 0 — Scaffold completion
 
