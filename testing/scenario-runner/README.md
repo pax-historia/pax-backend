@@ -11,4 +11,12 @@ substrate-side oracle violation in CI as a release blocker.
 See [`../README.md`](../README.md) for the broader rules about the
 `testing/` zone.
 
-Step 8 of the plan's kickoff. Stub.
+Current source pass provides the first runner shell:
+
+- reads a history JSONL file
+- runs every substrate guarantee oracle from `@pax-backend/oracles-lib`
+- emits a `result.json`-shaped object with oracle summaries, attribution
+  placeholders, and run metadata
+
+It does not yet drive clients, compose nemeses, shrink fuzz failures, or spin
+driver machines. Those stay as later source passes.

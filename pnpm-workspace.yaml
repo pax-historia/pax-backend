@@ -7,4 +7,5 @@ packages:
   - "sdk/runtime-sdk"
   - "examples/bundles/*"
   - "testing/oracles-lib"
+  - "testing/scenario-runner"
   - "testing/smoke-bot"

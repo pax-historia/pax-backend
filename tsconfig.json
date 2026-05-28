@@ -8,6 +8,7 @@
     { "path": "./runtime/child-runner-ivm" },
     { "path": "./runtime/parent-actor" },
     { "path": "./testing/oracles-lib" },
+    { "path": "./testing/scenario-runner" },
     { "path": "./testing/smoke-bot" },
     { "path": "./examples/bundles/hello-ai-call" },
     { "path": "./examples/bundles/hello-blob-rw" },
