@@ -1,0 +1,13 @@
+{
+  "records": [
+    {
+      "event": "api.invoke",
+      "fingerprint": "e9387e1f59d01eb3aa4222b099a944f9d8f65a9a366eb5a0c682b44cb2ef5bca",
+      "kind": "ai.chat.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"id\":\"mock-ai.v1:83f35372dcbc6a77\",\"model\":\"mock-ai.v1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"mock-ai.v1 response 83f35372dcbc6a77\"},\"finishReason\":\"stop\"}],\"usage\":{\"inputTokens\":35,\"outputTokens\":4}}}",
+      "rawOutbound": "{\"args\":{\"modelUsed\":\"fixture\",\"prompt\":\"What should I do next?\",\"promptStage\":\"advisor\",\"promptTemplate\":\"advisor\",\"splitPlayerIDs\":[\"player-1\"]},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986089117,\"playerId\":\"player-1\",\"sessionId\":\"ses_c1b6ed3e5c138ffb315358aa89d4b934\"}],\"gameId\":\"historia-advisor-basic-093448-1\",\"idempotencyKey\":null,\"runId\":\"run_mppprc9b_5j1u\",\"traceId\":\"919752b86d574c11bae53507ae2ccdfd\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986208,\"gameId\":\"historia-advisor-basic-093448-1\",\"runId\":\"run_1779986088904_a439ca8559fd4993af65b0610762d8ed\",\"shardId\":\"shard-local\",\"traceId\":\"919752b86d574c11bae53507ae2ccdfd\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_c1b6ed3e5c138ffb315358aa89d4b934\"}}",
+      "recordedAt": "2026-05-28T16:34:49.909Z"
+    }
+  ]
+}

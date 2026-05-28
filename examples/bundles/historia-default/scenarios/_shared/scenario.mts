@@ -59,6 +59,7 @@ export function makeWorkload(input: {
       { kind: "allowed-players", path: "../_fixtures/allowed-players.json" },
       { kind: "initial-state", path: "../_fixtures/initial-state.json" },
       { kind: "initial-blob", path: "../_fixtures/initial-blob.json" },
+      { kind: "api-responses", path: "fixtures/api-responses" },
     ],
     phases: [
       {

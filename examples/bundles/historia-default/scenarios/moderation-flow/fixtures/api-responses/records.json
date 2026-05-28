@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "event": "api.invoke",
+      "fingerprint": "487b786210aa933bd274a8e0e934d9e6920b269059f2ab7e2ec24d9c24aad3a4",
+      "kind": "moderation.audit.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"contentId\":\"ses_77deca47a321bd59168916738e984a28:1\",\"contentKind\":\"chat\",\"op\":\"recordVerdict\",\"playerId\":\"player-1\",\"reason\":\"matched flagged content\",\"verdict\":\"flag\"}}",
+      "rawOutbound": "{\"args\":{\"contentId\":\"ses_77deca47a321bd59168916738e984a28:1\",\"contentKind\":\"chat\",\"op\":\"recordVerdict\",\"playerId\":\"player-1\",\"reason\":\"matched flagged content\",\"verdict\":\"flag\"},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986098463,\"playerId\":\"player-1\",\"sessionId\":\"ses_77deca47a321bd59168916738e984a28\"}],\"gameId\":\"historia-moderation-flow-093457-1\",\"idempotencyKey\":null,\"runId\":\"run_mppprjeu_26ox\",\"traceId\":\"77d5c2bc40d849bbadaf09d5901b80d5\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986218,\"gameId\":\"historia-moderation-flow-093457-1\",\"runId\":\"run_1779986098175_5158ef712e764f0da7a2a7d4608ca1e8\",\"shardId\":\"shard-local\",\"traceId\":\"77d5c2bc40d849bbadaf09d5901b80d5\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_77deca47a321bd59168916738e984a28\"}}",
+      "recordedAt": "2026-05-28T16:34:58.998Z"
+    },
+    {
+      "event": "api.invoke",
+      "fingerprint": "d0e8b0277eccb7c0c6b245eda64ee3b83f61e6d92905dd5515514a7c93cddc09",
+      "kind": "ai.chat.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"id\":\"mock-ai.v1:d136ca3a12b45154\",\"model\":\"mock-ai.v1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"mock-ai.v1 response d136ca3a12b45154\"},\"finishReason\":\"stop\"}],\"usage\":{\"inputTokens\":34,\"outputTokens\":4}}}",
+      "rawOutbound": "{\"args\":{\"modelUsed\":\"fixture\",\"prompt\":\"please flag this message\",\"promptStage\":\"chat\",\"promptTemplate\":\"chat\",\"splitPlayerIDs\":[\"player-1\"]},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986098463,\"playerId\":\"player-1\",\"sessionId\":\"ses_77deca47a321bd59168916738e984a28\"}],\"gameId\":\"historia-moderation-flow-093457-1\",\"idempotencyKey\":null,\"runId\":\"run_mppprjeu_26ox\",\"traceId\":\"77d5c2bc40d849bbadaf09d5901b80d5\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986218,\"gameId\":\"historia-moderation-flow-093457-1\",\"runId\":\"run_1779986098175_5158ef712e764f0da7a2a7d4608ca1e8\",\"shardId\":\"shard-local\",\"traceId\":\"77d5c2bc40d849bbadaf09d5901b80d5\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_77deca47a321bd59168916738e984a28\"}}",
+      "recordedAt": "2026-05-28T16:34:59.008Z"
+    }
+  ]
+}

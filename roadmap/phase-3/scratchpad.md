@@ -85,3 +85,11 @@ Fixes needed to get there: scenario histories are per-game slices, so `history-c
 ## 2026-05-28 09:34 PDT
 
 Audited the API replay fixture path before freezing historia fixtures. The gateway was fingerprinting the full outbound envelope, which includes volatile run IDs, trace IDs, session IDs, JWT expiration, and connection timestamps. That makes canned URL-service fixtures effectively one-run-only. Changed the replay fingerprint contract to hash the stable `{ kind, args }` replay key while still sending and recording the full envelope for live calls. Updated the gateway docs and the faithful API oracle to match.
+
+## 2026-05-28 09:36 PDT
+
+Regenerated the full ten-scenario suite after the stable replay-key change; all ten scenarios passed again locally. Wrote canned `fixtures/api-responses/records.json` files for the API-producing scenarios:
+
+`chat-basic` (2 records), `jump-forward-basic` (3), `advisor-basic` (1), `actions-basic` (1), and `moderation-flow` (2).
+
+Added the `api-responses` fixture directory to the shared workload fixture list. Restarted the local stack with `PAX_API_GATEWAY_MODE=replay` and `PAX_API_REPLAY_FIXTURES_PATH` pointed at `chat-basic`'s fixture directory; a fresh `chat-basic` run passed with `api.invoke.wire` records in `mode: "replay"` and `mock-ai.v1` reference-service invocation count staying at zero.

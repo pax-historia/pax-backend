@@ -1,0 +1,31 @@
+{
+  "records": [
+    {
+      "event": "api.invoke",
+      "fingerprint": "d1a5a16c4cf390cefaec32085d6339ca0f20bcbd6c2d652bcf16a93ed1c5575e",
+      "kind": "ai.chat.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"id\":\"mock-ai.v1:a8bf48ff89086de3\",\"model\":\"mock-ai.v1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"mock-ai.v1 response a8bf48ff89086de3\"},\"finishReason\":\"stop\"}],\"usage\":{\"inputTokens\":40,\"outputTokens\":4}}}",
+      "rawOutbound": "{\"args\":{\"modelUsed\":\"fixture\",\"prompt\":\"Advance the world.\",\"promptStage\":\"jump-forward\",\"promptTemplate\":\"jump-forward\",\"splitPlayerIDs\":[\"player-1\"],\"stream\":true},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986087076,\"playerId\":\"player-1\",\"sessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}],\"gameId\":\"historia-jump-forward-basic-093446-1\",\"idempotencyKey\":null,\"runId\":\"run_mpppraow_005j\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986206,\"gameId\":\"historia-jump-forward-basic-093446-1\",\"runId\":\"run_1779986086873_d424e6199be146ab852cf30c20f6d92b\",\"shardId\":\"shard-local\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}}",
+      "recordedAt": "2026-05-28T16:34:47.859Z"
+    },
+    {
+      "event": "api.invoke",
+      "fingerprint": "4449342fe2294df7f497c28d2b9d9a041254aceb2d4572c7b66545aefeca887e",
+      "kind": "flag.search.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"incrementUseCount\":true,\"limit\":2,\"minNetLikes\":-4,\"query\":\"new country\",\"sort\":\"best_match_retrieval_document\",\"statusFilter\":\"approved\"}}",
+      "rawOutbound": "{\"args\":{\"incrementUseCount\":true,\"limit\":2,\"minNetLikes\":-4,\"query\":\"new country\",\"sort\":\"best_match_retrieval_document\",\"statusFilter\":\"approved\"},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986087076,\"playerId\":\"player-1\",\"sessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}],\"gameId\":\"historia-jump-forward-basic-093446-1\",\"idempotencyKey\":null,\"runId\":\"run_mpppraow_005j\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986206,\"gameId\":\"historia-jump-forward-basic-093446-1\",\"runId\":\"run_1779986086873_d424e6199be146ab852cf30c20f6d92b\",\"shardId\":\"shard-local\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}}",
+      "recordedAt": "2026-05-28T16:34:47.863Z"
+    },
+    {
+      "event": "api.invoke",
+      "fingerprint": "c799893012a0508a5df65891d1bf1406be4b4291eec7c4266580809f23517c65",
+      "kind": "projection.sync.v1",
+      "statusCode": 200,
+      "rawInbound": "{\"result\":{\"displayedRound\":2,\"op\":\"roundDisplay\"}}",
+      "rawOutbound": "{\"args\":{\"displayedRound\":2,\"op\":\"roundDisplay\"},\"context\":{\"bundleCompatTag\":\"historia:v5\",\"bundleName\":\"historia-default\",\"connectedSessions\":[{\"connectedAt\":1779986087076,\"playerId\":\"player-1\",\"sessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}],\"gameId\":\"historia-jump-forward-basic-093446-1\",\"idempotencyKey\":null,\"runId\":\"run_mpppraow_005j\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"triggeringJwtClaims\":{\"bundleName\":\"historia-default\",\"exp\":1779986206,\"gameId\":\"historia-jump-forward-basic-093446-1\",\"runId\":\"run_1779986086873_d424e6199be146ab852cf30c20f6d92b\",\"shardId\":\"shard-local\",\"traceId\":\"8809bfe8ac31418fb594448730ef1696\",\"userId\":\"player-1\"},\"triggeringSessionId\":\"ses_e53bc9dcdced57cf31863c81cf991efe\"}}",
+      "recordedAt": "2026-05-28T16:34:47.866Z"
+    }
+  ]
+}
