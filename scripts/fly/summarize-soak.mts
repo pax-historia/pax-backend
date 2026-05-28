@@ -105,7 +105,7 @@ const allShardIds = new Set<string>();
 for (const entry of cases) {
   for (const shardId of Object.keys(entry.placement_distribution)) allShardIds.add(shardId);
 }
-const gateFailures = gateFailuresFor(options, cases, allShardIds.size, monitor, runExitCode);
+const gateFailures = gateFailuresFor(options, cases, monitor, runExitCode);
 const summary: SoakSummary = {
   schema_version: 1,
   kind: "phase-5-soak-summary",
@@ -280,7 +280,6 @@ async function summarizeMonitor(root: string, path: string | undefined): Promise
 function gateFailuresFor(
   options: CliOptions,
   cases: readonly CaseSummary[],
-  observedPlacementShards: number,
   monitor: MonitorSummary | undefined,
   runExitCode: string | undefined,
 ): readonly string[] {
@@ -309,15 +308,20 @@ function gateFailuresFor(
       }
     }
   }
-  if (options.expectPlacementShards !== undefined && observedPlacementShards < options.expectPlacementShards) {
-    failures.push(
-      `expected placements on at least ${options.expectPlacementShards} shard(s), saw ${observedPlacementShards}`,
-    );
-  }
   for (const entry of cases) {
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
     if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
     if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
+    if (
+      options.expectPlacementShards !== undefined &&
+      entry.observed_placement_shards < options.expectPlacementShards
+    ) {
+      failures.push(
+        `${entry.case_id} expected placements on at least ${options.expectPlacementShards} shard(s), saw ${
+          entry.observed_placement_shards
+        }`,
+      );
+    }
     if (options.expectMinCaseDurationMs !== undefined) {
       if (entry.duration_ms === undefined) {
         failures.push(`${entry.case_id} missing measurable case duration`);

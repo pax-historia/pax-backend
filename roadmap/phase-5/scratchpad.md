@@ -220,3 +220,7 @@ Tightened the same final verifier surface so `--expect-cases 3` now means exactl
 Tenth detached monitor snapshot landed at `2026-05-28T23:52:23.961Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory locally again; the summary now has ten clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true` for the non-final default gates.
 
 The run and monitor logs stayed quiet. A `/proc` child walk from the driver showed the run wrapper PID 798 still supervising the `tsx`/Node scenario-runner process, and monitor PID 2039 still running. A full metrics liveness sweep from the driver passed for control, router, gateway, and both parent `:7700/metrics` plus vendored engine `:6430/metrics` on all ten shard machines.
+
+## 2026-05-28 16:54 PDT
+
+Tightened the placement-shard final gate to apply per case instead of across the union of all case histories. That ensures each nemesis case must independently show placements across all 10 shard machines. Verification: `git diff --check`, the default in-progress summary still passed with the no-faults case observing 10 shards, `scripts/fly/verify-v1-soak.sh` still failed the active partial soak for the expected in-progress reasons, and `pnpm typecheck` passed.
