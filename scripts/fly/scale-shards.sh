@@ -85,13 +85,26 @@ normalize_machine_env() {
     --env "PAX_SHARD_PUBLIC_URL=$internal_url"
     --env "RIVET_PUBLIC_URL=$internal_url"
     --env "RIVET_VALID_HOSTS=$valid_hosts"
+    --env "RIVET_GUARD_HOST=::"
+    --env "RIVET_API_PEER_HOST=::"
+    --env "RIVET_METRICS_HOST=::"
     --yes
     --skip-health-checks
   )
   if [[ "$skip_start" == "yes" ]]; then
     args+=(--skip-start)
   fi
-  fly "${args[@]}" >/dev/null
+  local attempt
+  for attempt in 1 2 3; do
+    if fly "${args[@]}" >/dev/null; then
+      break
+    fi
+    if [[ "$attempt" == "3" ]]; then
+      err "could not update $machine_id after $attempt attempts"
+    fi
+    skip "retrying $machine_id env update after Fly API timeout"
+    sleep $((attempt * 5))
+  done
   if [[ "$skip_start" != "yes" ]]; then
     fly machine wait "$machine_id" -a "$APP" --state started --wait-timeout 5m >/dev/null
   fi
