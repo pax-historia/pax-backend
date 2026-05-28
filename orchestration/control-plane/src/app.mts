@@ -15,6 +15,7 @@ import {
 
 import {
   connectedPlayersForGame,
+  lastActivityAtForGame,
   queryHistory,
   sessionById,
   sessionsForGame,
@@ -386,11 +387,22 @@ async function handleGameResource(
   if (parts.length === 3) {
     if (req.method === "GET") {
       const game = await requireGame(store, gameId);
-      const allowedPlayers = await store.listAllowedPlayers(gameId);
+      const [allowedPlayers, activeGame] = await Promise.all([
+        store.listAllowedPlayers(gameId),
+        store.getActiveGame(gameId),
+      ]);
+      const connectedPlayerCount = connectedPlayersForGame(config.historyPath, gameId).length;
       writeJson(res, 200, {
         ok: true,
         game,
+        status: activeGame ? "active" : "asleep",
+        currentShardId: activeGame?.shardId ?? null,
+        currentBundleName: game.bundleName,
+        blobCompatTag: game.blobCompatTag ?? null,
         allowedPlayerCount: allowedPlayers.length,
+        connectedPlayerCount,
+        createdAt: game.createdAt,
+        lastActivityAt: lastActivityAtForGame(config.historyPath, gameId) ?? game.createdAt,
       });
       return;
     }

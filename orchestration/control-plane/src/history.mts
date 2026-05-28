@@ -95,6 +95,19 @@ export function sessionById(
   return sessionMap(readHistory(historyPath)).get(sessionId);
 }
 
+export function lastActivityAtForGame(
+  historyPath: string,
+  gameId: string,
+): number | undefined {
+  let lastActivityAt: number | undefined;
+  for (const event of readHistory(historyPath)) {
+    if (event.gameId !== gameId) continue;
+    const at = Date.parse(event.ts);
+    if (!Number.isNaN(at)) lastActivityAt = at;
+  }
+  return lastActivityAt;
+}
+
 function readHistory(historyPath: string): readonly HistoryEvent[] {
   if (!existsSync(historyPath)) return [];
   return readFileSync(historyPath, "utf8")

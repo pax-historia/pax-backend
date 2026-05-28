@@ -1,6 +1,8 @@
 import { Redis } from "ioredis";
 
 import {
+  ACTIVE_GAMES_KEY_PREFIX,
+  type ActiveGamePlacement,
   ALLOWED_PLAYERS_KEY_PREFIX,
   API_KIND_KEY_PREFIX,
   type ApiKindRegistration,
@@ -52,6 +54,10 @@ export class ControlPlaneStore {
 
   async getGame(gameId: string): Promise<GameRecord | undefined> {
     return getJson<GameRecord>(this.redis, `${GAME_KEY_PREFIX}${gameId}`);
+  }
+
+  async getActiveGame(gameId: string): Promise<ActiveGamePlacement | undefined> {
+    return getJson<ActiveGamePlacement>(this.redis, `${ACTIVE_GAMES_KEY_PREFIX}${gameId}`);
   }
 
   async putGame(record: GameRecord): Promise<void> {
