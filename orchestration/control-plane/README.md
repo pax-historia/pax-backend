@@ -21,6 +21,8 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 - API kind registration (`POST /admin/api-kinds`, `GET /admin/api-kinds`,
   `GET /admin/api-kinds/:kindName`, `DELETE /admin/api-kinds/:kindName`)
 - `GET /admin/history` (cursor-paginated; batch + live-tail)
+- `GET /metrics` (Prometheus text counters for total HTTP requests
+  and requests returned through the error handler)
 
 **No ledger endpoints.** **No metadata endpoints.** See the plan's "Explicitly
 NOT in the admin surface" subsection.

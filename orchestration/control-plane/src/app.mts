@@ -50,6 +50,11 @@ export interface ControlPlaneConfig {
   readonly apiWireRecordsPath: string;
 }
 
+interface ControlPlaneMetrics {
+  requestsTotal: number;
+  errorsTotal: number;
+}
+
 export interface ControlPlaneServer {
   readonly server: Server;
   readonly store: ControlPlaneStore;
@@ -75,8 +80,12 @@ export function createControlPlaneServer(config: ControlPlaneConfig): ControlPla
     maxRetriesPerRequest: null,
   });
   const store = new ControlPlaneStore(redis);
+  const metrics: ControlPlaneMetrics = {
+    requestsTotal: 0,
+    errorsTotal: 0,
+  };
   const server = createServer((req, res) => {
-    void handleRequest(req, res, store, config);
+    void handleRequest(req, res, store, config, metrics);
   });
   return { server, store, config };
 }
@@ -96,13 +105,20 @@ async function handleRequest(
   res: ServerResponse,
   store: ControlPlaneStore,
   config: ControlPlaneConfig,
+  metrics: ControlPlaneMetrics,
 ): Promise<void> {
+  metrics.requestsTotal += 1;
   try {
     const url = new URL(req.url ?? "/", config.baseUrl);
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
 
     if (req.method === "GET" && url.pathname === "/health") {
       writeJson(res, 200, { status: "ok", runtime: "control-plane" });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/metrics") {
+      writeText(res, 200, metricsText(metrics));
       return;
     }
 
@@ -189,6 +205,7 @@ async function handleRequest(
 
     writeJson(res, 404, { ok: false, error: "notFound" });
   } catch (err) {
+    metrics.errorsTotal += 1;
     if (err instanceof HttpError) {
       writeJson(res, err.statusCode, { ok: false, error: err.code, detail: err.detail });
       return;
@@ -713,6 +730,26 @@ function writeJson(res: ServerResponse, statusCode: number, body: unknown): void
     "content-length": Buffer.byteLength(raw),
   });
   res.end(raw);
+}
+
+function writeText(res: ServerResponse, statusCode: number, body: string): void {
+  res.writeHead(statusCode, {
+    "content-type": "text/plain; version=0.0.4; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function metricsText(metrics: ControlPlaneMetrics): string {
+  return [
+    "# HELP pax_control_plane_requests_total Total HTTP requests handled by the control plane.",
+    "# TYPE pax_control_plane_requests_total counter",
+    `pax_control_plane_requests_total ${metrics.requestsTotal}`,
+    "# HELP pax_control_plane_errors_total Total requests that returned through the error handler.",
+    "# TYPE pax_control_plane_errors_total counter",
+    `pax_control_plane_errors_total ${metrics.errorsTotal}`,
+    "",
+  ].join("\n");
 }
 
 function appendControlHistory(
