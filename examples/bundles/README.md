@@ -12,7 +12,7 @@ zone.
 | `hello-state-rw/` | The managed `c.state` tier; reads/writes the whole object and includes an explicit `await c.state.flush()` before a crash-test point. Exercises Tigris-canonical state and the flush-window guarantee. | source added (untested) |
 | `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |
 | `hello-multifeature/` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable integration bundle. | source added (untested) |
-| `historia-default/` | The Pax-historia proof bundle. Scaffolded with the `historia:v1`→`historia:v5` manifest, lifecycle handlers, and build output path; module/workflow/state/scenario work is tracked in Phase 3. | scaffolded |
+| `historia-default/` | The Pax-historia proof bundle. Ports the game-session modules, workflow runtime, state/blob migrations, URL-service calls, routing, hydration, policy gates, and ten-scenario proof suite. | Phase 3 proof complete |
 
 ## Per-bundle layout
 
