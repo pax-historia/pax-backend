@@ -4,8 +4,9 @@
 # Brings up:
 #   1. Local Redis (Docker container, single-port mapping)
 #   2. rivet-engine (cached binary from scripts/build/build-engine.sh)
-#   3. parent-actor Node process
-#   4. placement-router Rust binary
+#   3. api-gateway Node process
+#   4. parent-actor Node process
+#   5. placement-router Rust binary
 #
 # Run scripts/dev/local-down.sh to stop everything (kills processes,
 # removes Redis container). Logs land under ./var/local-up/<service>.log.
@@ -125,6 +126,35 @@ for i in $(seq 1 90); do
 done
 
 # ---------------------------------------------------------------------------
+# API gateway
+# ---------------------------------------------------------------------------
+say "api-gateway"
+GATEWAY_LOG="$LOG_DIR/api-gateway.log"
+GATEWAY_PIDFILE="$PID_DIR/api-gateway.pid"
+if [[ -f "$GATEWAY_PIDFILE" ]] && kill -0 "$(cat "$GATEWAY_PIDFILE")" 2>/dev/null; then
+  ok "api-gateway already running (pid $(cat "$GATEWAY_PIDFILE"))"
+else
+  : > "$GATEWAY_LOG"
+  ( cd "$REPO_ROOT" && \
+    PAX_API_GATEWAY_BIND="${PAX_API_GATEWAY_BIND:-127.0.0.1:9081}" \
+    PAX_API_GATEWAY_BASE_URL="${PAX_API_GATEWAY_BASE_URL:-http://127.0.0.1:9081}" \
+    PAX_API_WIRE_RECORDS_PATH="${PAX_API_WIRE_RECORDS_PATH:-$REPO_ROOT/var/api-invoke-records.jsonl}" \
+    nohup ./node_modules/.bin/tsx orchestration/api-gateway/src/app.mts \
+      >"$GATEWAY_LOG" 2>&1 & echo $! > "$GATEWAY_PIDFILE" )
+  ok "api-gateway pid $(cat "$GATEWAY_PIDFILE") (log: $GATEWAY_LOG)"
+fi
+for i in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:9081/health >/dev/null 2>&1; then
+    ok "api-gateway /health responding"
+    break
+  fi
+  sleep 0.5
+  if (( i == 20 )); then
+    err "api-gateway did not become ready in 10s; see $GATEWAY_LOG"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 # Parent actor
 # ---------------------------------------------------------------------------
 say "parent-actor"
@@ -137,6 +167,7 @@ else
   ( cd "$REPO_ROOT" && \
     REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}" \
     PAX_JWT_SECRET="${PAX_JWT_SECRET:-local-dev-secret}" \
+    PAX_API_GATEWAY_URL="${PAX_API_GATEWAY_URL:-http://127.0.0.1:9081/invoke}" \
     PAX_SHARD_ID="${PAX_SHARD_ID:-shard-local}" \
     PAX_LOCAL_ENGINE_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
     RIVET_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
@@ -194,6 +225,7 @@ done
 say "Local stack up"
 ok "redis:         redis://127.0.0.1:6379"
 ok "engine:        http://127.0.0.1:6420 (admin token: ${RIVET_ADMIN_TOKEN:-dev})"
+ok "api-gateway:   http://127.0.0.1:9081"
 ok "parent-actor:  pid $(cat "$PARENT_PIDFILE") -> shards:${PAX_SHARD_ID:-shard-local}"
 ok "router:        http://127.0.0.1:9080"
 ok "logs:          $LOG_DIR/"

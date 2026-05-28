@@ -37,6 +37,7 @@ stop_pid() {
 say "Stopping local stack"
 stop_pid "router" "$PID_DIR/router.pid"
 stop_pid "parent" "$PID_DIR/parent.pid"
+stop_pid "api-gateway" "$PID_DIR/api-gateway.pid"
 stop_pid "engine" "$PID_DIR/engine.pid"
 
 # Belt-and-suspenders: kill any stray processes whose command line matches
@@ -61,12 +62,14 @@ sweep() {
   done
 }
 sweep "runtime/parent-actor/src/parent"        "parent"
+sweep "orchestration/api-gateway/src/app"      "api-gateway"
 sweep "scripts/dev/spawn-engine.mts"           "engine spawner"
 sweep "scripts/spawn-engine.mts"               "engine spawner (legacy)"
 sweep ".cache/rivet-engine/rivet-engine"       "rivet-engine"
 sweep ".cache/router/router"                   "router"
 sleep 1
 sweep "runtime/parent-actor/src/parent"        "parent (kill)"
+sweep "orchestration/api-gateway/src/app"      "api-gateway (kill)"
 sweep ".cache/rivet-engine/rivet-engine"       "rivet-engine (kill)"
 
 if docker ps --format '{{.Names}}' | grep -q '^pax-redis$'; then
