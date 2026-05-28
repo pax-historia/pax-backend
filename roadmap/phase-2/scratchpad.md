@@ -182,3 +182,48 @@ the app's private IPv6 machine addresses, so the control image's IPv4
 Changed the control image/Fly config to bind router, control-plane, and gateway
 on `[::]`, and taught the Node control-plane and API gateway bind parsers to
 accept bracketed IPv6 socket addresses.
+
+## 2026-05-28 05:56 PDT
+
+Completed task 3, the Fly observability trace path.
+
+All three Fly apps now run Vector sidecars in `PAX_OBSERVABILITY=buffer`.
+The supplied Better Stack token remains synced in Infisical, but Better
+Stack rejected it as an invalid telemetry source token, so the live proof used
+the Tigris-backed buffer sink until a valid Better Stack source token is
+available.
+
+Added explicit 10-second S3 batch timeouts for history and trace archives so
+low-volume exemplar runs flush promptly. The final deployed control image was
+`deployment-01KSQA5JS0QXG8HMR0SBTB89F6`; shard and driver remained healthy on
+their buffer-capable images.
+
+Final exemplar:
+
+- bundle `hello-ai-call-trace-mpphvc4v-56e6c7`
+- game `trace-mpphvc4v-56e6c7`
+- session `ses_e208e483d204a2481574bd7c1907d1ad`
+- placement trace ID `964179eb9b4e84753fa40d94dbbc4f80`
+- `mock-ai.v1` returned `ok: true`
+
+Verification evidence:
+
+- API gateway metrics on control machine `d8d1004f412328` showed
+  `pax_api_gateway_invocations_total 1`,
+  `pax_api_gateway_invocations_ok_total 1`, and
+  `pax_url_service_invocations_total{kind="mock-ai.v1"} 1`.
+- Shard history contained the same trace ID through `session.opened`,
+  `onPlayerMessage`, `api.invoke.request`, `api.invoke.response`,
+  `api.invoke.wire`, and `session.closed`.
+- Tigris history object
+  `history/date=2026-05-28/1779972858-4d6aae00-70c1-4642-81ec-56790fcbdd80.jsonl.gz`
+  contained the exemplar's correlated history events.
+- Tigris trace object
+  `traces/date=2026-05-28/1779972854-a7cb4898-0f62-40b1-8be3-f364852a0553.jsonl.gz`
+  contained `router.placement`, `gateway.invoke`, and
+  `urlsvc.mock-ai.v1.invoke` spans, all with trace ID
+  `964179eb9b4e84753fa40d94dbbc4f80`.
+
+The trace proof also exposed and fixed two continuity issues: router OTel span
+creation now happens after `traceparent` extraction, and gateway/reference URL
+service spans explicitly use the trace ID carried in the substrate envelope.
