@@ -8,4 +8,8 @@ Format suggestion: a `## YYYY-MM-DD HH:MM` heading per entry, followed by prose 
 
 ---
 
-(no entries yet)
+## 2026-05-28 08:44 PDT
+
+Started Phase 3 after re-reading the roadmap directive/exit signal, [`docs-next/proofs/historia-default.md`](../../docs-next/proofs/historia-default.md), and [`examples/bundles/historia-default/README.md`](../../examples/bundles/historia-default/README.md). The five URL service spec files already exist as schema-only docs, but the bundle directory is still README-only and the scenario/oracle suite has not been authored.
+
+Initial work split: audit the URL-service fixture contracts first, then land the bundle scaffold/build shape, then port core state/blob/migration code, modules/workflows, routing/hydration/policy gates, scenarios/oracles, and finally the local/Fly proof run. Keep Pax-historia-specific logic contained under `examples/bundles/historia-default/` and the schema-only URL-service examples; substrate zones stay generic.
