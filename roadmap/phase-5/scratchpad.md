@@ -140,3 +140,9 @@ Adjusted the Phase 5 exit soak to validate 1000 concurrent games with a bounded 
 Redeployed `pax-backend-driver` with image `deployment-01KSRAD616BRYR52NPJ8YQ1WGY`, then verified the runtime image contains the one-minute heartbeat settings and `workload.session.closed` history instrumentation. A post-deploy registry check showed `shard-fly-iad-3` missing from the control-plane registry even though its Fly machine was still started, so restarted shard machine `2862467b6693d8`; `/admin/shards` then returned 10 healthy accepting shards with `total_active_games=0`.
 
 Preflight from the driver verified all 20 per-shard metrics endpoints, parent `:7700/metrics` and vendored engine `:6430/metrics`, plus control/router/gateway metrics on the pinned control machine. Started the heartbeat `ivm` retry detached at `/data/phase-5/soak/ivm-20260528T222045Z`, PID 798, using pinned internal control/router/gateway URLs and per-shard metrics labels. The launch check found the process alive and the no-faults history file created.
+
+## 2026-05-28 15:48 PDT
+
+The heartbeat `ivm` retry reached the full v1 target and entered hold. The no-faults case completed `open-sessions` at `2026-05-28T22:47:07.373Z` after 1,545,296 ms, then started `send-json`. The history file showed 1000 `placement.accepted` events across all 10 shards with distribution: shard-fly-iad-1=100, shard-fly-iad-2=101, shard-fly-iad-3=100, shard-fly-iad-4=99, shard-fly-iad-5=99, shard-fly-iad-6=100, shard-fly-iad-7=100, shard-fly-iad-8=101, shard-fly-iad-9=98, shard-fly-iad-10=102.
+
+The simultaneous control-plane `/admin/shards` snapshot matched: 10 healthy accepting shards and `total_active_games=1000` with the same 98-102 per-shard distribution. Runner-side history still had zero `workload.phase.failed`, zero `workload.session.closed`, and zero `workload.session.error` events at hold entry.
