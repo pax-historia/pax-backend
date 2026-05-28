@@ -18,6 +18,7 @@ import {
   type ParentToChildEnvelope,
   type StorageReadResponsePayload,
   type StorageWriteResponse,
+  type WsSendResponse,
   envelope,
 } from "@pax-backend/ipc-protocol";
 import type { BundleDefinition, SubstrateContext } from "@pax-backend/runtime-sdk";
@@ -34,7 +35,8 @@ type ParentRequestType =
   | "state.write"
   | "state.flush"
   | "blob.read"
-  | "blob.write";
+  | "blob.write"
+  | "ws.send";
 
 interface PendingParentRequest {
   readonly resolve: (value: unknown) => void;
@@ -118,12 +120,11 @@ function makeContext(): SubstrateContext {
       return nextNow;
     },
     ws: {
-      send: (target, body) => {
-        emitOne(CHILD_TO_PARENT.wsSend, {
+      send: async (target, body) =>
+        (await invokeParent(CHILD_TO_PARENT.wsSend, {
           target: jsonClone(target),
           body: jsonClone(body),
-        });
-      },
+        })) as WsSendResponse,
     },
     log: {
       emit: (payload) => emitOne(CHILD_TO_PARENT.logEmit, jsonClone(payload)),
@@ -314,6 +315,9 @@ process.on("message", async (raw: unknown) => {
         completeParentRequest(raw.requestId, raw.payload);
         return;
       case PARENT_TO_CHILD.blobWriteResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.wsSendResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
         return;
       case PARENT_TO_CHILD.onWake:

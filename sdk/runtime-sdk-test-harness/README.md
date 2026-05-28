@@ -17,6 +17,7 @@ tests:
 
 - deterministic `c.rng()` / `c.now()`
 - in-memory allowed/connected players
+- typed `c.ws.send` capture with successful send responses
 - in-memory `c.state` and `c.blob`
 - record/replay-style `c.api.invoke` fixtures keyed by argument fingerprint
 - lint helpers that reject raw `Date.now` and `Math.random`

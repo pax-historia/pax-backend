@@ -4,7 +4,17 @@ import type { HistoryEvent, OracleFinding, OracleResult } from "../types.mjs";
 const ORACLE = "compute-plane-quotas";
 const GUARANTEE = 7;
 const STORAGE_ERRORS = new Set(["sizeExceeded", "storageUnavailable"]);
-const API_ERRORS = new Set(["apiRateExceeded", "kindUnknown", "providerError", "replayCoverageGap"]);
+const API_ERRORS = new Set([
+  "apiRateExceeded",
+  "kindUnknown",
+  "providerError",
+  "replayCoverageGap",
+]);
+const WS_ERRORS = new Set([
+  "bandwidthExceeded",
+  "rateExceeded",
+  "serializationFailed",
+]);
 
 export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
@@ -30,6 +40,13 @@ export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResu
       if (error === "apiRateExceeded") observed += 1;
       if (error && !API_ERRORS.has(error)) {
         findings.push(finding("untyped-api-quota-error", "api invoke used an unknown error", event));
+      }
+    }
+    if (event.event === "ws.send.rejected") {
+      observed += 1;
+      const error = stringField(event, "error");
+      if (!error || !WS_ERRORS.has(error)) {
+        findings.push(finding("untyped-ws-quota-error", "ws.send used an unknown error", event));
       }
     }
   }

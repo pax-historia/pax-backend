@@ -19,6 +19,7 @@ import type {
   OnSleepPayload,
   OnWakePayload,
   StorageWriteResponse,
+  WsSendResponse,
   WsTarget,
 } from "@pax-backend/ipc-protocol";
 
@@ -34,6 +35,7 @@ export type {
   OnSleepPayload,
   OnWakePayload,
   StorageWriteResponse,
+  WsSendResponse,
   WsTarget,
 } from "@pax-backend/ipc-protocol";
 
@@ -49,7 +51,7 @@ export interface SubstrateContext {
      * Send a JSON-safe body to one or more players on this game. Use the
      * literal `"all"` to broadcast to every connected player.
      */
-    send(target: WsTarget, body: unknown): void;
+    send(target: WsTarget, body: unknown): Promise<WsSendResponse>;
   };
   readonly log: {
     /** Structured log; routed to history with bundle metadata attached. */

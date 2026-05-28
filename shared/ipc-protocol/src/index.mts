@@ -269,6 +269,7 @@ export type ParentToChildEnvelope =
   | IpcEnvelope<"state.flush.response", StorageFlushResponsePayload>
   | IpcEnvelope<"blob.read.response", StorageReadResponsePayload>
   | IpcEnvelope<"blob.write.response", StorageWriteResponsePayload>
+  | IpcEnvelope<"ws.send.response", WsSendResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
@@ -292,6 +293,24 @@ export type WsTarget = string | readonly string[] | "all";
 export interface WsSendPayload {
   readonly target: WsTarget;
   readonly body: unknown;
+}
+
+export type WsSendError = "bandwidthExceeded" | "rateExceeded" | "serializationFailed";
+
+export type WsSendResponse =
+  | {
+      readonly ok: true;
+      readonly sent: number;
+      readonly bytes: number;
+    }
+  | {
+      readonly ok: false;
+      readonly error: WsSendError;
+      readonly detail?: unknown;
+    };
+
+export interface WsSendResponsePayload {
+  readonly response: WsSendResponse;
 }
 
 export interface LogEmitPayload {
@@ -359,6 +378,7 @@ export const PARENT_TO_CHILD = Object.freeze({
   stateFlushResponse: "state.flush.response",
   blobReadResponse: "blob.read.response",
   blobWriteResponse: "blob.write.response",
+  wsSendResponse: "ws.send.response",
   onWake: "onWake",
   onSleep: "onSleep",
   onPlayerConnect: "onPlayerConnect",

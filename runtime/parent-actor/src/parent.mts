@@ -16,7 +16,7 @@
 //  - Native c.blob (Tigris) and c.state (RocksDB) adapters; this pass uses
 //    Redis-backed storage under the same IPC contract.
 //  - Full CPU/RAM kill enforcement. This pass exposes budget snapshots and
-//    tracks storage/API/WS usage under the same compute-plane contract.
+//    enforces storage/API/WS usage under the same compute-plane contract.
 
 import { type ChildProcess, fork } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
@@ -61,6 +61,7 @@ import {
   type StorageReadResponsePayload,
   type StorageWriteResponse,
   type ShardRegistration,
+  type WsSendResponse,
   envelope,
   generateRunId,
   generateSessionId,
@@ -583,7 +584,7 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       void handleStorageWrite(inst, raw.requestId, "blob", raw.payload.value);
       return;
     case CHILD_TO_PARENT.wsSend:
-      handleWsSend(inst, raw.payload);
+      handleWsSend(inst, raw.requestId, raw.payload);
       return;
     case CHILD_TO_PARENT.logEmit:
       history("log.emit", {
@@ -1260,10 +1261,27 @@ function pruneUsageSamples(
 
 function handleWsSend(
   inst: GameInstance,
+  requestId: string | undefined,
   payload: Extract<ChildToParentEnvelope, { type: "ws.send" }>["payload"],
 ): void {
   const { target, body } = payload;
   const text = JSON.stringify(body);
+  if (typeof text !== "string") {
+    const response: WsSendResponse = {
+      ok: false,
+      error: "serializationFailed",
+      detail: { message: "ws.send body must be JSON-serializable" },
+    };
+    history("ws.send.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      error: response.error,
+      detail: response.detail,
+    });
+    respondWsSend(inst, requestId, response);
+    return;
+  }
   const sessions = Array.from(inst.sessions.values());
   const targets: SessionRecord[] =
     target === "all"
@@ -1271,23 +1289,95 @@ function handleWsSend(
       : Array.isArray(target)
         ? sessions.filter((s) => (target as readonly string[]).includes(s.playerId))
         : sessions.filter((s) => s.playerId === target);
+  const frameBytes = Buffer.byteLength(text, "utf8");
+  const prospectiveBytes = frameBytes * targets.length;
+  const prospectiveMessages = targets.length;
+  const budget = computeBudgetSnapshot(inst);
+  const bandwidthUsage = budget["bandwidth-bytes-per-sec"].currentUsage;
+  if (bandwidthUsage + prospectiveBytes > BANDWIDTH_BYTES_PER_SEC_LIMIT) {
+    const response: WsSendResponse = {
+      ok: false,
+      error: "bandwidthExceeded",
+      detail: {
+        currentUsage: bandwidthUsage,
+        attemptedBytes: prospectiveBytes,
+        limit: BANDWIDTH_BYTES_PER_SEC_LIMIT,
+        windowMs: 1_000,
+      },
+    };
+    history("ws.send.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      error: response.error,
+      bytes: prospectiveBytes,
+      targetCount: targets.length,
+      detail: response.detail,
+    });
+    respondWsSend(inst, requestId, response);
+    maybeSendCapacityWarnings(inst, budget);
+    return;
+  }
 
+  const messageUsage = budget["ws-messages-per-sec"].currentUsage;
+  if (messageUsage + prospectiveMessages > WS_MESSAGES_PER_SEC_LIMIT) {
+    const response: WsSendResponse = {
+      ok: false,
+      error: "rateExceeded",
+      detail: {
+        currentUsage: messageUsage,
+        attemptedMessages: prospectiveMessages,
+        limit: WS_MESSAGES_PER_SEC_LIMIT,
+        windowMs: 1_000,
+      },
+    };
+    history("ws.send.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      error: response.error,
+      bytes: prospectiveBytes,
+      targetCount: targets.length,
+      detail: response.detail,
+    });
+    respondWsSend(inst, requestId, response);
+    maybeSendCapacityWarnings(inst, budget);
+    return;
+  }
+
+  let sent = 0;
   for (const sess of targets) {
     try {
       sess.ws.send(text);
-      recordWsUsage(inst, text.length);
+      sent += 1;
+      recordWsUsage(inst, frameBytes);
       history("ws.send", {
         actorId: inst.actorId,
         gameId: inst.gameId,
+        runId: inst.runId,
         sessionId: sess.sessionId,
         playerId: sess.playerId,
-        bytes: text.length,
+        bytes: frameBytes,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ actorId: inst.actorId, err: msg }, "ws.send failed");
     }
   }
+  respondWsSend(inst, requestId, {
+    ok: true,
+    sent,
+    bytes: frameBytes * sent,
+  });
+}
+
+function respondWsSend(
+  inst: GameInstance,
+  requestId: string | undefined,
+  response: WsSendResponse,
+): void {
+  if (!requestId || !inst.child) return;
+  sendTyped(inst.child, "ws.send.response", { response }, requestId);
 }
 
 // --- JWT verify --------------------------------------------------------

@@ -59,8 +59,14 @@ export function createRuntimeSdkHarness(
       return nowMs;
     },
     ws: {
-      send: (target, body) => {
+      send: async (target, body) => {
         wsMessages.push({ target, body });
+        const raw = JSON.stringify(body);
+        return {
+          ok: true,
+          sent: 1,
+          bytes: typeof raw === "string" ? Buffer.byteLength(raw, "utf8") : 0,
+        };
       },
     },
     log: {

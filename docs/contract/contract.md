@@ -49,7 +49,7 @@ context, admin session views, and history.
 |---|---|
 | `c.rng()` | Deterministic PRNG in test mode. |
 | `c.now()` | Deterministic substrate clock in test mode. |
-| `c.ws.send(target, body)` | Sends JSON-safe data to `"all"`, one player, or selected players. |
+| `c.ws.send(target, body)` | Sends JSON-safe data to `"all"`, one player, or selected players; resolves to `{ ok: true, sent, bytes }` or a typed WS quota error. |
 | `c.log.emit(payload)` | Emits structured history/log data with bundle/game metadata. |
 | `c.metrics.emit(payload)` | Emits numeric metrics for runtime and scenario attribution. |
 | `c.lifecycle.requestSleep()` | Voluntary sleep request; the substrate may later call `onSleep`. |

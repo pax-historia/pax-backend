@@ -75,6 +75,9 @@ The SDK type `SubstrateContext` is authoritative. The child runner injects:
 | State tier | `state.read()`, `state.write(value)`, `state.flush()` |
 | Blob tier | `blob.read()`, `blob.write(value)` |
 
+Websocket send responses are `{ ok: true, sent, bytes }` or `{ ok: false,
+error: "bandwidthExceeded" | "rateExceeded" | "serializationFailed", detail? }`.
+
 Storage write responses are `{ ok: true }` or `{ ok: false, error:
 "sizeExceeded" | "storageUnavailable", detail? }`.
 

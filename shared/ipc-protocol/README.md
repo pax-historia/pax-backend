@@ -28,6 +28,8 @@ See [`../README.md`](../README.md) for the zone's broader rules.
 - Child-to-parent payload types: `BootstrapPayload`, `WsSendPayload`,
   `LogEmitPayload`, `ChildFatalPayload`, `ChildHandlerErrorPayload`,
   `ChildUnknownMessagePayload`.
+- Parent-to-child response payload types for request/response channels,
+  including `WsSendResponsePayload` for typed bandwidth/rate rejections.
 - Redis key prefixes + TTLs: `ACTIVE_GAMES_KEY_PREFIX`,
   `SHARD_REGISTRY_KEY_PREFIX`, `PLACEMENT_RECENT_WAKES_KEY_PREFIX`,
   `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`.

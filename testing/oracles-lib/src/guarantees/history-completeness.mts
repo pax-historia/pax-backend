@@ -31,6 +31,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "state.read": ["actorId", "gameId", "requestId"],
   "state.write": ["actorId", "gameId", "requestId"],
   "ws.send": ["actorId", "gameId", "runId"],
+  "ws.send.rejected": ["actorId", "gameId", "runId", "error"],
 };
 
 export function historyCompleteness(history: readonly HistoryEvent[]): OracleResult {

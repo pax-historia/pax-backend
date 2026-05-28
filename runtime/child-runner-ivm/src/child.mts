@@ -82,7 +82,8 @@ type ParentRequestType =
   | "state.write"
   | "state.flush"
   | "blob.read"
-  | "blob.write";
+  | "blob.write"
+  | "ws.send";
 
 function hashSeed(input: string): number {
   let hash = 0x811c9dc5;
@@ -121,9 +122,9 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
     try {
       const target = JSON.parse(targetJson);
       const body = JSON.parse(bodyJson);
-      emitOne(CHILD_TO_PARENT.wsSend, { target, body });
+      return invokeParentFromBridge(CHILD_TO_PARENT.wsSend, { target, body });
     } catch (err) {
-      panic("c.ws.send bridge failed", err);
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
   const cLogEmit = new ivm.Reference((payloadJson: string) => {
@@ -227,7 +228,13 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       rng: () => __pax_c_rng.applySync(undefined, []),
       now: () => __pax_c_now.applySync(undefined, []),
       ws: {
-        send: (target, body) => __pax_c_ws_send.applySync(undefined, [JSON.stringify(target), JSON.stringify(body)]),
+        send: (target, body) => {
+          const responseJson = __pax_c_ws_send.applySyncPromise(undefined, [
+            JSON.stringify(target),
+            JSON.stringify(body),
+          ]);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
       },
       log: {
         emit: (payload) => __pax_c_log_emit.applySync(undefined, [JSON.stringify(payload)]),
@@ -481,6 +488,9 @@ process.on("message", async (raw: unknown) => {
         completeParentRequest(raw.requestId, raw.payload);
         return;
       case PARENT_TO_CHILD.blobWriteResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.wsSendResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
         return;
       case PARENT_TO_CHILD.onWake:
