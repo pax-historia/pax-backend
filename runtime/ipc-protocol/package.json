@@ -1,0 +1,17 @@
+{
+  "name": "@pax-backend/ipc-protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "exports": {
+    ".": {
+      "types": "./src/index.mts",
+      "import": "./src/index.mts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  }
+}

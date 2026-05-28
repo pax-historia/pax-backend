@@ -1,0 +1,11 @@
+[package]
+name = "rivet-config-schema-gen"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+rivet-config.workspace = true
+schemars.workspace = true
+serde_json.workspace = true

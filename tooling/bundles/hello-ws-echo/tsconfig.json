@@ -1,0 +1,17 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": true,
+    // Bundle target: bundles run inside isolated-vm (no DOM, no Node). The
+    // substrate context `c` and __pax_install global are injected by the
+    // child runner; we declare them as ambient globals via src/ambient.d.ts.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*.mts", "src/**/*.d.ts"],
+  "references": [
+    { "path": "../../../sdk/runtime-sdk" }
+  ]
+}

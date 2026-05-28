@@ -33,3 +33,12 @@ Thumbs.db
 
 # Per-machine state
 .pax-backend-spend-started
+
+# Local dev-loop runtime state.
+# var/   = parent-actor history.jsonl + per-service pidfiles/logs.
+# .data/ = rivet-engine RocksDB per-run dirs.
+# .cache/= built artifacts cached by source-pin SHA (rivet-engine binary,
+#          router binary). Re-derived by scripts/build/*.sh.
+var/
+.data/
+.cache/

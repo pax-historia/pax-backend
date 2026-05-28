@@ -1,0 +1,61 @@
+{
+	"name": "@rivetkit/engine-workspace",
+	"private": true,
+	"packageManager": "pnpm@10.13.1",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"start": "npx turbo watch build",
+		"build": "npx turbo build",
+		"test": "npx turbo test",
+		"test:watch": "npx turbo watch test",
+		"check-types": "npx turbo check-types",
+		"lint": "pnpm biome check .",
+		"fmt": "pnpm biome check --write --diagnostic-level=error ."
+	},
+	"devDependencies": {
+		"@bare-ts/tools": "0.15.0",
+		"@biomejs/biome": "^2.3",
+		"commander": "^12.1.0",
+		"lefthook": "^1.12.4",
+		"semver": "^7.7.3",
+		"tsup": "^8.5.0",
+		"turbo": "^2.5.6",
+		"typescript": "^5.9.2",
+		"zx": "^8.8.5"
+	},
+	"dependencies": {
+		"@babel/runtime": "^7.29.2",
+		"@iarna/toml": "^2.2.5",
+		"@sentry/vite-plugin": "^2.23.1",
+		"fast-glob": "^3.3.3"
+	},
+	"resolutions": {
+		"rivetkit": "workspace:*",
+		"@rivetkit/react": "workspace:*",
+		"@rivetkit/next-js": "workspace:*",
+		"@rivetkit/db": "workspace:*",
+		"@rivetkit/engine-api-full": "workspace:*",
+		"@rivetkit/rivetkit-napi": "workspace:*",
+		"@rivetkit/rivetkit-wasm": "workspace:*",
+		"@rivetkit/engine-cli": "workspace:*",
+		"@types/react": "^19",
+		"@types/react-dom": "^19"
+	},
+	"pnpm": {
+		"overrides": {
+			"react": "19.1.0",
+			"react-dom": "19.1.0",
+			"@rivet-gg/cloud": "https://pkg.pr.new/rivet-dev/engine-ee/@rivet-gg/cloud@299",
+			"rivetkit": "workspace:*",
+			"@rivetkit/engine-api-full": "workspace:*",
+			"@codemirror/state": "6.5.2",
+			"@codemirror/view": "6.38.2",
+			"@codemirror/autocomplete": "6.18.7",
+			"@codemirror/commands": "6.8.1",
+			"@codemirror/lint": "6.8.5",
+			"wasm-pack": "=0.13.1"
+		}
+	}
+}

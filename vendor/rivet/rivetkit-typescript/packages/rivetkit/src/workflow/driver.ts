@@ -1,0 +1,348 @@
+// @ts-nocheck
+import type { RunContext } from "@/actor/config";
+import type {
+	AnyActorInstance,
+	AnyStaticActorInstance,
+} from "@/actor/definition";
+import { makeWorkflowKey, workflowStoragePrefix } from "@/actor/keys";
+import type {
+	EngineDriver,
+	KVEntry,
+	KVWrite,
+	Message,
+	WorkflowMessageDriver,
+} from "@rivetkit/workflow-engine";
+
+const WORKFLOW_STORAGE_PREFIX = workflowStoragePrefix();
+
+function stripWorkflowKey(prefixed: Uint8Array): Uint8Array {
+	return prefixed.slice(WORKFLOW_STORAGE_PREFIX.length);
+}
+
+function computeUpperBound(prefix: Uint8Array): Uint8Array | null {
+	const upperBound = prefix.slice();
+	for (let i = upperBound.length - 1; i >= 0; i--) {
+		if (upperBound[i] !== 0xff) {
+			upperBound[i]++;
+			return upperBound.slice(0, i + 1);
+		}
+	}
+	return null;
+}
+
+class ActorWorkflowMessageDriver implements WorkflowMessageDriver {
+	#actor: AnyStaticActorInstance;
+	#runCtx: RunContext<any, any, any, any, any, any, any, any>;
+
+	constructor(
+		actor: AnyStaticActorInstance,
+		runCtx: RunContext<any, any, any, any, any, any, any, any>,
+	) {
+		this.#actor = actor;
+		this.#runCtx = runCtx;
+	}
+
+	async addMessage(message: Message): Promise<void> {
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.queueManager.enqueue(message.name, message.data),
+		);
+	}
+
+	async receiveMessages(opts: {
+		names?: readonly string[];
+		count: number;
+		completable: boolean;
+	}): Promise<Message[]> {
+		const messages = await this.#runCtx.internalKeepAwake(
+			this.#actor.queueManager.receive(
+				opts.names && opts.names.length > 0
+					? [...opts.names]
+					: undefined,
+				opts.count,
+				0,
+				undefined,
+				opts.completable,
+			),
+		);
+		return messages.map((message) => ({
+			id: message.id.toString(),
+			name: message.name,
+			data: message.body,
+			sentAt: message.createdAt,
+			...(opts.completable
+				? {
+						complete: async (response?: unknown) => {
+							await this.#runCtx.internalKeepAwake(
+								this.#actor.queueManager.completeMessage(
+									message,
+									response,
+								),
+							);
+						},
+					}
+				: {}),
+		}));
+	}
+
+	async completeMessage(
+		messageId: string,
+		response?: unknown,
+	): Promise<void> {
+		let parsedId: bigint;
+		try {
+			parsedId = BigInt(messageId);
+		} catch {
+			return;
+		}
+
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.queueManager.completeMessageById(parsedId, response),
+		);
+	}
+}
+
+export class ActorWorkflowDriver implements EngineDriver {
+	readonly workerPollInterval = 100;
+	readonly messageDriver: WorkflowMessageDriver;
+	#actor: AnyStaticActorInstance;
+	#runCtx: RunContext<any, any, any, any, any, any, any, any>;
+
+	constructor(
+		actor: AnyStaticActorInstance,
+		runCtx: RunContext<any, any, any, any, any, any, any, any>,
+	) {
+		this.#actor = actor;
+		this.#runCtx = runCtx;
+		this.messageDriver = new ActorWorkflowMessageDriver(actor, runCtx);
+	}
+
+	async get(key: Uint8Array): Promise<Uint8Array | null> {
+		const [value] = await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.kvBatchGet(this.#actor.id, [
+				makeWorkflowKey(key),
+			]),
+		);
+		return value ?? null;
+	}
+
+	async set(key: Uint8Array, value: Uint8Array): Promise<void> {
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.kvBatchPut(this.#actor.id, [
+				[makeWorkflowKey(key), value],
+			]),
+		);
+	}
+
+	async delete(key: Uint8Array): Promise<void> {
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.kvBatchDelete(this.#actor.id, [
+				makeWorkflowKey(key),
+			]),
+		);
+	}
+
+	async deletePrefix(prefix: Uint8Array): Promise<void> {
+		const start = makeWorkflowKey(prefix);
+		const end = computeUpperBound(start);
+		if (end) {
+			await this.#runCtx.internalKeepAwake(
+				this.#actor.driver.kvDeleteRange(this.#actor.id, start, end),
+			);
+		} else {
+			const entries = await this.#runCtx.internalKeepAwake(
+				this.#actor.driver.kvListPrefix(this.#actor.id, start),
+			);
+			if (entries.length === 0) {
+				return;
+			}
+			await this.#runCtx.internalKeepAwake(
+				this.#actor.driver.kvBatchDelete(
+					this.#actor.id,
+					entries.map(([key]) => key),
+				),
+			);
+		}
+	}
+
+	async deleteRange(start: Uint8Array, end: Uint8Array): Promise<void> {
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.kvDeleteRange(
+				this.#actor.id,
+				makeWorkflowKey(start),
+				makeWorkflowKey(end),
+			),
+		);
+	}
+
+	async list(prefix: Uint8Array): Promise<KVEntry[]> {
+		const entries = await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.kvListPrefix(
+				this.#actor.id,
+				makeWorkflowKey(prefix),
+			),
+		);
+		return entries.map(([key, value]) => ({
+			key: stripWorkflowKey(key),
+			value,
+		}));
+	}
+
+	async batch(writes: KVWrite[]): Promise<void> {
+		if (writes.length === 0) return;
+
+		// Flush actor state together with workflow state to ensure atomicity.
+		// If the server crashes after workflow flush, actor state must also be persisted.
+		await this.#runCtx.internalKeepAwake(
+			Promise.all([
+				this.#actor.driver.kvBatchPut(
+					this.#actor.id,
+					writes.map(({ key, value }) => [
+						makeWorkflowKey(key),
+						value,
+					]),
+				),
+				this.#actor.stateManager.saveState({
+					immediate: true,
+				}),
+			]),
+		);
+	}
+
+	async setAlarm(_workflowId: string, wakeAt: number): Promise<void> {
+		await this.#runCtx.internalKeepAwake(
+			this.#actor.driver.setAlarm(this.#actor, wakeAt),
+		);
+	}
+
+	async clearAlarm(_workflowId: string): Promise<void> {
+		// No dedicated clear alarm support in actor drivers.
+		return;
+	}
+
+	waitForMessages(
+		messageNames: string[],
+		abortSignal: AbortSignal,
+	): Promise<void> {
+		return this.#actor.queueManager.waitForNames(
+			messageNames.length > 0 ? messageNames : undefined,
+			abortSignal,
+		);
+	}
+}
+
+class NoopWorkflowMessageDriver implements WorkflowMessageDriver {
+	async addMessage(_message: Message): Promise<void> {
+		throw new Error("Workflow control driver does not support messages");
+	}
+
+	async receiveMessages(_opts: {
+		names?: readonly string[];
+		count: number;
+		completable: boolean;
+	}): Promise<Message[]> {
+		throw new Error("Workflow control driver does not support messages");
+	}
+
+	async completeMessage(
+		_messageId: string,
+		_response?: unknown,
+	): Promise<void> {
+		throw new Error("Workflow control driver does not support messages");
+	}
+}
+
+export class ActorWorkflowControlDriver implements EngineDriver {
+	readonly workerPollInterval = 100;
+	readonly messageDriver: WorkflowMessageDriver =
+		new NoopWorkflowMessageDriver();
+	#actor: AnyStaticActorInstance;
+
+	constructor(actor: AnyStaticActorInstance) {
+		this.#actor = actor;
+	}
+
+	async get(key: Uint8Array): Promise<Uint8Array | null> {
+		const [value] = await this.#actor.driver.kvBatchGet(this.#actor.id, [
+			makeWorkflowKey(key),
+		]);
+		return value ?? null;
+	}
+
+	async set(key: Uint8Array, value: Uint8Array): Promise<void> {
+		await this.#actor.driver.kvBatchPut(this.#actor.id, [
+			[makeWorkflowKey(key), value],
+		]);
+	}
+
+	async delete(key: Uint8Array): Promise<void> {
+		await this.#actor.driver.kvBatchDelete(this.#actor.id, [
+			makeWorkflowKey(key),
+		]);
+	}
+
+	async deletePrefix(prefix: Uint8Array): Promise<void> {
+		const start = makeWorkflowKey(prefix);
+		const end = computeUpperBound(start);
+		if (end) {
+			await this.#actor.driver.kvDeleteRange(this.#actor.id, start, end);
+			return;
+		}
+
+		const entries = await this.#actor.driver.kvListPrefix(
+			this.#actor.id,
+			start,
+		);
+		if (entries.length === 0) {
+			return;
+		}
+		await this.#actor.driver.kvBatchDelete(
+			this.#actor.id,
+			entries.map(([key]) => key),
+		);
+	}
+
+	async deleteRange(start: Uint8Array, end: Uint8Array): Promise<void> {
+		await this.#actor.driver.kvDeleteRange(
+			this.#actor.id,
+			makeWorkflowKey(start),
+			makeWorkflowKey(end),
+		);
+	}
+
+	async list(prefix: Uint8Array): Promise<KVEntry[]> {
+		const entries = await this.#actor.driver.kvListPrefix(
+			this.#actor.id,
+			makeWorkflowKey(prefix),
+		);
+		return entries.map(([key, value]) => ({
+			key: stripWorkflowKey(key),
+			value,
+		}));
+	}
+
+	async batch(writes: KVWrite[]): Promise<void> {
+		if (writes.length === 0) {
+			return;
+		}
+
+		await this.#actor.driver.kvBatchPut(
+			this.#actor.id,
+			writes.map(({ key, value }) => [makeWorkflowKey(key), value]),
+		);
+	}
+
+	async setAlarm(_workflowId: string, wakeAt: number): Promise<void> {
+		await this.#actor.driver.setAlarm(this.#actor, wakeAt);
+	}
+
+	async clearAlarm(_workflowId: string): Promise<void> {
+		return;
+	}
+
+	waitForMessages(
+		_messageNames: string[],
+		_abortSignal: AbortSignal,
+	): Promise<void> {
+		throw new Error("Workflow control driver does not support messages");
+	}
+}

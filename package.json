@@ -1,0 +1,33 @@
+{
+  "name": "pax-backend",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.29.3",
+  "scripts": {
+    "smoke": "tsx tooling/smoke-bot/src/smoke.mts",
+    "typecheck": "tsc -b --pretty",
+    "local:up": "./scripts/local-up.sh",
+    "local:down": "./scripts/local-down.sh",
+    "build:engine": "./scripts/build-engine.sh",
+    "build:router": "./scripts/build-router.sh",
+    "build:bundles": "./scripts/build-bundles.sh"
+  },
+  "pnpm": {
+    "overrides": {
+      "@rivetkit/engine-runner-protocol": "file:vendor/rivet/rivetkit-typescript/packages/engine-runner-protocol",
+      "@rivetkit/virtual-websocket": "file:vendor/rivet/shared/typescript/virtual-websocket"
+    },
+    "onlyBuiltDependencies": [
+      "isolated-vm",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.19.19",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.12",
+    "tsx": "^4.22.3",
+    "typescript": "^5.9.3"
+  }
+}

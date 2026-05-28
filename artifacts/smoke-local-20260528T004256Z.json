@@ -1,0 +1,46 @@
+{
+  "kind": "vertical-smoke-local",
+  "milestone": "router + shard runner working locally on Mac, no Docker on hot path, no Fly in loop",
+  "result": "PASS (3/3 consecutive runs)",
+  "wall_ms_per_run": [661, 650, 641],
+  "vendor_rivet_pin": "bdfb9825cb9fcaefc8f1a2cbb8e2c510cacbcf2f",
+  "build_times_seconds": {
+    "rivet_engine_cold_native_quick": 284,
+    "rivet_engine_warm_cache_hit": 0,
+    "placement_router_cold_release": 38,
+    "vendor_rivetkit_ts_three_packages": 12,
+    "pnpm_install_full": 3,
+    "isolated_vm_prebuild_install": 1
+  },
+  "topology": {
+    "redis": "docker pax-redis:7-alpine on 6379",
+    "rivet_engine": "native arm64 binary on 6420/6421/6430",
+    "parent_actor": "node + @rivetkit/engine-runner",
+    "child_runner": "node child_process + isolated-vm 5.0.4",
+    "router": "axum 0.7 + redis 0.27 + jsonwebtoken 9 on 127.0.0.1:9080",
+    "smoke_bot": "node + ws + ioredis"
+  },
+  "evidence": {
+    "history_jsonl_per_run_events": ["session.opened", "ws.send", "onPlayerMessage", "ws.send", "session.closed"],
+    "bundle_log_emit_events_per_run": ["bundle.onWake", "bundle.onPlayerConnect", "bundle.onPlayerMessage", "bundle.onPlayerDisconnect"],
+    "sessionId_format": "ses_<32 hex chars>",
+    "sessionId_threading": "every history line for a session shares the same sessionId"
+  },
+  "guarantees_partially_exercised": [
+    "#2 Allowed-only connection (degenerate; smoke accepts any valid placement JWT)",
+    "#3 Unique stable sessionId",
+    "#4 Session observability accuracy",
+    "#6 Idempotent player input (seq counter increments)",
+    "#14 History is complete",
+    "#16 Placement contract gate (router rejects shards without runtimeContract support)"
+  ],
+  "deferred_to_M2_and_later": [
+    "API gateway + c.api.invoke + URL services",
+    "Tigris c.blob tier",
+    "Bundle hot-swap + compat-tag flip gate",
+    "Scenario-runner + oracles for guarantees 1-16",
+    "no-ivm conformance runner",
+    "Multi-shard fleet + mock-shard tooling",
+    "Fly deployment"
+  ]
+}

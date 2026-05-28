@@ -1,0 +1,38 @@
+[package]
+name = "pax-backend-placement-router"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Placement-only router with runtime-contract gate. README guarantee #16."
+
+[[bin]]
+name = "pax-backend-placement-router"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
+redis = { version = "0.27", default-features = false, features = ["tokio-comp"] }
+jsonwebtoken = { version = "9", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+uuid = { version = "1", default-features = false, features = ["v4"] }
+
+[profile.release]
+# Smoke-shape build: codegen-units=16 + lto=off keeps cold compiles under a
+# couple of minutes on Apple Silicon. Production can re-enable fat LTO once
+# we're cutting release images.
+lto = "off"
+codegen-units = 16
+opt-level = 3
+debug = false
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"

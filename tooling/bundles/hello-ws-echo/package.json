@@ -1,0 +1,14 @@
+{
+  "name": "@pax-backend/bundle-hello-ws-echo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/bundle.js",
+  "scripts": {
+    "build": "../../../scripts/build-bundles.sh hello-ws-echo",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pax-backend/runtime-sdk": "workspace:*"
+  }
+}

@@ -1,0 +1,320 @@
+name: Rust CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    # Enable fail-fast behavior
+    shell: bash -e {0}
+env:
+  RUSTFLAGS: "--cfg tokio_unstable"
+  CARGO_TERM_COLOR: always
+jobs:
+  # Detect if checked code changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      conformance: ${{ steps.filter.outputs.conformance }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/*.bare'
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - 'rivetkit-rust/packages/rivetkit-core/scripts/**/*.sh'
+              - '.github/workflows/rust.yml'
+            conformance:
+              - '**/*.rs'
+              - '**/*.bare'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - '**/package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/rust.yml'
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # clippy:
+  #   name: Clippy
+  #   runs-on: depot-ubuntu-24.04-8
+  #   needs: changes
+  #   if: needs.changes.outputs.rust == 'true'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         components: clippy
+  #
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         shared-key: "rust-ci"
+  #         cache-on-failure: true
+  #
+  #     - name: Run clippy
+  #       run: cargo clippy --all-targets --all-features -- -W warnings
+
+  check:
+    name: Check
+    runs-on: depot-ubuntu-24.04-8
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-ci"
+          cache-on-failure: true
+
+      - name: Check event-driven drain invariants
+        run: rivetkit-rust/packages/rivetkit-core/scripts/check-event-driven-drains.sh
+
+      - name: Check
+        run: cargo check --workspace --exclude rivetkit-wasm
+        env:
+          # Deny warnings
+          RUSTFLAGS: --cfg tokio_unstable -D warnings -A unsafe-op-in-unsafe-fn
+
+  ups_lanes_conformance:
+    name: UPS Lanes Conformance
+    runs-on: depot-ubuntu-24.04-8
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-ci"
+          cache-on-failure: true
+
+      - name: UPS lane semantics
+        run: |
+          cargo test -p universalpubsub --test lanes
+
+      - name: UPS lane real-driver delivery
+        run: |
+          cargo test -p universalpubsub --test integration test_memory_driver
+          cargo test -p universalpubsub --test integration test_nats_driver_with_memory
+          cargo test -p universalpubsub --test integration test_nats_driver_without_memory
+          cargo test -p universalpubsub --test integration test_postgres_driver_with_memory
+          cargo test -p universalpubsub --test integration test_postgres_driver_without_memory
+
+  tunnel_v2_conformance:
+    name: Tunnel v2 Conformance
+    runs-on: depot-ubuntu-24.04-8
+    needs: changes
+    if: needs.changes.outputs.conformance == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.13.1 --activate
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-ci"
+          cache-on-failure: true
+
+      - name: Tunnel v2 Rust protocol and fabric
+        run: |
+          cargo test -p rivet-runner-protocol --test v8_schema
+          cargo test -p tunnel-fabric
+          cargo test -p pegboard-runner ws_to_tunnel_task
+          cargo test -p pegboard-gateway
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::actor_connectable_via_guard_websocket -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::actor_guard_websocket_resumes_after_runner_hibernate -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::actor_guard_websocket_replays_pending_after_runner_hibernate -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::runner_tunnel_pressure_control_reaches_websocket -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::runner_gateway_hibernation_pressure_reaches_websocket -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::runner_gateway_ack_pressure_release_reaches_websocket -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::runner_gateway_resume_replays_pending_over_receiver -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::runner_gateway_tick_wave_fairness_reaches_websocket -- --nocapture
+          cargo test -p pegboard-gateway2 pressure
+          cargo test -p rivet-envoy-protocol
+          cargo test -p rivet-envoy-client
+          cargo test -p rivetkit-core broadcast_pressure
+          cargo test -p rivetkit-core tunnel_pressure
+
+      - name: Tunnel v2 TypeScript runner and RivetKit pressure
+        run: |
+          pnpm --filter @rivetkit/engine-runner-protocol check-types
+          pnpm --filter @rivetkit/engine-runner-protocol build
+          pnpm --filter @rivetkit/engine-runner test -- tunnel-wave
+          pnpm --filter @rivetkit/engine-runner test -- runner-pressure
+          pnpm --filter @rivetkit/engine-runner check-types
+          pnpm --filter @rivetkit/engine-runner build
+          pnpm --filter @rivetkit/engine-envoy-protocol check-types
+          pnpm --filter @rivetkit/engine-envoy-protocol build
+          pnpm --filter rivetkit exec vitest run tests/native-runtime-errors.test.ts
+          pnpm --filter rivetkit build
+
+  executor_lanes_conformance:
+    name: Executor Lanes Conformance
+    runs-on: depot-ubuntu-24.04-8
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-ci"
+          cache-on-failure: true
+
+      - name: Executor lane unit conformance
+        run: |
+          cargo test -p pegboard --test executor_lanes --test executor_lane_hints
+
+      - name: Executor lane process conformance
+        run: |
+          cargo test -p rivet-engine --test mod runner::api_actors_create::lane_ -- --nocapture
+          cargo test -p rivet-engine --test mod runner::api_actors_create::create_actor_with_lane_hint_uses_matching_runner_lane -- --nocapture
+          cargo test -p rivet-engine --test mod runner::api_actors_create::keyed_lane_actor_recreate_uses_same_runner -- --nocapture
+          cargo test -p rivet-engine --test mod runner::api_runners_drain_lane -- --nocapture
+
+  routing_directory_conformance:
+    name: Routing Directory Conformance
+    runs-on: depot-ubuntu-24.04-8
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-ci"
+          cache-on-failure: true
+
+      - name: Routing directory unit conformance
+        run: |
+          cargo test -p pegboard --test routing_directory
+          cargo test -p rivet-guard routing::pegboard_gateway::tests:: -- --nocapture
+
+      - name: Routing directory process conformance
+        run: |
+          cargo test -p rivet-engine --test mod envoy::actors_lifecycle::envoy_guard_ -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::actor_starts_and_connectable_via_guard_http -- --nocapture
+          cargo test -p rivet-engine --test mod runner::actors_lifecycle::actor_guard_ -- --nocapture
+
+      - name: Routing directory Postgres counterfactual
+        run: |
+          RIVET_TEST_DATABASE=postgres cargo test -p rivet-engine --test mod runner::actors_lifecycle::d1_postgres_100_actor_hot_connects_use_routing_directory -- --nocapture
+
+  # test:
+  #   name: Test
+  #   runs-on: depot-ubuntu-24.04-8
+  #   needs: changes
+  #   if: needs.changes.outputs.rust == 'true'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         # Share cache across all Rust jobs
+  #         shared-key: "rust-ci"
+  #         # Save cache even if the build fails
+  #         cache-on-failure: true
+  #         # Only save cache on main branch to avoid cache pollution from PRs
+  #
+  #     - name: Run tests
+  #       run: cargo test --verbose
+  #
+  # deny:
+  #   name: Deny
+  #   runs-on: ubuntu-latest
+  #   needs: changes
+  #   if: needs.changes.outputs.rust == 'true'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: cargo deny
+  #       uses: EmbarkStudios/cargo-deny-action@v1
+  #       with:
+  #         rust-version: "1.88.0"
+
+  # This job always runs and should be the required status check
+  status-check:
+    name: Rust CI Status
+    runs-on: ubuntu-latest
+    needs:
+      [
+        changes,
+        fmt,
+        check,
+        ups_lanes_conformance,
+        tunnel_v2_conformance,
+        executor_lanes_conformance,
+        routing_directory_conformance,
+      ]
+    if: always()
+    steps:
+      - name: Check job status
+        run: |
+          # If checked code didn't change, consider it a pass
+          if [ "${{ needs.changes.outputs.rust }}" != "true" ] && [ "${{ needs.changes.outputs.conformance }}" != "true" ]; then
+            echo "No Rust or TypeScript conformance changes detected, skipping checks"
+            exit 0
+          fi
+
+          # If checked code changed, verify all jobs passed
+          if [ "${{ needs.fmt.result }}" == "failure" ] || \
+             [ "${{ needs.check.result }}" == "failure" ] || \
+             [ "${{ needs.ups_lanes_conformance.result }}" == "failure" ] || \
+             [ "${{ needs.tunnel_v2_conformance.result }}" == "failure" ] || \
+             [ "${{ needs.executor_lanes_conformance.result }}" == "failure" ] || \
+             [ "${{ needs.routing_directory_conformance.result }}" == "failure" ]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+
+          echo "All required checks passed"

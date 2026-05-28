@@ -1,0 +1,38 @@
+use gas::prelude::*;
+
+pub mod actor_kv;
+pub mod actor_sqlite;
+pub mod errors;
+pub mod executor;
+pub mod keys;
+pub mod metrics;
+pub mod ops;
+pub mod pubsub_subjects;
+pub mod routing_directory;
+pub mod utils;
+pub mod workflows;
+
+pub fn registry() -> WorkflowResult<Registry> {
+	use workflows::*;
+
+	let mut registry = Registry::new();
+	registry.register_workflow::<actor::Workflow>()?;
+	registry.register_workflow::<actor::metrics::Workflow>()?;
+	registry.register_workflow::<actor2::Workflow>()?;
+	registry.register_workflow::<actor2::metrics::Workflow>()?;
+	registry.register_workflow::<actor_migration_fix_backfill::Workflow>()?;
+	registry.register_workflow::<runner::Workflow>()?;
+	registry.register_workflow::<runner2::Workflow>()?;
+	registry.register_workflow::<runner_pool::Workflow>()?;
+	registry.register_workflow::<runner_pool_error_tracker::Workflow>()?;
+	registry.register_workflow::<runner_pool_metadata_poller::Workflow>()?;
+	registry.register_workflow::<runner_pool_backfill::Workflow>()?;
+	registry.register_workflow::<runner_pool2_backfill::Workflow>()?;
+	registry.register_workflow::<serverless::receiver::Workflow>()?;
+	registry.register_workflow::<serverless::conn::Workflow>()?;
+	registry.register_workflow::<serverless::backfill::Workflow>()?;
+	registry.register_workflow::<metrics_aggregator::Workflow>()?;
+	registry.register_workflow::<actor_runner_name_selector_backfill::Workflow>()?;
+
+	Ok(registry)
+}

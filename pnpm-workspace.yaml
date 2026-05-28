@@ -1,0 +1,7 @@
+packages:
+  - "runtime/ipc-protocol"
+  - "runtime/parent-actor"
+  - "runtime/child-runner-ivm"
+  - "sdk/runtime-sdk"
+  - "tooling/bundles/*"
+  - "tooling/smoke-bot"

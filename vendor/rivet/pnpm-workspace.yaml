@@ -1,0 +1,38 @@
+packages:
+  - engine
+  - self-host/compose/template
+  - engine/sdks/typescript/api-full
+  - engine/sdks/typescript/envoy-protocol
+  - engine/sdks/typescript/test-envoy
+  - engine/sdks/typescript/test-envoy-native
+  - engine/sdks/typescript/test-runner
+  - engine/tests/*
+  - examples/*
+  - frontend
+  - frontend/packages/components/
+  - frontend/packages/icons/
+  - frontend/packages/shared-data/
+  - rivetkit-typescript/packages/*
+  - rivetkit-swift/examples/*/server
+  - scripts/publish
+  - scripts/tests
+  - shared/typescript/*
+  - website
+  - website/scripts/typecheck-staging
+
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+  - '@sentry/cli'
+  - browser-tabs-lock
+  - core-js
+
+onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - opencode-ai
+  - '@rivet-gg/icons'
+  - better-sqlite3
+  - cbor-extract
+  - esbuild
+  - lefthook
+  - sharp
+  - workerd

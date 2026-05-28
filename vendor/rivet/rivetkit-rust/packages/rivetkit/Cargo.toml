@@ -1,0 +1,39 @@
+[package]
+name = "rivetkit"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+workspace = "../../../"
+
+[features]
+default = ["sqlite"]
+sqlite = ["rivetkit-core/sqlite"]
+typed-event-loop-example = []
+
+[[example]]
+name = "counter"
+required-features = ["typed-event-loop-example"]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+ciborium.workspace = true
+futures.workspace = true
+http.workspace = true
+rivet-error.workspace = true
+rivetkit-core = { path = "../rivetkit-core" }
+rivetkit-client = { path = "../client" }
+serde.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum = { workspace = true }
+bytes.workspace = true
+rivet-envoy-client = { path = "../../../engine/sdks/rust/envoy-client" }
+rivetkit-client-protocol = { path = "../client-protocol" }
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+vbare.workspace = true
