@@ -1,0 +1,35 @@
+# Node / TS
+node_modules/
+dist/
+*.tsbuildinfo
+*.log
+
+# Rust build artifacts (covers vendor/rivet/target/ and any cargo workspace
+# under vendor/rivet/<crate>/target/ once vendoring lands).
+target/
+*.rs.bk
+
+# Vendor build artifacts (the source tree itself is committed — Google-style
+# monorepo; see vendor/rivet/UPSTREAM.md). These exclusions are for derived
+# artifacts only.
+vendor/**/node_modules/
+vendor/**/.next/
+vendor/**/dist/
+vendor/**/build/
+vendor/**/target/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Secrets — never in git. Infisical is the source of truth.
+.env
+.env.*
+!.env.example
+
+# Per-machine state
+.pax-backend-spend-started
