@@ -31,3 +31,8 @@ The current pass wires the shard registry and drain intent through Redis.
 Drained shards continue serving in-flight games, but parent self-registration
 publishes `acceptingWakes=false` so placement stops choosing them for new
 wakes.
+
+`GET /admin/games/by-compat-tag/:tag` accepts `cursor` and `limit` query
+parameters and returns `{ cursor, limit, nextCursor, games }`, ordered by
+`gameId`. Use the literal tag `untagged` for games that have not stamped a
+blob compatibility tag yet.

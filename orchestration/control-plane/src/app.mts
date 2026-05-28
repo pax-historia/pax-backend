@@ -194,7 +194,7 @@ async function handleRequest(
       parts[2] === "by-compat-tag" &&
       parts.length === 4
     ) {
-      await handleGamesByCompatTag(res, store, parts[3] ?? "");
+      await handleGamesByCompatTag(res, store, parts[3] ?? "", url);
       return;
     }
 
@@ -684,11 +684,25 @@ async function handleGamesByCompatTag(
   res: ServerResponse,
   store: ControlPlaneStore,
   tag: string,
+  url: URL,
 ): Promise<void> {
-  const games = (await store.listGames()).filter((game) =>
-    tag === "untagged" ? game.blobCompatTag === undefined : game.blobCompatTag === tag,
-  );
-  writeJson(res, 200, { ok: true, tag, games });
+  const limit = clampInt(url.searchParams.get("limit"), 1, 1000, 500);
+  const cursor = optionalInt(url.searchParams.get("cursor")) ?? 0;
+  const matchingGames = (await store.listGames())
+    .filter((game) =>
+      tag === "untagged" ? game.blobCompatTag === undefined : game.blobCompatTag === tag,
+    )
+    .sort((a, b) => a.gameId.localeCompare(b.gameId));
+  const games = matchingGames.slice(cursor, cursor + limit);
+  const nextCursor = cursor + games.length < matchingGames.length ? cursor + games.length : null;
+  writeJson(res, 200, {
+    ok: true,
+    tag,
+    cursor,
+    limit,
+    nextCursor,
+    games,
+  });
 }
 
 async function requireGame(
