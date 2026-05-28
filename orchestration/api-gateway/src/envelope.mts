@@ -35,11 +35,15 @@ export function buildGatewayEnvelope(
     },
   };
   const rawOutbound = stableSerialize(body);
+  const rawFingerprint = stableSerialize({
+    kind: input.kind,
+    args: input.args,
+  });
   return {
     requestId,
     body,
     rawOutbound,
-    fingerprint: sha256Hex(rawOutbound),
+    fingerprint: sha256Hex(rawFingerprint),
     headers: {
       "content-type": "application/json",
       "x-gateway-envelope-version": String(GATEWAY_ENVELOPE_VERSION),

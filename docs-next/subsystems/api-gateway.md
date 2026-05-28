@@ -25,7 +25,7 @@ For every `c.api.invoke`:
 - The canonical envelope construction (see
   [`reference/gateway-envelope.md`](../reference/gateway-envelope.md)).
 - The `api-invocations-per-min` sliding-window counter, per game.
-- The fingerprint computation (`sha256(canonical-serialize(outbound))`).
+- The replay fingerprint computation (`sha256(canonicalize({ kind, args }))`).
 - Wire-grain record/replay logic.
 - The first-party reference URL services co-deployed in the same
   process (`echo.v1`, `delay.v1`, `http.fetch.v1`, `mock-ai.v1`).
@@ -74,7 +74,7 @@ sequenceDiagram
   GW->>GW: check api-invocations-per-min<br/>(fail apiRateExceeded if over)
   GW->>Registry: lookup kind → URL<br/>(fail kindUnknown if absent)
   GW->>GW: build envelope { args, context }
-  GW->>GW: fingerprint = sha256(canonical-serialize(envelope))
+  GW->>GW: fingerprint = sha256(canonicalize({ kind, args }))
   alt mode == replay
     GW->>GW: lookup recorded response by fingerprint
     alt match found
@@ -95,7 +95,7 @@ sequenceDiagram
 The scenario-runner sets `PAX_API_REPLAY_FIXTURES_PATH` to a directory
 of JSONL fixtures keyed by fingerprint. In replay mode, the gateway:
 
-1. Computes the fingerprint of the outbound envelope.
+1. Computes the fingerprint of the stable `{ kind, args }` replay key.
 2. Looks up the fingerprint in the fixtures path.
 3. If found, returns the recorded response without making any HTTP call.
 4. If not found, returns `{ ok: false, error: 'replayCoverageGap' }`.
@@ -107,7 +107,7 @@ The fixture file format is one JSON object per line:
 
 ```jsonc
 {
-  "fingerprint": "sha256:...",
+  "fingerprint": "...",
   "kind": "ai.chat.v1",
   "statusCode": 200,
   "responseBody": { "result": ... },
@@ -132,7 +132,7 @@ event:
   "requestId": "...",
   "kind": "ai.chat.v1",
   "mode": "live",
-  "fingerprint": "sha256:...",
+  "fingerprint": "...",
   "statusCode": 200,
   "durationMs": 142,
   "raw_outbound": { ... },           // full canonical envelope

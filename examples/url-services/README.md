@@ -22,13 +22,15 @@ not raw URL-service payload files.
 
 Each fixture record may live in a `.json` file, in a `.jsonl` file, or inside
 a `records` array. Lookup uses the record's `fingerprint` field; naming files
-`<fingerprint>.json` is only a convention for humans. A replayable record must
-include at least:
+`<fingerprint>.json` is only a convention for humans. The replay fingerprint is
+the SHA-256 hex digest of the canonical `{ kind, args }` replay key, not the
+full gateway envelope, so volatile session and trace context does not make
+fixtures one-run-only. A replayable record must include at least:
 
 ```json
 {
   "event": "api.invoke",
-  "fingerprint": "sha256:...",
+  "fingerprint": "...",
   "statusCode": 200,
   "rawInbound": "{\"result\":{\"ok\":true}}"
 }

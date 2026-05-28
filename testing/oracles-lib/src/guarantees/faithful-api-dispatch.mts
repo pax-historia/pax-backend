@@ -72,9 +72,14 @@ export function faithfulApiDispatch(history: readonly HistoryEvent[]): OracleRes
         );
         continue;
       }
-      if (sha256Hex(rawOutbound) !== fingerprint) {
+      const replayKey = replayKeyFromWire(event, rawOutbound);
+      if (replayKey && sha256Hex(replayKey) !== fingerprint) {
         findings.push(
-          finding("fingerprint-mismatch", "api.invoke.wire fingerprint did not match rawOutbound", event),
+          finding(
+            "fingerprint-mismatch",
+            "api.invoke.wire fingerprint did not match replay key",
+            event,
+          ),
         );
       }
       if (!isJson(rawOutbound)) {
@@ -109,11 +114,41 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function isJson(value: string): boolean {
-  try {
-    JSON.parse(value);
-    return true;
-  } catch {
-    return false;
+function replayKeyFromWire(event: HistoryEvent, rawOutbound: string): string | undefined {
+  const kind = stringField(event, "kind");
+  if (!kind) return undefined;
+  const outbound = parseJson(rawOutbound);
+  if (!isRecord(outbound)) return undefined;
+  return stableSerialize({ kind, args: outbound["args"] ?? {} });
+}
+
+function stableSerialize(value: unknown): string {
+  return JSON.stringify(canonicalize(value));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((entry) => canonicalize(entry));
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const item = (value as Record<string, unknown>)[key];
+    if (item !== undefined) out[key] = canonicalize(item);
   }
+  return out;
+}
+
+function isJson(value: string): boolean {
+  return parseJson(value) !== undefined;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

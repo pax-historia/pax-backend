@@ -81,3 +81,7 @@ Ran the full ten-scenario suite locally with fresh game prefixes per scenario. A
 `chat-basic`, `jump-forward-basic`, `advisor-basic`, `actions-basic`, `role-claim-flow`, `role-destroy-flow`, `spectator-billing-block`, `moderation-flow`, `workflow-override-loaded`, and `host-event-wake-delivery`.
 
 Fixes needed to get there: scenario histories are per-game slices, so `history-completeness` now skips global `pax_seq` contiguity checks for scenario-runner histories while still checking timestamps, shard IDs, positive sequence IDs, and required fields. The historia manifests now exclude API/input-specific substrate oracles for scenarios that intentionally do not exercise those surfaces, and the shared workload waits for post-message host-event delivery before replaying oracles.
+
+## 2026-05-28 09:34 PDT
+
+Audited the API replay fixture path before freezing historia fixtures. The gateway was fingerprinting the full outbound envelope, which includes volatile run IDs, trace IDs, session IDs, JWT expiration, and connection timestamps. That makes canned URL-service fixtures effectively one-run-only. Changed the replay fingerprint contract to hash the stable `{ kind, args }` replay key while still sending and recording the full envelope for live calls. Updated the gateway docs and the faithful API oracle to match.

@@ -138,7 +138,7 @@ Every live-mode call generates an `api.invoke.wire` history event:
   "requestId": "uuid",
   "kind": "ai.chat.v1",
   "mode": "live",
-  "fingerprint": "sha256:<64 hex>",
+  "fingerprint": "<64 hex>",
   "statusCode": 200,
   "durationMs": 142,
   "raw_outbound": { /* full envelope above */ },
@@ -146,8 +146,12 @@ Every live-mode call generates an `api.invoke.wire` history event:
 }
 ```
 
-The fingerprint is `sha256(canonicalize(rawOutbound))`. Canonicalization
-is deterministic (sorted keys, no whitespace).
+The replay fingerprint is `sha256(canonicalize({ kind, args }))`.
+Canonicalization is deterministic (sorted keys, no whitespace). The live
+provider still receives the full envelope, including context, but volatile
+context fields such as `runId`, `traceId`, `sessionId`, and connection
+timestamps are intentionally excluded from the replay key so canned scenario
+fixtures can be reused across runs.
 
 ## Replay mode
 
