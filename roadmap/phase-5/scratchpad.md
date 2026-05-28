@@ -160,3 +160,7 @@ Started a detached driver-side monitor for the rest of the run: `/data/phase-5/s
 ## 2026-05-28 16:13 PDT
 
 Confirmed the detached monitor cadence. The second monitor line landed at `2026-05-28T23:12:23.154Z`; the heartbeat `ivm` retry was still alive with no `exit.code`, the no-faults history still had 1000 placements and zero workload failures/session close/session error events, and `/admin/shards` still showed 10 healthy accepting shards with `total_active_games=1000`. This puts the no-faults hold about 25 minutes past `send-json` start and still green.
+
+## 2026-05-28 16:15 PDT
+
+Added `scripts/fly/pull-soak-artifacts.sh` so partial `fly machine exec` streams do not corrupt local evidence pulls. The helper base64-encodes a remote tar stream before decoding and merging into ignored `var/` locally; raw binary stdout through `fly machine exec` was not safe because it text-normalized gzip bytes. Verified it against `/data/phase-5/soak/ivm-20260528T222045Z`, then ran `scripts/fly/summarize-soak.mts` over the pulled copy; the in-progress summary saw one no-faults case, 1000 placements across all 10 shards, zero parse errors, and no failing/error cases yet.
