@@ -672,7 +672,7 @@ async function handleGameSnapshot(
   const recentApiInvokes =
     apiLimit === 0
       ? []
-      : apiWireRecordsForGame(config.apiWireRecordsPath, gameId, apiLimit);
+      : apiWireRecordsForGame(config.apiWireRecordsPath, config.historyPath, gameId, apiLimit);
 
   writeJson(res, 200, {
     ok: true,

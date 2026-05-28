@@ -46,6 +46,8 @@ export interface SessionQuery {
   readonly playerId?: string;
 }
 
+export type ApiWireRecordView = Readonly<Record<string, unknown>>;
+
 export function queryHistory(
   historyPath: string,
   query: HistoryQuery,
@@ -111,6 +113,56 @@ export function lastActivityAtForGame(
 }
 
 export function apiWireRecordsForGame(
+  recordsPath: string,
+  historyPath: string,
+  gameId: string,
+  limit: number,
+): readonly ApiWireRecordView[] {
+  const historyRecords = apiWireRecordsFromHistory(historyPath, gameId, limit);
+  if (historyRecords.length > 0) return historyRecords;
+  return apiWireRecordsFromJsonl(recordsPath, gameId, limit);
+}
+
+function apiWireRecordsFromHistory(
+  historyPath: string,
+  gameId: string,
+  limit: number,
+): readonly ApiWireRecordView[] {
+  if (limit <= 0) return [];
+  return readHistory(historyPath)
+    .filter((event) => event.event === "api.invoke.wire" && event.gameId === gameId)
+    .flatMap((event) => {
+      const fingerprint = stringValue(event["fingerprint"]);
+      const rawOutbound = stringValue(event["rawOutbound"]);
+      const rawInbound = stringValue(event["rawInbound"]);
+      const statusCode = numberValue(event["statusCode"]);
+      if (!fingerprint || !rawOutbound || !rawInbound || statusCode === undefined) return [];
+      return [
+        {
+          event: "api.invoke",
+          requestId:
+            stringValue(event["gatewayRequestId"]) ??
+            stringValue(event["requestId"]) ??
+            "history",
+          parentRequestId: stringValue(event["requestId"]),
+          fingerprint,
+          mode: event["mode"] === "replay" ? "replay" : "live",
+          kind: stringValue(event["kind"]) ?? "unknown",
+          gameId,
+          runId: stringValue(event["runId"]) ?? "unknown",
+          traceId: stringValue(event["traceId"]),
+          rawOutbound,
+          rawInbound,
+          statusCode,
+          error: apiInvokeErrorValue(event["error"]),
+          recordedAt: stringValue(event["recordedAt"]) ?? event.ts,
+        },
+      ];
+    })
+    .slice(-limit);
+}
+
+function apiWireRecordsFromJsonl(
   recordsPath: string,
   gameId: string,
   limit: number,
@@ -232,4 +284,21 @@ function matchesSession(session: SessionRecordView, query: SessionQuery): boolea
     return false;
   }
   return true;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function apiInvokeErrorValue(value: unknown): ApiInvokeWireRecord["error"] {
+  return value === "kindUnknown" ||
+    value === "providerError" ||
+    value === "apiRateExceeded" ||
+    value === "replayCoverageGap"
+    ? value
+    : undefined;
 }

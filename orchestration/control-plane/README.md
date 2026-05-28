@@ -14,6 +14,9 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 - Allowed-players management
 - Session observability (`GET /admin/games/:id/sessions`,
   `GET /admin/sessions/:sessionId`)
+- Game snapshots (`GET /admin/games/:id/snapshot`) with recent
+  `api.invoke.wire` records preferred from history and falling back to the
+  gateway JSONL record file
 - Bundle upload/delete (parses + validates `BundleManifest`; rejects if
   `compatTagProduced ∉ compatTagsAccepted`; refuses bundle delete while games
   still reference it)
