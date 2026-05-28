@@ -34,6 +34,10 @@ export type {
 // ----- The typed substrate context (`c`) ---------------------------------
 
 export interface SubstrateContext {
+  /** Deterministic substrate PRNG for test-mode repeatability; returns [0, 1). */
+  rng(): number;
+  /** Deterministic substrate monotonic clock for creator code. */
+  now(): number;
   readonly ws: {
     /**
      * Send a JSON-safe body to one or more players on this game. Use the

@@ -3,8 +3,8 @@
 // One node child_process per game. The bundle source is loaded into an
 // isolated-vm Isolate; substrate context (c.ws.send / c.log.emit /
 // c.metrics.emit / c.lifecycle.requestSleep / c.api.invoke / c.players.* /
-// c.compute.budget / c.state.* / c.blob.*) is exposed as ivm bridges that
-// post IPC envelopes back to the parent via process.send().
+// c.compute.budget / c.state.* / c.blob.* / c.rng / c.now) is exposed as ivm
+// bridges or deterministic in-child helpers.
 //
 // Trust model (README §"Trust model"):
 //  - No outbound network (parent forks us with a stripped env).
@@ -84,10 +84,33 @@ type ParentRequestType =
   | "blob.read"
   | "blob.write";
 
+function hashSeed(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function makeMulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = state;
+    mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   isolate = new ivm.Isolate({ memoryLimit: cfg.memoryLimitMb });
   context = await isolate.createContext();
   const jail = context.global;
+  const seed = hashSeed(`${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`);
+  const nextRandom = makeMulberry32(seed);
+  let nextNow = 1_700_000_000_000 + (seed % 1_000_000_000);
 
   // ivm contexts have no globalThis self-reference; bundles often expect one.
   await jail.set("global", jail.derefInto());
@@ -135,6 +158,11 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   const cComputeBudget = new ivm.Reference(() =>
     invokeParentFromBridge(CHILD_TO_PARENT.computeBudget, {}),
   );
+  const cRng = new ivm.Reference(() => nextRandom());
+  const cNow = new ivm.Reference(() => {
+    nextNow += 1;
+    return nextNow;
+  });
   const cStateRead = new ivm.Reference(() =>
     invokeParentFromBridge(CHILD_TO_PARENT.stateRead, {}),
   );
@@ -159,6 +187,8 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   await jail.set("__pax_c_players_allowed", cPlayersAllowed);
   await jail.set("__pax_c_players_connected", cPlayersConnected);
   await jail.set("__pax_c_compute_budget", cComputeBudget);
+  await jail.set("__pax_c_rng", cRng);
+  await jail.set("__pax_c_now", cNow);
   await jail.set("__pax_c_state_read", cStateRead);
   await jail.set("__pax_c_state_write", cStateWrite);
   await jail.set("__pax_c_state_flush", cStateFlush);
@@ -194,6 +224,8 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       }
     };
     globalThis.c = {
+      rng: () => __pax_c_rng.applySync(undefined, []),
+      now: () => __pax_c_now.applySync(undefined, []),
       ws: {
         send: (target, body) => __pax_c_ws_send.applySync(undefined, [JSON.stringify(target), JSON.stringify(body)]),
       },

@@ -58,7 +58,7 @@ export default defineBundle({
         sessionId: payload.sessionId,
         seq: payload.seq,
         body: payload.body,
-        at: Date.now(),
+        at: c.now(),
       },
     };
     const write = await c.state.write(next);

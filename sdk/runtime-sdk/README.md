@@ -8,6 +8,6 @@ Includes the `BundleManifest` type and a local pre-publish validator that
 mirrors the admin endpoint's upload-time check
 (`compatTagProduced ∈ compatTagsAccepted`).
 
-Step 4 of the plan's kickoff.
-
-Stub.
+Current source pass exposes the typed creator surface for lifecycle hooks,
+websocket send, logs, metrics, URL-service calls, players, compute budgets,
+state/blob storage, and deterministic `c.rng()` / `c.now()` helpers.
