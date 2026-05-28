@@ -8,4 +8,16 @@ Format suggestion: a `## YYYY-MM-DD HH:MM` heading per entry, followed by prose 
 
 ---
 
-(no entries yet)
+## 2026-05-28 03:56 PDT
+
+Activated Phase 2 after Phase 1 closed green. The phase target is the Fly
+topology proof: three apps (`pax-backend-shards`, `pax-backend-control`,
+`pax-backend-driver`) backed by Tigris bucket `pax-backend-blobs` and Upstash
+Redis `pax-backend-directory`, then 100 concurrent hello-world games for 30
+minutes under both no-fault and shard-death-every-five-minutes profiles.
+
+Re-read `AGENTS.md` before moving into this phase. The teardown allowlist in
+`scripts/bootstrap/tear-down.sh` remains hard-coded to the three Fly apps and
+one Tigris bucket; do not generalize it while working on the bootstrap or
+deployment path. Commit cadence is around once per task unless a smaller
+checkpoint is clearly warranted.

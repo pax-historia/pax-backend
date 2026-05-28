@@ -1,6 +1,6 @@
 # Phase 1 — Local Mac build + smoke
 
-> Status: `in_progress` · Directive and exit signal: [README](../README.md)
+> Status: `complete` · Directive and exit signal: [README](../README.md)
 
 ## Tasks
 
@@ -11,4 +11,4 @@ Each task is a few sentences and a progress field — see [`phase-0/task-tracker
 | 1 | **Root TypeScript build** — Run `pnpm typecheck`, fix every compilation error that is safe under the standing constraints, and log any deliberate deferral. | `complete` — Fixed the example billing-mock refund event typing without adding substrate billing surface; `pnpm typecheck` now passes at the repo root. |
 | 2 | **Local smoke command** — Run `pnpm smoke` on this Mac with no production `.env`; fix local toolchain/runtime failures until green. | `complete` — Rebuilt the stale cached placement-router binary, taught `local-up.sh` to rebuild stale router caches, and ran `pnpm smoke` green against the local Redis/engine/control/gateway/parent/router stack. |
 | 3 | **Dependency audit** — Run `pnpm audit` and `cargo audit`; apply small safe upgrades and log any remaining finding with rationale. | `complete` — `pnpm audit` found no known vulnerabilities; `cargo audit` found zero vulnerabilities across the placement-router lockfile. |
-| 4 | **Phase verification** — Re-read this phase's directive and exit signal in the [README](../README.md). Walk every [`docs-next/`](../../docs-next/) page and code path the phase touches; confirm every subtask above has been enumerated and that the exit signal is actually met. If anything is missing, add rows above this one and rerun. | `to_do` |
+| 4 | **Phase verification** — Re-read this phase's directive and exit signal in the [README](../README.md). Walk every [`docs-next/`](../../docs-next/) page and code path the phase touches; confirm every subtask above has been enumerated and that the exit signal is actually met. If anything is missing, add rows above this one and rerun. | `complete` — Re-read the Phase 1 directive, checked the `docs-next/` tree and touched Phase 1 code paths, reran `pnpm typecheck`, `pnpm smoke`, `pnpm audit`, and `cargo audit`; all exit checks are green. |
