@@ -16,7 +16,7 @@ home zone and re-export only the types.
 
 | Path | What it is |
 |---|---|
-| `ipc-protocol/` | `@pax-backend/ipc-protocol`. The versioned IPC envelope types (parent ↔ child + parent ↔ child internals), discriminated unions tagged on `.type`, Redis key prefixes + TTLs, ID generators (`generateSessionId`, `generateRunId`), and the Redis row schemas (`ShardRegistration`, `ActiveGamePlacement`, `BundleRecord`, `GameRecord`). |
+| `ipc-protocol/` | `@pax-backend/ipc-protocol`. The versioned IPC envelope types (parent ↔ child + parent ↔ child internals), discriminated unions tagged on `.type`, Redis key prefixes + TTLs, ID generators (`generateSessionId`, `generateRunId`), and the Redis row schemas (`ShardRegistration`, `ActiveGamePlacement`, `BundleRecord`, `GameRecord`, rollback metadata). |
 
 ## Why it's at the top level, not under `runtime/`
 

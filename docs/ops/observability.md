@@ -544,7 +544,7 @@ Platform Guarantee in the README:
 | G10 eviction-minimum-budget | `onSleep.fired`, `onSleep.completed` | `completed - fired ≥ documented_min(shape)` |
 | G11 c.state-durability | `state.write`, `child.restart`, `state.read` | same-shard restart preserves last write modulo throttle |
 | G12 c.blob-survives-everything | `blob.write`, `actor.cross_shard_migrate`, `blob.read` | cross-shard preserves last write |
-| G13 migration-rollback-safety | `bundle.flip`, `onWake.failed`, `bundle.auto_rollback` | N consecutive `onWake.failed` triggers `auto_rollback` within deadline |
+| G13 migration-rollback-safety | `bundle.flip`, `onWake.failed`, `bundle.rollback.thresholdReached`, `bundle.rollback` | N consecutive `onWake.failed` triggers `bundle.rollback` within deadline |
 | G14 history-completeness | all events | every channel call has a matching history event; `pax_seq` has no gaps |
 | G15 bundle-compat-safety | `bundle.flip.refused`, `cold_wake.refused` | no flip succeeds where `blob_tag ∉ accepted` |
 | G16 placement-contract-safety | `placement.refused`, `placement.accepted` | no shard receives a game whose `runtime_contract_required ∉ shard_range` |

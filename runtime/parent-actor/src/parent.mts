@@ -145,6 +145,10 @@ const SLEEP_MINIMUM_BUDGET_MS = Number.parseInt(
   process.env["PAX_SLEEP_MINIMUM_BUDGET_MS"] ?? "5000",
   10,
 );
+const WAKE_ROLLBACK_FAILURE_THRESHOLD = parsePositiveInteger(
+  process.env["PAX_WAKE_ROLLBACK_FAILURE_THRESHOLD"] ?? "3",
+  3,
+);
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
@@ -419,9 +423,9 @@ interface UsageSample {
 interface GameInstance {
   readonly actorId: string;
   readonly gameId: string;
-  readonly bundle: LoadedBundle;
-  readonly bundleName: string;
-  readonly bundleCompatTag: string;
+  bundle: LoadedBundle;
+  bundleName: string;
+  bundleCompatTag: string;
   blobCompatTag?: string;
   readonly runId: string;
   child: ChildProcess | null;
@@ -646,9 +650,11 @@ function forkChild(inst: GameInstance): Promise<void> {
         code,
         signal,
       });
-      inst.ready = false;
-      inst.child = null;
-      inst.bootstrapPromise = null;
+      if (inst.child === child) {
+        inst.ready = false;
+        inst.child = null;
+        inst.bootstrapPromise = null;
+      }
     });
 
     child.on("message", (raw: unknown) => {
@@ -946,6 +952,20 @@ function handleChildHandlerError(
       reason: "handlerTimeout",
     });
   }
+  if (payload.handler === "onWake") {
+    history("onWake.failed", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: inst.bundleName,
+      bundleCompatTag: inst.bundleCompatTag,
+      code: payload.code,
+      error: payload.error,
+      durationMs: payload.durationMs,
+      rollbackFailureThreshold: WAKE_ROLLBACK_FAILURE_THRESHOLD,
+    });
+    void handleWakeFailureRollback(inst);
+  }
   log.warn({ actorId: inst.actorId, ...payload }, "child handler error");
 }
 
@@ -960,7 +980,179 @@ function handleChildHandlerComplete(
     runId: inst.runId,
     ...payload,
   });
+  if (payload.handler === "onWake") {
+    history("onWake.succeeded", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: inst.bundleName,
+      bundleCompatTag: inst.bundleCompatTag,
+      durationMs: payload.durationMs,
+    });
+    void resetWakeRollbackFailures(inst);
+  }
   maybeSendCapacityWarnings(inst);
+}
+
+async function handleWakeFailureRollback(inst: GameInstance): Promise<void> {
+  try {
+    const game = await readGameRecord(inst.gameId);
+    const rollback = game?.bundleRollback;
+    if (!game || !rollback || rollback.failedBundleName !== inst.bundleName) return;
+
+    const now = Date.now();
+    const consecutiveWakeFailures = rollback.consecutiveWakeFailures + 1;
+    if (now > rollback.expiresAt) {
+      await writeGameRecord({ ...game, bundleRollback: undefined });
+      history("bundle.rollback.expired", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        bundleName: rollback.previousBundleName,
+        failedBundleName: rollback.failedBundleName,
+        consecutiveWakeFailures,
+        rollbackBackupCreatedAt: rollback.createdAt,
+        rollbackBackupExpiresAt: rollback.expiresAt,
+      });
+      return;
+    }
+
+    const updatedRollback = { ...rollback, consecutiveWakeFailures };
+    if (consecutiveWakeFailures < WAKE_ROLLBACK_FAILURE_THRESHOLD) {
+      const retryBundle = inst.bundle;
+      await writeGameRecord({ ...game, bundleRollback: updatedRollback });
+      history("bundle.rollback.pending", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        bundleName: rollback.previousBundleName,
+        failedBundleName: rollback.failedBundleName,
+        consecutiveWakeFailures,
+        rollbackFailureThreshold: WAKE_ROLLBACK_FAILURE_THRESHOLD,
+        rollbackBackupExpiresAt: rollback.expiresAt,
+      });
+      await restartChildWithBundle(inst, retryBundle, game.blobCompatTag, "retryFailedBundle");
+      return;
+    }
+
+    history("bundle.rollback.thresholdReached", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: rollback.previousBundleName,
+      failedBundleName: rollback.failedBundleName,
+      consecutiveWakeFailures,
+      rollbackFailureThreshold: WAKE_ROLLBACK_FAILURE_THRESHOLD,
+      rollbackBackupExpiresAt: rollback.expiresAt,
+    });
+    const rollbackBundle = await loadBundle(rollback.previousBundleName);
+    if (!bundleAcceptsBlobCompatTag(rollbackBundle.manifest, game.blobCompatTag)) {
+      await writeGameRecord({ ...game, bundleRollback: updatedRollback });
+      history("bundle.rollback.rejected", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        bundleName: rollback.previousBundleName,
+        failedBundleName: rollback.failedBundleName,
+        blobCompatTag: game.blobCompatTag,
+        bundleCompatTagsAccepted: rollbackBundle.manifest.compatTagsAccepted,
+        consecutiveWakeFailures,
+      });
+      return;
+    }
+
+    await writeGameRecord({
+      ...game,
+      bundleName: rollback.previousBundleName,
+      bundleRollback: undefined,
+    });
+    history("bundle.rollback", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: rollback.previousBundleName,
+      failedBundleName: rollback.failedBundleName,
+      failedBundleCompatTag: inst.bundleCompatTag,
+      consecutiveWakeFailures,
+      rollbackFailureThreshold: WAKE_ROLLBACK_FAILURE_THRESHOLD,
+      rollbackBackupCreatedAt: rollback.createdAt,
+      rollbackBackupExpiresAt: rollback.expiresAt,
+    });
+    await restartChildWithBundle(inst, rollbackBundle, game.blobCompatTag, "rollbackBundle");
+  } catch (err) {
+    history("bundle.rollback.error", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: inst.bundleName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function resetWakeRollbackFailures(inst: GameInstance): Promise<void> {
+  try {
+    const game = await readGameRecord(inst.gameId);
+    const rollback = game?.bundleRollback;
+    if (!game || !rollback || rollback.failedBundleName !== inst.bundleName) return;
+    if (rollback.consecutiveWakeFailures === 0) return;
+    await writeGameRecord({
+      ...game,
+      bundleRollback: { ...rollback, consecutiveWakeFailures: 0 },
+    });
+    history("bundle.rollback.failureCountReset", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: rollback.previousBundleName,
+      failedBundleName: rollback.failedBundleName,
+      previousConsecutiveWakeFailures: rollback.consecutiveWakeFailures,
+    });
+  } catch (err) {
+    history("bundle.rollback.failureCountReset.error", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      bundleName: inst.bundleName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function restartChildWithBundle(
+  inst: GameInstance,
+  bundle: LoadedBundle,
+  blobCompatTag: string | undefined,
+  reason: "retryFailedBundle" | "rollbackBundle",
+): Promise<void> {
+  const previousChild = inst.child;
+  inst.bundle = bundle;
+  inst.bundleName = bundle.name;
+  inst.bundleCompatTag = bundle.manifest.compatTagProduced;
+  inst.blobCompatTag = blobCompatTag;
+  inst.ready = false;
+  inst.child = null;
+  inst.bootstrapPromise = null;
+  if (previousChild && !previousChild.killed) previousChild.kill("SIGTERM");
+  history("bundle.rollback.restart", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    bundleName: bundle.name,
+    bundleCompatTag: bundle.manifest.compatTagProduced,
+    blobCompatTag,
+    reason,
+  });
+  await forkChild(inst);
+}
+
+async function readGameRecord(gameId: string): Promise<GameRecord | undefined> {
+  const raw = await redis.get(`${GAME_KEY_PREFIX}${gameId}`);
+  return raw ? (JSON.parse(raw) as GameRecord) : undefined;
+}
+
+async function writeGameRecord(game: GameRecord): Promise<void> {
+  await redis.set(`${GAME_KEY_PREFIX}${game.gameId}`, JSON.stringify(game));
 }
 
 function handleLifecycleRequestSleep(inst: GameInstance): void {

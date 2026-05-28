@@ -7,6 +7,7 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 - Player deletion sugar (`DELETE /admin/players/:playerId`)
 - The flip gate (`POST /admin/games/:id/bundle`, guarantee #15) returning
   `409 compatTagOutOfRange` with `{ blobCompatTag, bundleCompatTagsAccepted }`
+  and retaining a seven-day rollback backup on successful bundle changes
 - Compat-tag observability (`GET /admin/games/compat-tags`,
   `GET /admin/games/by-compat-tag/:tag`,
   `GET /admin/games/:id/bundle-compat?bundleName=...`)

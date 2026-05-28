@@ -479,7 +479,16 @@ export interface GameRecord {
   readonly gameId: string;
   readonly bundleName: string;
   readonly blobCompatTag?: string;
+  readonly bundleRollback?: BundleRollbackRecord;
   readonly createdAt: number;
+}
+
+export interface BundleRollbackRecord {
+  readonly previousBundleName: string;
+  readonly failedBundleName: string;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly consecutiveWakeFailures: number;
 }
 
 // ----- ID generators ------------------------------------------------------

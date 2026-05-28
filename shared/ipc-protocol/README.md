@@ -41,7 +41,8 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `SHARD_REGISTRY_KEY_PREFIX`, `PLACEMENT_RECENT_WAKES_KEY_PREFIX`,
   `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`.
 - Redis row schemas: `ShardRegistration`, `ActiveGamePlacement`,
-  `BundleRecord`, `BundleManifest`, `GameRecord`.
+  `BundleRecord`, `BundleManifest`, `GameRecord`, and the
+  `BundleRollbackRecord` metadata a flipped game uses for rollback safety.
 - ID generators: `generateSessionId()` (the `ses_<32 hex>` substrate
   primitive), `generateRunId()`.
 

@@ -41,6 +41,15 @@ Enforcement gates:
 | Cold-wake gate | Same check before waking an existing game on a bundle. | Wake refused and history records `bundle.coldWake.rejected`. |
 | Placement gate | `bundle.runtimeContractRequired in shard.runtimeContractsSupported` | Placement refused with `contractOutOfRange`. |
 
+Successful bundle flips persist a seven-day rollback backup on the game record:
+`{ previousBundleName, failedBundleName, createdAt, expiresAt,
+consecutiveWakeFailures }`. If `onWake` fails repeatedly on the new bundle,
+the parent records `onWake.failed`, increments the consecutive failure count,
+and emits `bundle.rollback.thresholdReached` when the configured threshold is
+met. A completed rollback writes the previous bundle name back to the game
+record, clears the backup metadata, emits `bundle.rollback`, and restarts the
+child on the previous bundle.
+
 ## Lifecycle payloads
 
 | Payload | Required fields |
@@ -154,7 +163,7 @@ and W3C `traceparent` header. Events that name a game, actor, request, player,
 or session include the corresponding ids.
 Guarantee #14 validates that channel calls, lifecycle transitions, session
 transitions, storage operations, API wire records, bundle gates, placement
-decisions, and compute events are observable.
+decisions, rollback decisions, and compute events are observable.
 
 Scenario-runner replay treats incomplete history as a blocking substrate
 failure because the remaining oracles are uninterpretable without it.

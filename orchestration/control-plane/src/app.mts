@@ -38,6 +38,10 @@ const INITIAL_VALUE_FETCH_TIMEOUT_MS = parsePositiveInteger(
   process.env["PAX_INITIAL_VALUE_FETCH_TIMEOUT_MS"] ?? "10000",
   10_000,
 );
+const ROLLBACK_BACKUP_RETENTION_MS = parsePositiveInteger(
+  process.env["PAX_ROLLBACK_BACKUP_RETENTION_MS"] ?? "604800000",
+  604_800_000,
+);
 const CONTROL_PLANE_SHARD_ID = "control-plane";
 const nextControlPaxSeqByPath = new Map<string, number>();
 
@@ -606,13 +610,28 @@ async function handleBundleFlip(
     writeJson(res, 409, compat);
     return;
   }
-  const updated: GameRecord = { ...game, bundleName: newBundleName };
+  const now = Date.now();
+  const updated: GameRecord = {
+    ...game,
+    bundleName: newBundleName,
+    bundleRollback:
+      game.bundleName === newBundleName
+        ? game.bundleRollback
+        : {
+            previousBundleName: game.bundleName,
+            failedBundleName: newBundleName,
+            createdAt: now,
+            expiresAt: now + ROLLBACK_BACKUP_RETENTION_MS,
+            consecutiveWakeFailures: 0,
+          },
+  };
   await store.putGame(updated);
   appendControlHistory(config, "bundle.flip.succeeded", {
     gameId,
     oldBundleName: game.bundleName,
     newBundleName,
     blobCompatTag: game.blobCompatTag,
+    rollbackBackupExpiresAt: updated.bundleRollback?.expiresAt,
   });
   writeJson(res, 200, { ok: true, game: updated });
 }
