@@ -14,6 +14,7 @@ import {
 } from "@pax-backend/ipc-protocol";
 
 import {
+  apiWireRecordsForGame,
   connectedPlayersForGame,
   lastActivityAtForGame,
   queryHistory,
@@ -44,6 +45,7 @@ export interface ControlPlaneConfig {
   readonly baseUrl: string;
   readonly redisUrl: string;
   readonly historyPath: string;
+  readonly apiWireRecordsPath: string;
 }
 
 export interface ControlPlaneServer {
@@ -60,6 +62,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ControlPlaneConfig {
     baseUrl: env["PAX_CONTROL_BASE_URL"] ?? `http://${bind.host}:${bind.port}`,
     redisUrl: env["REDIS_URL"] ?? "redis://127.0.0.1:6379",
     historyPath: env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl"),
+    apiWireRecordsPath:
+      env["PAX_API_WIRE_RECORDS_PATH"] ?? join(REPO_ROOT, "var", "api-invoke-records.jsonl"),
   };
 }
 
@@ -627,11 +631,7 @@ async function handleGameSnapshot(
   const recentApiInvokes =
     apiLimit === 0
       ? []
-      : queryHistory(config.historyPath, {
-          event: "api.invoke.response",
-          gameId,
-          limit: apiLimit,
-        }).events;
+      : apiWireRecordsForGame(config.apiWireRecordsPath, gameId, apiLimit);
 
   writeJson(res, 200, {
     ok: true,

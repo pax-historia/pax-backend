@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
+import type { ApiInvokeWireRecord } from "@pax-backend/ipc-protocol";
+
 export interface HistoryEvent {
   readonly ts: string;
   readonly shardId: string;
@@ -106,6 +108,34 @@ export function lastActivityAtForGame(
     if (!Number.isNaN(at)) lastActivityAt = at;
   }
   return lastActivityAt;
+}
+
+export function apiWireRecordsForGame(
+  recordsPath: string,
+  gameId: string,
+  limit: number,
+): readonly ApiInvokeWireRecord[] {
+  if (limit <= 0 || !existsSync(recordsPath)) return [];
+  const records: ApiInvokeWireRecord[] = [];
+  for (const line of readFileSync(recordsPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<ApiInvokeWireRecord>;
+      if (
+        parsed.event === "api.invoke" &&
+        parsed.gameId === gameId &&
+        typeof parsed.fingerprint === "string" &&
+        typeof parsed.rawOutbound === "string" &&
+        typeof parsed.rawInbound === "string"
+      ) {
+        records.push(parsed as ApiInvokeWireRecord);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return records.slice(-limit);
 }
 
 function readHistory(historyPath: string): readonly HistoryEvent[] {
