@@ -12,5 +12,6 @@ IPC schema has drifted and the release is blocked.
 
 Current source pass implements the same parent/child IPC contract as
 `child-runner-ivm`, evaluates the compiled bundle directly in the Node child
-process, injects the same `c.*` surface, and can be selected locally with
-`PAX_CHILD_RUNNER_KIND=noivm`.
+process, injects the same `c.*` surface, derives deterministic `c.rng()` /
+`c.now()` from parent bootstrap `testSeed` when present, and can be selected
+locally with `PAX_CHILD_RUNNER_KIND=noivm`.

@@ -25,7 +25,9 @@ export function buildScenarioRuntimeEnvironment(
     );
   }
 
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    PAX_TEST_SEED: scenario.seed,
+  };
   const apiReplayFixturesPath = apiResponseFixtures[0]?.absolutePath;
   if (apiReplayFixturesPath) {
     env["PAX_API_REPLAY_FIXTURES_PATH"] = apiReplayFixturesPath;

@@ -292,6 +292,7 @@ export interface BootstrapPayload {
   readonly gameId: string;
   readonly memoryLimitMb: number;
   readonly handlerTimeoutMs: number;
+  readonly testSeed?: string;
 }
 
 // ----- Child → parent envelopes -----------------------------------------
@@ -511,4 +512,68 @@ export function generateRunId(): string {
   return `run_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)
     .toString(36)
     .padStart(4, "0")}`;
+}
+
+export interface IdGenerator {
+  generateSessionId(): string;
+  generateRunId(): string;
+}
+
+export function createDefaultIdGenerator(): IdGenerator {
+  return {
+    generateSessionId,
+    generateRunId,
+  };
+}
+
+export function createDeterministicIdGenerator(seedText: string): IdGenerator {
+  const nextRandom = makeMulberry32(hashSeed(seedText));
+  const seedSlug = slugSeed(seedText);
+  let runCounter = 0;
+  return {
+    generateSessionId: () => `ses_${deterministicHex(nextRandom, 16)}`,
+    generateRunId: () => {
+      runCounter += 1;
+      return `run_${seedSlug}_${runCounter.toString(36).padStart(4, "0")}`;
+    },
+  };
+}
+
+function deterministicHex(nextRandom: () => number, byteCount: number): string {
+  let out = "";
+  for (let index = 0; index < byteCount; index += 1) {
+    out += Math.floor(nextRandom() * 256)
+      .toString(16)
+      .padStart(2, "0");
+  }
+  return out;
+}
+
+function slugSeed(seedText: string): string {
+  const slug = seedText
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  return slug.length > 0 ? slug : hashSeed(seedText).toString(36);
+}
+
+function hashSeed(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function makeMulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = state;
+    mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
 }

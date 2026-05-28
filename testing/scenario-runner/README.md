@@ -19,8 +19,8 @@ Current source pass provides the first runner shell:
   with fixture kinds for allowed players, initial state/blob, and
   gateway `api-responses`
 - resolves workload fixture paths and emits a runtime environment plan,
-  including `PAX_API_REPLAY_FIXTURES_PATH` when an `api-responses` fixture
-  is present
+  including `PAX_TEST_SEED` from the scenario manifest and
+  `PAX_API_REPLAY_FIXTURES_PATH` when an `api-responses` fixture is present
 - summarizes `metrics.emit` and capacity warnings into a replay attribution sentence
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list

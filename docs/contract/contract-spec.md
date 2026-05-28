@@ -84,6 +84,12 @@ The SDK type `SubstrateContext` is authoritative. The child runner injects:
 | State tier | `state.read()`, `state.write(value)`, `state.flush()` |
 | Blob tier | `blob.read()`, `blob.write(value)` |
 
+In scenario/test mode, the runner passes the scenario manifest seed through
+`PAX_TEST_SEED`. The parent uses a shard-namespaced derivation of that seed for
+platform run/session id generation and includes the original seed as bootstrap
+`testSeed`; child runners derive creator-visible `c.rng()` and `c.now()` from
+the same seed.
+
 Websocket send responses are `{ ok: true, sent, bytes }` or `{ ok: false,
 error: "bandwidthExceeded" | "rateExceeded" | "serializationFailed", detail? }`.
 The child runner returns `serializationFailed` before IPC if `target` or `body`

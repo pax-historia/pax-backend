@@ -34,17 +34,17 @@ See [`../README.md`](../README.md) for the zone's broader rules.
 - API gateway handoff types, including `ApiGatewayInvokeResult`, which lets
   the gateway return the creator-facing response plus the wire-grain record
   the parent writes into history.
-- `BootstrapPayload` carries the parent-selected memory limit and
-  `handlerTimeoutMs` so child runner enforcement matches the advertised
-  `cpu-ms-per-tick` budget.
+- `BootstrapPayload` carries the parent-selected memory limit,
+  `handlerTimeoutMs`, and optional `testSeed` so child runner enforcement
+  and deterministic helpers match the advertised runtime mode.
 - Redis key prefixes + TTLs: `ACTIVE_GAMES_KEY_PREFIX`,
   `SHARD_REGISTRY_KEY_PREFIX`, `PLACEMENT_RECENT_WAKES_KEY_PREFIX`,
   `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`.
 - Redis row schemas: `ShardRegistration`, `ActiveGamePlacement`,
   `BundleRecord`, `BundleManifest`, `GameRecord`, and the
   `BundleRollbackRecord` metadata a flipped game uses for rollback safety.
-- ID generators: `generateSessionId()` (the `ses_<32 hex>` substrate
-  primitive), `generateRunId()`.
+- ID generators: production `generateSessionId()` / `generateRunId()` plus
+  `createDeterministicIdGenerator(seed)` for test-mode session/run ids.
 
 ## Evolution rule
 

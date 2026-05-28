@@ -82,7 +82,9 @@ process.on("uncaughtException", (err) => panic("uncaughtException", err));
 process.on("unhandledRejection", (err) => panic("unhandledRejection", err));
 
 async function bootstrap(cfg: BootstrapPayload): Promise<void> {
-  const seed = hashSeed(`${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`);
+  const seed = hashSeed(
+    `${cfg.testSeed ?? "runtime"}:${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`,
+  );
   nextRandom = makeMulberry32(seed);
   nextNow = 1_700_000_000_000 + (seed % 1_000_000_000);
   handlerTimeoutMs = validTimeoutMs(cfg.handlerTimeoutMs);

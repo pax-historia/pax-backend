@@ -68,9 +68,9 @@ import {
   type ShardRegistration,
   type WakeReason,
   type WsSendResponse,
+  createDefaultIdGenerator,
+  createDeterministicIdGenerator,
   envelope,
-  generateRunId,
-  generateSessionId,
 } from "@pax-backend/ipc-protocol";
 
 // --- Config -------------------------------------------------------------
@@ -99,6 +99,7 @@ const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
 const PAX_JWT_SECRET = process.env["PAX_JWT_SECRET"] ?? "local-dev-secret";
 const PAX_API_GATEWAY_URL =
   process.env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke";
+const PAX_TEST_SEED = process.env["PAX_TEST_SEED"];
 const ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS = Number.parseInt(
   process.env["PAX_ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS"] ?? "5000",
   10,
@@ -207,6 +208,10 @@ const log: Logger = pino({
   level: process.env["LOG_LEVEL"] ?? "info",
   name: "parent",
 });
+const idGenerator =
+  PAX_TEST_SEED && PAX_TEST_SEED.length > 0
+    ? createDeterministicIdGenerator(`${PAX_TEST_SEED}:${SHARD_ID}`)
+    : createDefaultIdGenerator();
 
 // --- Parent metrics -----------------------------------------------------
 
@@ -582,7 +587,7 @@ function ensureGame(
 ): GameInstance {
   const existing = games.get(actorId);
   if (existing) return existing;
-  const runId = generateRunId();
+  const runId = idGenerator.generateRunId();
   const inst: GameInstance = {
     actorId,
     gameId,
@@ -700,6 +705,7 @@ function forkChild(inst: GameInstance): Promise<void> {
       gameId: inst.gameId,
       memoryLimitMb: CHILD_MEMORY_LIMIT_MB,
       handlerTimeoutMs: CPU_MS_PER_TICK_LIMIT,
+      testSeed: PAX_TEST_SEED,
     });
   });
   return inst.bootstrapPromise;
@@ -2053,7 +2059,7 @@ const runner = new Runner({
     }
     await forkChild(inst);
 
-    const sessionId = generateSessionId();
+    const sessionId = idGenerator.generateSessionId();
     const connectedAt = Date.now();
     const sess: SessionRecord = {
       ws,

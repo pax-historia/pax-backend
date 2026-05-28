@@ -111,7 +111,9 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   isolate = new ivm.Isolate({ memoryLimit: cfg.memoryLimitMb });
   context = await isolate.createContext();
   const jail = context.global;
-  const seed = hashSeed(`${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`);
+  const seed = hashSeed(
+    `${cfg.testSeed ?? "runtime"}:${cfg.gameId}:${cfg.bundleName}:${cfg.bundleCompatTag}`,
+  );
   const nextRandom = makeMulberry32(seed);
   let nextNow = 1_700_000_000_000 + (seed % 1_000_000_000);
 

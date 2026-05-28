@@ -5,6 +5,9 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
 §"Architectural philosophy"). Responsible for:
 
 - WS lifecycle, session id generation, allowed-players gate (guarantees #2, #3)
+- Test-mode seed pinning: `PAX_TEST_SEED` drives shard-namespaced run/session
+  id generation and is forwarded unchanged to child bootstrap for deterministic
+  `c.rng()` / `c.now()`
 - Compute-plane quota enforcement (guarantee #7)
 - IPC broker between child and the rest of the cluster
 - Storage tier dispatch (`c.state`, `c.blob`)

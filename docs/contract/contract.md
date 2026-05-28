@@ -43,6 +43,10 @@ Handlers are optional and may return a promise:
 connection lifetime. It is the same id seen in lifecycle payloads, API gateway
 context, admin session views, and history.
 
+Scenario runs pin the runtime seed through the substrate, not just the runner:
+the same seed drives shard-namespaced platform run/session ids and
+creator-visible `c.rng()` / `c.now()` helpers in test mode.
+
 ## Context surface
 
 | API | Contract |
