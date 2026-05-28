@@ -12,5 +12,7 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
 - Forwarding `c.api.invoke` calls to the API gateway with the context envelope
 - Writing every channel call / lifecycle event / session transition / api
   round trip to the history (guarantee #14)
+- Exposing `GET /health` and `GET /metrics` on `PAX_PARENT_METRICS_BIND`
+  (default `127.0.0.1:7700`) for parent-process gauges and history counters
 
 Current source passes implement the local actor loop used by the smoke path.

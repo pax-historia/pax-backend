@@ -20,6 +20,7 @@
 
 import { type ChildProcess, fork } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -86,6 +87,9 @@ const RIVET_ACTOR_NAME = process.env["RIVET_ACTOR_NAME"] ?? "pax-game";
 const RIVET_TOTAL_SLOTS = Number.parseInt(
   process.env["RIVET_TOTAL_SLOTS"] ?? "1000",
   10,
+);
+const PARENT_METRICS_BIND = parseBind(
+  process.env["PAX_PARENT_METRICS_BIND"] ?? "127.0.0.1:7700",
 );
 
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
@@ -169,6 +173,22 @@ function parsePositiveInteger(raw: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+interface BindAddress {
+  readonly host: string;
+  readonly port: number;
+}
+
+function parseBind(raw: string): BindAddress {
+  const separator = raw.lastIndexOf(":");
+  if (separator <= 0) return { host: "127.0.0.1", port: 7700 };
+  const host = raw.slice(0, separator);
+  const port = Number.parseInt(raw.slice(separator + 1), 10);
+  return {
+    host: host.length > 0 ? host : "127.0.0.1",
+    port: Number.isFinite(port) && port > 0 ? port : 7700,
+  };
+}
+
 // runtimeContractsSupported [min, max]. For smoke we ship version 1 and
 // accept only games whose bundle.runtimeContractRequired == 1.
 const RUNTIME_CONTRACTS_SUPPORTED: readonly [number, number] = [
@@ -180,6 +200,13 @@ const log: Logger = pino({
   level: process.env["LOG_LEVEL"] ?? "info",
   name: "parent",
 });
+
+// --- Parent metrics -----------------------------------------------------
+
+const parentMetrics = {
+  historyEventsTotal: 0,
+  historyEventsByName: new Map<string, number>(),
+};
 
 // --- History writer -----------------------------------------------------
 
@@ -208,6 +235,15 @@ function history(event: string, fields: HistoryFields): void {
       event,
     }) + "\n";
   writeSync(historyFd, line);
+  recordHistoryMetric(event);
+}
+
+function recordHistoryMetric(event: string): void {
+  parentMetrics.historyEventsTotal += 1;
+  parentMetrics.historyEventsByName.set(
+    event,
+    (parentMetrics.historyEventsByName.get(event) ?? 0) + 1,
+  );
 }
 
 function loadLastPaxSeqForShard(path: string, shardId: string): number {
@@ -416,6 +452,106 @@ interface WsLike {
 }
 
 const games = new Map<string, GameInstance>();
+
+function startMetricsServer(bind: BindAddress): void {
+  const server = createServer((req, res) => {
+    handleMetricsRequest(req, res);
+  });
+  server.on("error", (err: Error) => {
+    log.warn({ host: bind.host, port: bind.port, err: err.message }, "metrics server error");
+  });
+  server.listen(bind.port, bind.host, () => {
+    log.info({ host: bind.host, port: bind.port }, "parent metrics server listening");
+  });
+}
+
+function handleMetricsRequest(req: IncomingMessage, res: ServerResponse): void {
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  if (req.method === "GET" && url.pathname === "/health") {
+    writeHttpJson(res, 200, { status: "ok", runtime: "parent-actor", shardId: SHARD_ID });
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/metrics") {
+    writeHttpText(res, 200, parentMetricsText());
+    return;
+  }
+  writeHttpJson(res, 404, { ok: false, error: "notFound" });
+}
+
+function writeHttpJson(res: ServerResponse, statusCode: number, body: unknown): void {
+  const raw = JSON.stringify(body);
+  res.writeHead(statusCode, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(raw),
+  });
+  res.end(raw);
+}
+
+function writeHttpText(res: ServerResponse, statusCode: number, body: string): void {
+  res.writeHead(statusCode, {
+    "content-type": "text/plain; version=0.0.4; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function parentMetricsText(): string {
+  const lines = [
+    "# HELP pax_parent_active_games Active games in this parent actor process.",
+    "# TYPE pax_parent_active_games gauge",
+    `pax_parent_active_games ${games.size}`,
+    "# HELP pax_parent_active_sessions Active websocket sessions in this parent actor process.",
+    "# TYPE pax_parent_active_sessions gauge",
+    `pax_parent_active_sessions ${activeSessionCount()}`,
+    "# HELP pax_parent_child_processes Active child runner processes in this parent actor process.",
+    "# TYPE pax_parent_child_processes gauge",
+    `pax_parent_child_processes ${activeChildProcessCount()}`,
+    "# HELP pax_parent_history_events_written_total History events written by this parent process.",
+    "# TYPE pax_parent_history_events_written_total counter",
+    `pax_parent_history_events_written_total ${parentMetrics.historyEventsTotal}`,
+    "# HELP pax_parent_history_events_by_type_total History events written by event type.",
+    "# TYPE pax_parent_history_events_by_type_total counter",
+  ];
+  for (const [event, count] of Array.from(parentMetrics.historyEventsByName.entries()).sort()) {
+    lines.push(
+      `pax_parent_history_events_by_type_total{event="${prometheusLabel(event)}"} ${count}`,
+    );
+  }
+  lines.push(
+    "# HELP pax_parent_build_info Parent actor static build/runtime labels.",
+    "# TYPE pax_parent_build_info gauge",
+    `pax_parent_build_info{${parentBuildLabels()}} 1`,
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function activeSessionCount(): number {
+  let count = 0;
+  for (const inst of games.values()) {
+    count += inst.sessions.size;
+  }
+  return count;
+}
+
+function activeChildProcessCount(): number {
+  let count = 0;
+  for (const inst of games.values()) {
+    if (inst.child) count += 1;
+  }
+  return count;
+}
+
+function parentBuildLabels(): string {
+  return [
+    `shard_id="${prometheusLabel(SHARD_ID)}"`,
+    `runtime_contract_min="${RUNTIME_CONTRACTS_SUPPORTED[0]}"`,
+    `runtime_contract_max="${RUNTIME_CONTRACTS_SUPPORTED[1]}"`,
+  ].join(",");
+}
+
+function prometheusLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, '\\"');
+}
 
 if (
   Number.isFinite(ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS) &&
@@ -1875,9 +2011,12 @@ async function main(): Promise<void> {
       childRunner: CHILD_RUNNER_KIND,
       runtimeContractsSupported: RUNTIME_CONTRACTS_SUPPORTED,
       historyPath: HISTORY_PATH,
+      metricsBind: `${PARENT_METRICS_BIND.host}:${PARENT_METRICS_BIND.port}`,
     },
     "parent-actor boot",
   );
+
+  startMetricsServer(PARENT_METRICS_BIND);
 
   await ensureNamespaceAndRunner();
   await runner.start();
