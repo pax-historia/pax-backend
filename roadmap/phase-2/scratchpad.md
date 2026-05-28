@@ -21,3 +21,31 @@ Re-read `AGENTS.md` before moving into this phase. The teardown allowlist in
 one Tigris bucket; do not generalize it while working on the bootstrap or
 deployment path. Commit cadence is around once per task unless a smaller
 checkpoint is clearly warranted.
+
+## 2026-05-28 04:00 PDT
+
+Completed the bootstrap preflight. Local prerequisites are present (`fly`,
+`infisical`, `jq`, `python3`, `openssl`, Docker, `pnpm`, and Cargo). Fly auth is
+valid for `team@paxhistoria.co`; the `pax-backend` org is visible; Infisical
+dev access succeeds for workspace `d4aa1707-46dc-4a66-8c13-0d5459f6757e`; the
+spend marker already existed and was preserved.
+
+Existing resource inventory before convergence:
+
+- Fly apps: `pax-backend-control`, `pax-backend-driver`,
+  `pax-backend-shards`.
+- Tigris bucket: `pax-backend-blobs` in org `pax-backend`.
+- Upstash Redis: `pax-backend-directory`, pay-as-you-go, eviction disabled,
+  primary region `iad`.
+- Starter shard volume: `pax_backend_rocks`, `iad`, 5 GB, `created`.
+
+Ran `./scripts/bootstrap/spin-up.sh` as the idempotency and drift check. It
+found all resources already present, left the hard-coded teardown allowlist
+unchanged, synced secrets from Infisical to Fly with tally `0 changed, 21
+unchanged, 0 failed`, verified digest equality for all shared secret groups,
+and exited 0.
+
+Forward note for task 2: repository deploy descriptors are not complete yet.
+The only non-vendor Dockerfile found is `runtime/shard-image/Dockerfile`;
+control and driver deployment descriptors/images need to be created or wired
+before Fly deploys can happen.
