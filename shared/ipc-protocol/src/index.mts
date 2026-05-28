@@ -187,11 +187,21 @@ export interface ApiInvokeIpcResponsePayload {
   readonly response: ApiInvokeResponse;
 }
 
+export interface PlayersAllowedIpcResponsePayload {
+  readonly players: readonly string[];
+}
+
+export interface PlayersConnectedIpcResponsePayload {
+  readonly players: readonly ConnectedSessionSnapshot[];
+}
+
 // ----- Discriminated union: parent → child --------------------------------
 
 export type ParentToChildEnvelope =
   | IpcEnvelope<"bootstrap", BootstrapPayload>
   | IpcEnvelope<"api.invoke.response", ApiInvokeIpcResponsePayload>
+  | IpcEnvelope<"players.allowed.response", PlayersAllowedIpcResponsePayload>
+  | IpcEnvelope<"players.connected.response", PlayersConnectedIpcResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
@@ -239,6 +249,8 @@ export interface ChildUnknownMessagePayload {
 export type ChildToParentEnvelope =
   | IpcEnvelope<"ready", { bundleName: string; bundleCompatTag: string; runId: string; gameId: string }>
   | IpcEnvelope<"api.invoke", ApiInvokeIpcPayload>
+  | IpcEnvelope<"players.allowed", Record<string, never>>
+  | IpcEnvelope<"players.connected", Record<string, never>>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
@@ -250,6 +262,8 @@ export type ChildToParentEnvelope =
 export const PARENT_TO_CHILD = Object.freeze({
   bootstrap: "bootstrap",
   apiInvokeResponse: "api.invoke.response",
+  playersAllowedResponse: "players.allowed.response",
+  playersConnectedResponse: "players.connected.response",
   onWake: "onWake",
   onSleep: "onSleep",
   onPlayerConnect: "onPlayerConnect",
@@ -261,6 +275,8 @@ export const PARENT_TO_CHILD = Object.freeze({
 export const CHILD_TO_PARENT = Object.freeze({
   ready: "ready",
   apiInvoke: "api.invoke",
+  playersAllowed: "players.allowed",
+  playersConnected: "players.connected",
   wsSend: "ws.send",
   logEmit: "log.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",

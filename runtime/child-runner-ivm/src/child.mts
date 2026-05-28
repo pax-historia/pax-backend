@@ -2,8 +2,8 @@
 //
 // One node child_process per game. The bundle source is loaded into an
 // isolated-vm Isolate; substrate context (c.ws.send / c.log.emit /
-// c.lifecycle.requestSleep / c.api.invoke) is exposed as ivm bridges that
-// post IPC envelopes back to the parent via process.send().
+// c.lifecycle.requestSleep / c.api.invoke / c.players.*) is exposed as ivm
+// bridges that post IPC envelopes back to the parent via process.send().
 //
 // Trust model (README §"Trust model"):
 //  - No outbound network (parent forks us with a stripped env).
@@ -18,7 +18,6 @@ import { randomUUID } from "node:crypto";
 import ivm from "isolated-vm";
 
 import {
-  type ApiInvokeIpcResponsePayload,
   type BootstrapPayload,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
@@ -30,7 +29,7 @@ import {
 } from "@pax-backend/ipc-protocol";
 
 const PER_HANDLER_TIMEOUT_MS = 1_000; // compute-plane cpu-ms-per-tick stub
-const API_INVOKE_TIMEOUT_MS = 30_000;
+const PARENT_REQUEST_TIMEOUT_MS = 30_000;
 
 // --- IPC helpers ---------------------------------------------------------
 
@@ -66,12 +65,12 @@ let context: ivm.Context | undefined;
 let bundleExports: ivm.Reference | undefined;
 let currentTriggeringSessionId: string | null = null;
 
-interface PendingApiInvoke {
+interface PendingParentRequest {
   readonly resolve: (responseJson: string) => void;
   readonly timeout: NodeJS.Timeout;
 }
 
-const pendingApiInvokes = new Map<string, PendingApiInvoke>();
+const pendingParentRequests = new Map<string, PendingParentRequest>();
 
 async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   isolate = new ivm.Isolate({ memoryLimit: cfg.memoryLimitMb });
@@ -107,11 +106,19 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
     (kind: string, argsJson: string, idempotencyKey: string | null) =>
       invokeApiFromBridge(kind, argsJson, idempotencyKey),
   );
+  const cPlayersAllowed = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.playersAllowed, {}),
+  );
+  const cPlayersConnected = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.playersConnected, {}),
+  );
 
   await jail.set("__pax_c_ws_send", cWsSend);
   await jail.set("__pax_c_log_emit", cLogEmit);
   await jail.set("__pax_c_lifecycle_requestSleep", cLifecycleRequestSleep);
   await jail.set("__pax_c_api_invoke", cApiInvoke);
+  await jail.set("__pax_c_players_allowed", cPlayersAllowed);
+  await jail.set("__pax_c_players_connected", cPlayersConnected);
 
   // SDK-equivalent in the isolate. Bundles compiled via esbuild see
   // defineBundle bundled in directly; __pax_install is the only global the
@@ -141,6 +148,16 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
             JSON.stringify(args),
             idempotencyKey,
           ]);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+      },
+      players: {
+        allowed: () => {
+          const responseJson = __pax_c_players_allowed.applySyncPromise(undefined, []);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+        connected: () => {
+          const responseJson = __pax_c_players_connected.applySyncPromise(undefined, []);
           return Promise.resolve(JSON.parse(responseJson));
         },
       },
@@ -212,44 +229,50 @@ function invokeApiFromBridge(
   argsJson: string,
   idempotencyKey: string | null,
 ): Promise<string> {
+  let args: unknown;
+  try {
+    args = JSON.parse(argsJson) as unknown;
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+  }
+  const payload =
+    idempotencyKey === null
+      ? { kind, args, triggeringSessionId: currentTriggeringSessionId }
+      : { kind, args, idempotencyKey, triggeringSessionId: currentTriggeringSessionId };
+  return invokeParentFromBridge(CHILD_TO_PARENT.apiInvoke, payload);
+}
+
+function invokeParentFromBridge(
+  type: "api.invoke" | "players.allowed" | "players.connected",
+  payload: Record<string, unknown>,
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     if (!process.send) {
-      reject(new Error("api.invoke unavailable: child IPC is closed"));
-      return;
-    }
-    let args: unknown;
-    try {
-      args = JSON.parse(argsJson) as unknown;
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
+      reject(new Error(`${type} unavailable: child IPC is closed`));
       return;
     }
     const requestId = randomUUID();
     const timeout = setTimeout(() => {
-      pendingApiInvokes.delete(requestId);
-      reject(new Error(`api.invoke timed out after ${API_INVOKE_TIMEOUT_MS}ms`));
-    }, API_INVOKE_TIMEOUT_MS);
+      pendingParentRequests.delete(requestId);
+      reject(new Error(`${type} timed out after ${PARENT_REQUEST_TIMEOUT_MS}ms`));
+    }, PARENT_REQUEST_TIMEOUT_MS);
     timeout.unref();
 
-    pendingApiInvokes.set(requestId, { resolve, timeout });
-    const payload =
-      idempotencyKey === null
-        ? { kind, args, triggeringSessionId: currentTriggeringSessionId }
-        : { kind, args, idempotencyKey, triggeringSessionId: currentTriggeringSessionId };
-    emit(envelope(CHILD_TO_PARENT.apiInvoke, payload, requestId) as ChildToParentEnvelope);
+    pendingParentRequests.set(requestId, { resolve, timeout });
+    emit(envelope(type, payload, requestId) as ChildToParentEnvelope);
   });
 }
 
-function completeApiInvoke(
+function completeParentRequest(
   requestId: string | undefined,
-  payload: ApiInvokeIpcResponsePayload,
+  value: unknown,
 ): void {
   if (!requestId) return;
-  const pending = pendingApiInvokes.get(requestId);
+  const pending = pendingParentRequests.get(requestId);
   if (!pending) return;
-  pendingApiInvokes.delete(requestId);
+  pendingParentRequests.delete(requestId);
   clearTimeout(pending.timeout);
-  pending.resolve(JSON.stringify(payload.response));
+  pending.resolve(JSON.stringify(value));
 }
 
 function triggeringSessionIdFor(
@@ -284,7 +307,13 @@ process.on("message", async (raw: unknown) => {
         await bootstrapIsolate((raw as IpcEnvelope<"bootstrap", BootstrapPayload>).payload);
         return;
       case PARENT_TO_CHILD.apiInvokeResponse:
-        completeApiInvoke(raw.requestId, raw.payload);
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.playersAllowedResponse:
+        completeParentRequest(raw.requestId, raw.payload.players);
+        return;
+      case PARENT_TO_CHILD.playersConnectedResponse:
+        completeParentRequest(raw.requestId, raw.payload.players);
         return;
       case PARENT_TO_CHILD.onWake:
         await invokeHandler("onWake", raw.payload);

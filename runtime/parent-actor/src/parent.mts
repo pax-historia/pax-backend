@@ -40,6 +40,7 @@ import {
   type BundleRecord,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
+  type ConnectedSessionSnapshot,
   type DisconnectReason,
   GAME_KEY_PREFIX,
   type GameRecord,
@@ -410,6 +411,12 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
     case CHILD_TO_PARENT.apiInvoke:
       void handleApiInvoke(inst, raw.requestId, raw.payload);
       return;
+    case CHILD_TO_PARENT.playersAllowed:
+      void handlePlayersAllowed(inst, raw.requestId);
+      return;
+    case CHILD_TO_PARENT.playersConnected:
+      handlePlayersConnected(inst, raw.requestId);
+      return;
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.payload);
       return;
@@ -461,6 +468,67 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
   }
 }
 
+async function handlePlayersAllowed(
+  inst: GameInstance,
+  requestId: string | undefined,
+): Promise<void> {
+  if (!requestId) {
+    history("players.allowed.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  try {
+    const players = Array.from(await allowedPlayersForGame(inst.gameId)).sort();
+    history("players.allowed", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      count: players.length,
+    });
+    if (inst.child) {
+      sendTyped(inst.child, "players.allowed.response", { players }, requestId);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    history("players.allowed.error", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      error: msg,
+    });
+    if (inst.child) {
+      sendTyped(inst.child, "players.allowed.response", { players: [] }, requestId);
+    }
+  }
+}
+
+function handlePlayersConnected(
+  inst: GameInstance,
+  requestId: string | undefined,
+): void {
+  if (!requestId) {
+    history("players.connected.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const players = connectedSessionSnapshot(inst);
+  history("players.connected", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    count: players.length,
+  });
+  if (inst.child) {
+    sendTyped(inst.child, "players.connected.response", { players }, requestId);
+  }
+}
+
 async function handleApiInvoke(
   inst: GameInstance,
   requestId: string | undefined,
@@ -486,11 +554,7 @@ async function handleApiInvoke(
     gameId: inst.gameId,
     triggeringSessionId: triggeringSession?.sessionId ?? null,
     triggeringJwtClaims: triggeringSession?.jwtClaims ?? null,
-    connectedSessions: Array.from(inst.sessions.values()).map((session) => ({
-      sessionId: session.sessionId,
-      playerId: session.playerId,
-      connectedAt: session.connectedAt,
-    })),
+    connectedSessions: connectedSessionSnapshot(inst),
     bundleName: inst.bundleName,
     bundleCompatTag: inst.bundleCompatTag,
     runId: inst.runId,
@@ -631,6 +695,14 @@ function disconnectSession(
       "force disconnect failed",
     );
   }
+}
+
+function connectedSessionSnapshot(inst: GameInstance): readonly ConnectedSessionSnapshot[] {
+  return Array.from(inst.sessions.values()).map((session) => ({
+    sessionId: session.sessionId,
+    playerId: session.playerId,
+    connectedAt: session.connectedAt,
+  }));
 }
 
 function handleWsSend(

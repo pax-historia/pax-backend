@@ -9,6 +9,7 @@
 import type {
   ApiInvokeResponse,
   BundleManifest,
+  ConnectedSessionSnapshot,
   OnCapacityWarningPayload,
   OnPlayerConnectPayload,
   OnPlayerDisconnectPayload,
@@ -18,7 +19,11 @@ import type {
   WsTarget,
 } from "@pax-backend/ipc-protocol";
 
-export type { ApiInvokeResponse, BundleManifest } from "@pax-backend/ipc-protocol";
+export type {
+  ApiInvokeResponse,
+  BundleManifest,
+  ConnectedSessionSnapshot,
+} from "@pax-backend/ipc-protocol";
 
 // ----- The typed substrate context (`c`) ---------------------------------
 
@@ -49,10 +54,15 @@ export interface SubstrateContext {
       options?: { readonly idempotencyKey?: string },
     ): Promise<ApiInvokeResponse>;
   };
+  readonly players: {
+    /** Read the substrate-owned per-game whitelist. */
+    allowed(): Promise<readonly string[]>;
+    /** Read currently connected sessions for this game. */
+    connected(): Promise<readonly ConnectedSessionSnapshot[]>;
+  };
   // Reserved (smoke does not exercise these; types pin the surface).
   readonly state?: undefined;
   readonly blob?: undefined;
-  readonly players?: undefined;
   readonly compute?: undefined;
 }
 
