@@ -10,6 +10,7 @@ set -euo pipefail
 # Usage:
 #   scripts/fly/scale-shards.sh 3
 #   PAX_SHARD_MACHINE_TARGET=10 scripts/fly/scale-shards.sh
+#   PAX_SHARD_CHILD_RUNNER_KIND=noivm scripts/fly/scale-shards.sh 10
 
 ORG="pax-backend"
 APP="pax-backend-shards"
@@ -18,6 +19,7 @@ VOLUME_NAME="pax_backend_rocks"
 DEFAULT_VOLUME_SIZE_GB=20
 MAX_TARGET=10
 TARGET="${1:-${PAX_SHARD_MACHINE_TARGET:-}}"
+CHILD_RUNNER_KIND="${PAX_SHARD_CHILD_RUNNER_KIND:-ivm}"
 
 say()  { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 ok()   { printf "    \033[32m✓\033[0m %s\n" "$*"; }
@@ -29,6 +31,8 @@ command -v jq >/dev/null 2>&1 || err "jq not installed"
 [[ -n "$TARGET" ]] || err "missing target count"
 [[ "$TARGET" =~ ^[0-9]+$ ]] || err "target count must be an integer"
 (( TARGET >= 1 && TARGET <= MAX_TARGET )) || err "target must be between 1 and $MAX_TARGET"
+[[ "$CHILD_RUNNER_KIND" == "ivm" || "$CHILD_RUNNER_KIND" == "noivm" ]] \
+  || err "PAX_SHARD_CHILD_RUNNER_KIND must be ivm or noivm"
 
 say "Org/app guard"
 ORG_LIST_RAW="$(fly orgs list --json 2>/dev/null || true)"
@@ -89,6 +93,7 @@ normalize_machine_env() {
     --env "RIVET_API_PEER_HOST=::"
     --env "RIVET_METRICS_HOST=::"
     --env "PAX_PARENT_METRICS_BIND=:::7700"
+    --env "PAX_CHILD_RUNNER_KIND=$CHILD_RUNNER_KIND"
     --yes
     --skip-health-checks
   )
