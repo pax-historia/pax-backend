@@ -104,13 +104,13 @@ pnpm exec tsx testing/scenario-runner/src/cli.mts \
   --output-dir var/scale-ladder/ivm/100g-1shard
 ```
 
-Each rung records target game count, shard-machine count, target duration,
-nemesis set, sampling profile, attribution sentences, and per-case history and
-result paths. The runner applies the rung target to the scenario workload by
-overriding `maxGames`, `open-sessions` ramp/session count, and `send-json`
-message count derived from the target duration. Rungs may also override the
-`send-json` interval and fanout window so long soaks can separate concurrent
-session proof from higher-throughput message-rate probes.
+Each rung records target game count, shard-machine count, per-case target
+duration, nemesis set, sampling profile, attribution sentences, and per-case
+history and result paths. The runner applies the rung target to the scenario
+workload by overriding `maxGames`, `open-sessions` ramp/session count, and
+`send-json` message count derived from the target duration. Rungs may also
+override the `send-json` interval and fanout window so long soaks can separate
+concurrent session proof from higher-throughput message-rate probes.
 
 For live runs, `sampling_profile` controls metric scrape cadence: `ramp` samples
 every 30 seconds and `cliff_hold` every second. The collector aggregates online

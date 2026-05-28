@@ -258,7 +258,7 @@ Phase 5 uses a declarative scale plan (`testing/scale-ladders/v1-scale.mts`)
 with rungs from 100 games on one shard machine through the v1 soak target
 of 1000 games on 10 shard machines. The scale runner executes a selected
 rung by cloning the scenario workload with rung-specific `maxGames`,
-`open-sessions` ramp/session count, target duration, nemesis set, and
+`open-sessions` ramp/session count, per-case target duration, nemesis set, and
 sampling profile. Rungs can also override the `send-json` interval and fanout
 window so a concurrency soak can run at a bounded heartbeat while separate
 throughput probes exercise higher message rates. During live runs it scrapes router, control-plane,

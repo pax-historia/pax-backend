@@ -69,13 +69,14 @@ export default {
       rungId: "1000g-10shards",
       concurrentGames: 1000,
       shardMachines: 10,
-      targetDurationMs: 86_400_000,
+      targetDurationMs: 3_600_000,
       rampMs: 600_000,
       sessionsPerGame: 1,
       ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "cliff_hold",
-      notes: "Exit-soak target: 1000 concurrent games across 10 shard machines for 24 hours.",
+      notes:
+        "Target-concurrency rung for the climb; the 24-hour full-suite exit soak is declared separately in v1-soak.",
     },
   ],
 } satisfies ScaleLadderPlan;

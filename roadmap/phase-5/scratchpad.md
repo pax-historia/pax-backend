@@ -176,3 +176,7 @@ Preliminary Phase 5 verification audit caught cost-projection drift from the soa
 ## 2026-05-28 16:22 PDT
 
 Fourth detached monitor snapshot landed at `2026-05-28T23:22:23.363Z`. The heartbeat `ivm` no-faults case remained in `send-json`, process alive with no `exit.code`, 1000 active games across 10 healthy accepting shards, and zero workload failures/session closes/session errors. This puts the no-faults hold about 35 minutes past start and still stable.
+
+## 2026-05-28 16:26 PDT
+
+The verification audit found one scale-plan wording/semantics drift: `targetDurationMs` is applied per nemesis case, but the older `v1-scale` 1000-game rung still carried the full 24-hour exit-soak duration and note. Kept the actual 24-hour full-suite exit proof in `testing/scale-ladders/v1-soak.mts` and made the `v1-scale` 1000-game rung a one-hour target-concurrency rung. Also clarified the per-case duration wording in the scenario-runner docs so future runs do not accidentally turn a three-nemesis rung into a 72-hour job. Verification: `pnpm --filter @pax-backend/scenario-runner check-types`, `git diff --check`, and a replay-mode `v1-scale` 1000-game rung smoke confirmed `target_duration_ms=3600000` with the three expected nemesis cases; the replay smoke exited through expected oracle failures on empty history.
