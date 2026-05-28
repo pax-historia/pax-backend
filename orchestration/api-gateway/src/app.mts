@@ -190,6 +190,7 @@ function asDispatchInput(raw: unknown): ApiGatewayDispatchInput {
     args: body["args"],
     idempotencyKey: readOptionalString(body, "idempotencyKey"),
     gameId: readString(body, "gameId"),
+    traceId: readNullableString(body, "traceId"),
     triggeringSessionId: readNullableString(body, "triggeringSessionId"),
     triggeringJwtClaims: readNullableRecord(body, "triggeringJwtClaims"),
     connectedSessions: readConnectedSessions(body["connectedSessions"]),

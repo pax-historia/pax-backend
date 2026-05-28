@@ -19,10 +19,12 @@ export function buildGatewayEnvelope(
   mode: "live" | "replay",
 ): BuiltGatewayEnvelope {
   const requestId = randomUUID();
+  const traceId = isTraceId(input.traceId) ? input.traceId : null;
   const body: GatewayHttpRequestBody = {
     args: input.args,
     context: {
       gameId: input.gameId,
+      traceId,
       triggeringSessionId: input.triggeringSessionId,
       triggeringJwtClaims: input.triggeringJwtClaims,
       connectedSessions: input.connectedSessions,
@@ -45,6 +47,13 @@ export function buildGatewayEnvelope(
       "x-gateway-game-id": input.gameId,
       "x-gateway-kind": input.kind,
       "x-gateway-mode": mode,
+      "x-gateway-run-id": input.runId,
+      ...(traceId
+        ? {
+            traceparent: `00-${traceId}-${spanIdFromRequestId(requestId)}-01`,
+            "x-gateway-trace-id": traceId,
+          }
+        : {}),
     },
   };
 }
@@ -55,6 +64,14 @@ export function stableSerialize(value: unknown): string {
 
 export function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function spanIdFromRequestId(requestId: string): string {
+  return sha256Hex(requestId).slice(0, 16);
+}
+
+function isTraceId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
 }
 
 function canonicalize(value: unknown): unknown {

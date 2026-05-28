@@ -10,7 +10,7 @@ spectator primitives in this spec.
 | Axis | Boundary | Mechanism |
 |---|---|---|
 | Bundle/runtime IPC | Parent actor to child runner | `runtimeContractRequired` checked against shard `runtimeContractsSupported`. |
-| Gateway/URL service HTTP | API gateway to operator service | `X-Gateway-Envelope-Version: 1`. |
+| Gateway/URL service HTTP | API gateway to operator service | `X-Gateway-Envelope-Version: 2`. |
 | Bundle/application service | Creator code to URL service | Versioned kind names such as `mock-ai.v1`. |
 
 There is no fourth version axis. Channel payloads are governed by the runtime
@@ -103,12 +103,13 @@ interface GatewayHttpRequestBody {
     bundleName: string;
     bundleCompatTag: string;
     runId: string;
+    traceId: string | null;
     idempotencyKey: string | null;
   };
 }
 ```
 
-The gateway adds `X-Gateway-Envelope-Version: 1`. URL services respond with
+The gateway adds `X-Gateway-Envelope-Version: 2`. URL services respond with
 `{ result }` or `{ error, detail? }`. The substrate maps substrate-owned
 failures to `kindUnknown`, `providerError`, `apiRateExceeded`, or
 `replayCoverageGap` and records both request and response at wire grain.
@@ -141,7 +142,9 @@ handler execution, and timeout telemetry.
 ## History contract
 
 History is JSONL with at least `event`, ISO `ts`, `shardId`, and a positive
-per-shard monotonic `pax_seq`. Events that name a game, actor, request, player,
+per-shard monotonic `pax_seq`. Session-originated events also carry the
+placement `traceId`, and API invokes propagate it through the gateway context
+and W3C `traceparent` header. Events that name a game, actor, request, player,
 or session include the corresponding ids.
 Guarantee #14 validates that channel calls, lifecycle transitions, session
 transitions, storage operations, API wire records, bundle gates, placement

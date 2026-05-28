@@ -67,8 +67,9 @@ Bundles call `c.api.invoke("kind.name", args)`. The substrate:
 1. Looks up `kind.name` in the operator's URL-kind registry.
 2. Checks the per-game `api-invocations-per-min` budget.
 3. Builds the gateway context envelope with game id, triggering session id and
-   claims, connected sessions, bundle name/tag, run id, and idempotency key.
-4. Sends an HTTP request with `X-Gateway-Envelope-Version: 1`.
+   claims, connected sessions, bundle name/tag, run id, trace id, and
+   idempotency key.
+4. Sends an HTTP request with `X-Gateway-Envelope-Version: 2`.
 5. Records the wire-grain request/response in history.
 6. Returns the URL service result verbatim, or a typed substrate error:
    `kindUnknown`, `providerError`, `apiRateExceeded`, or `replayCoverageGap`.

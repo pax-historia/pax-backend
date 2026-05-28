@@ -454,6 +454,7 @@ function asGatewayHttpRequest(raw: unknown): GatewayHttpRequestBody {
       bundleName: readString(context, "bundleName"),
       bundleCompatTag: readString(context, "bundleCompatTag"),
       runId: readString(context, "runId"),
+      traceId: readNullableString(context, "traceId"),
       idempotencyKey: readNullableString(context, "idempotencyKey"),
     },
   };

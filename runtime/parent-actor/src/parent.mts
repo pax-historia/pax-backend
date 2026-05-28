@@ -360,6 +360,7 @@ interface SessionRecord {
   readonly sessionId: string;
   readonly playerId: string;
   readonly connectedAt: number;
+  readonly traceId: string;
   readonly jwtClaims: Readonly<Record<string, unknown>>;
   disconnectReason?: DisconnectReason;
   seq: number;
@@ -1030,6 +1031,7 @@ async function handleApiInvoke(
     bundleName: inst.bundleName,
     bundleCompatTag: inst.bundleCompatTag,
     runId: inst.runId,
+    traceId: triggeringSession?.traceId ?? null,
   };
 
   history("api.invoke.request", {
@@ -1038,6 +1040,7 @@ async function handleApiInvoke(
     requestId,
     kind: payload.kind,
     triggeringSessionId: input.triggeringSessionId,
+    traceId: input.traceId,
     connectedSessionCount: input.connectedSessions.length,
   });
 
@@ -1047,6 +1050,7 @@ async function handleApiInvoke(
     gameId: inst.gameId,
     requestId,
     kind: payload.kind,
+    traceId: input.traceId,
     ok: response.ok,
     error: response.ok ? undefined : response.error,
   });
@@ -1476,6 +1480,7 @@ interface PlacementClaims {
   readonly userId: string;
   readonly bundleName: string;
   readonly runId: string;
+  readonly traceId: string;
   readonly exp: number;
 }
 
@@ -1493,11 +1498,16 @@ function verifyPlacementToken(token: string): PlacementClaims {
     typeof claims.userId !== "string" ||
     typeof claims.bundleName !== "string" ||
     typeof claims.runId !== "string" ||
+    !isTraceId(claims.traceId) ||
     typeof claims.exp !== "number"
   ) {
     throw new Error("placement token missing required claims");
   }
   return claims as PlacementClaims;
+}
+
+function isTraceId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
 }
 
 // --- Runner ------------------------------------------------------------
@@ -1576,6 +1586,7 @@ const runner = new Runner({
         actorId,
         gameId: inst.gameId,
         playerId,
+        traceId: claims.traceId,
         reason: "notAllowed",
       });
       ws.close(1008, "player not allowed");
@@ -1590,6 +1601,7 @@ const runner = new Runner({
       sessionId,
       playerId,
       connectedAt,
+      traceId: claims.traceId,
       jwtClaims: claims as unknown as Readonly<Record<string, unknown>>,
       seq: 0,
     };
@@ -1600,6 +1612,7 @@ const runner = new Runner({
       gameId: inst.gameId,
       sessionId,
       playerId,
+      traceId: claims.traceId,
       jwtClaims: claims,
       connectedAt,
     });
@@ -1632,6 +1645,7 @@ const runner = new Runner({
         gameId: inst.gameId,
         sessionId,
         playerId,
+        traceId: sess.traceId,
         seq: sess.seq,
       });
       if (inst.child) {
@@ -1654,6 +1668,7 @@ const runner = new Runner({
           gameId: inst.gameId,
           sessionId,
           playerId,
+          traceId: sess.traceId,
           code: event.code,
           reason: disconnectReason,
           transportReason: event.reason ? String(event.reason) : undefined,

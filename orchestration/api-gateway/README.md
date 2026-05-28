@@ -8,9 +8,9 @@ The substrate's only egress to operator-owned URL services. Implements
 3. Look up URL (reject `kindUnknown`).
 4. Build the library-defined context envelope: `gameId`, `triggeringSessionId`,
    `triggeringJwtClaims`, full `connectedSessions` snapshot, `bundleName`,
-   `bundleCompatTag`, `runId`, `idempotencyKey`.
+   `bundleCompatTag`, `runId`, `traceId`, `idempotencyKey`.
 5. Fingerprint = `sha256(serialize(outbound))`.
-6. Live mode: POST to URL with `X-Gateway-Envelope-Version: 1`, record both
+6. Live mode: POST to URL with `X-Gateway-Envelope-Version: 2`, record both
    raw outbound + raw inbound at wire grain, return verbatim.
 7. Replay mode: lookup recorded inbound by fingerprint; **hard-fail with
    `replayCoverageGap` if no match** (no silent fall-through to live).

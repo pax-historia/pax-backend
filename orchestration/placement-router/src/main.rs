@@ -16,7 +16,7 @@
 //      (README guarantee #16 — the new bit vs pax-sharded-spike)
 //   5. Score = effectiveLoad*0.45 + activeGames*0.35 + cpu*0.15 + wakeRate*0.05
 //      (same weights as pax-sharded-spike/orchestration/router-placement/src/placement.rs)
-//   6. Sign HS256 JWT { gameId, shardId, userId, bundleName, runId, exp } with PAX_JWT_SECRET
+//   6. Sign HS256 JWT { gameId, shardId, userId, bundleName, runId, traceId, exp } with PAX_JWT_SECRET
 //   7. Build webSocketUrl using the shard's recorded rivet { namespace, actorName,
 //      runnerName, adminTokenHint } and the gateway URL pattern from the
 //      rocks-physics smoke harness.
@@ -38,7 +38,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
@@ -165,6 +165,8 @@ struct PlacementResponse {
     expires_at: u64,
     #[serde(rename = "runId")]
     run_id: String,
+    #[serde(rename = "traceId")]
+    trace_id: String,
     #[serde(rename = "bundleName")]
     bundle_name: String,
     #[serde(rename = "serverTimings")]
@@ -183,6 +185,8 @@ struct PlacementClaims {
     bundle_name: String,
     #[serde(rename = "runId")]
     run_id: String,
+    #[serde(rename = "traceId")]
+    trace_id: String,
     exp: u64,
 }
 
@@ -261,6 +265,7 @@ async fn placement(
     State(state): State<AppState>,
     Path(game_id): Path<String>,
     Query(q): Query<PlacementQuery>,
+    headers: HeaderMap,
 ) -> Result<Json<PlacementResponse>, PlacementError> {
     let mut timings = BTreeMap::new();
     let t0 = std::time::Instant::now();
@@ -347,6 +352,8 @@ async fn placement(
         now_ms,
         uuid::Uuid::new_v4().simple()
     );
+    let trace_id = trace_id_from_headers(&headers)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
     let user_id = q.user_id.unwrap_or_else(|| "anon".to_string());
     let claims = PlacementClaims {
         game_id: game_id.clone(),
@@ -354,6 +361,7 @@ async fn placement(
         user_id: user_id.clone(),
         bundle_name: game.bundle_name.clone(),
         run_id: run_id.clone(),
+        trace_id: trace_id.clone(),
         exp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -385,9 +393,32 @@ async fn placement(
         placement_token: token,
         expires_at: claims.exp,
         run_id,
+        trace_id,
         bundle_name: game.bundle_name,
         server_timings: timings,
     }))
+}
+
+fn trace_id_from_headers(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get("traceparent")?.to_str().ok()?;
+    let mut parts = raw.split('-');
+    let version = parts.next()?;
+    let trace_id = parts.next()?;
+    let span_id = parts.next()?;
+    let flags = parts.next()?;
+    if parts.next().is_some()
+        || version.len() != 2
+        || trace_id.len() != 32
+        || span_id.len() != 16
+        || flags.len() != 2
+        || trace_id == "00000000000000000000000000000000"
+        || !trace_id.chars().all(|ch| ch.is_ascii_hexdigit())
+        || !span_id.chars().all(|ch| ch.is_ascii_hexdigit())
+        || !flags.chars().all(|ch| ch.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some(trace_id.to_ascii_lowercase())
 }
 
 async fn fetch_shards(

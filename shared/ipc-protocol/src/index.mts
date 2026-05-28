@@ -111,7 +111,7 @@ export interface OnCapacityWarningPayload {
 
 // ----- External API channel + gateway envelope --------------------------
 
-export const GATEWAY_ENVELOPE_VERSION = 1 as const;
+export const GATEWAY_ENVELOPE_VERSION = 2 as const;
 
 export type ApiInvokeError =
   | "kindUnknown"
@@ -147,6 +147,7 @@ export interface ConnectedSessionSnapshot {
 
 export interface GatewayInvokeContext {
   readonly gameId: string;
+  readonly traceId: string | null;
   readonly triggeringSessionId: string | null;
   readonly triggeringJwtClaims: Readonly<Record<string, unknown>> | null;
   readonly connectedSessions: readonly ConnectedSessionSnapshot[];
@@ -173,6 +174,7 @@ export interface ApiGatewayDispatchInput extends ApiInvokeRequest {
   readonly bundleName: string;
   readonly bundleCompatTag: string;
   readonly runId: string;
+  readonly traceId: string | null;
   readonly replayMode?: boolean;
 }
 

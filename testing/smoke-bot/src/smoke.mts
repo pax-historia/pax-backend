@@ -12,7 +12,7 @@
 //  5. Read the history.jsonl tail and assert the expected channel calls
 //     show up with the same sessionId.
 
-import { appendFileSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -35,6 +35,8 @@ const ROUTER_URL = process.env["PAX_ROUTER_URL"] ?? "http://127.0.0.1:9080";
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
+const DRIVER_SHARD_ID = "driver";
+let nextDriverPaxSeq = loadLastPaxSeqForShard(HISTORY_PATH, DRIVER_SHARD_ID) + 1;
 const GAME_ID =
   process.env["PAX_SMOKE_GAME_ID"] ?? `smoke-${Date.now().toString(36)}`;
 const PLAYER_ID = process.env["PAX_SMOKE_PLAYER_ID"] ?? "alice";
@@ -52,6 +54,7 @@ interface PlacementResponse {
   readonly placementToken: string;
   readonly expiresAt: number;
   readonly runId: string;
+  readonly traceId: string;
   readonly bundleName: string;
   readonly serverTimings: Readonly<Record<string, number>>;
 }
@@ -97,16 +100,49 @@ function fail(msg: string, extra?: unknown): never {
 
 function writeDriverHistory(event: string, fields: Readonly<Record<string, unknown>>): void {
   mkdirSync(dirname(HISTORY_PATH), { recursive: true });
+  const paxSeq = nextDriverPaxSeq;
+  nextDriverPaxSeq += 1;
   appendFileSync(
     HISTORY_PATH,
     JSON.stringify({
-      ts: new Date().toISOString(),
-      shardId: typeof fields["shardId"] === "string" ? fields["shardId"] : "driver",
-      event,
       ...fields,
+      ts: new Date().toISOString(),
+      shardId: DRIVER_SHARD_ID,
+      pax_seq: paxSeq,
+      event,
     }) + "\n",
     "utf8",
   );
+}
+
+function loadLastPaxSeqForShard(path: string, shardId: string): number {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = raw.trimEnd().split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line) as {
+        readonly shardId?: unknown;
+        readonly pax_seq?: unknown;
+      };
+      if (
+        parsed.shardId === shardId &&
+        typeof parsed.pax_seq === "number" &&
+        Number.isInteger(parsed.pax_seq)
+      ) {
+        return parsed.pax_seq;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return 0;
 }
 
 function parsePlacementError(raw: string): PlacementErrorResponse | undefined {
@@ -201,8 +237,9 @@ async function main(): Promise<void> {
   writeDriverHistory("placement.accepted", {
     gameId: placement.gameId,
     playerId: PLAYER_ID,
-    shardId: placement.shardId,
+    placedShardId: placement.shardId,
     runId: placement.runId,
+    traceId: placement.traceId,
     bundleName: placement.bundleName,
     runtimeContractRequired: placement.runtimeContractRequired,
     runtimeContractsSupported: placement.runtimeContractsSupported,

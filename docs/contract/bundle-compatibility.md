@@ -22,7 +22,7 @@ the scenario-runner's first-party oracle library.
 | Axis | Boundary | Mechanism |
 |---|---|---|
 | A. Substrate ↔ bundle wire | Child ↔ parent actor | `runtimeContractRequired: int` + `runtimeContractsSupported: [min,max]` |
-| B. Substrate ↔ URL-service wire | Gateway ↔ URL service | `X-Gateway-Envelope-Version: 1` header |
+| B. Substrate ↔ URL-service wire | Gateway ↔ URL service | `X-Gateway-Envelope-Version: 2` header |
 | C. Bundle ↔ URL-service application | Creator code ↔ URL service | Version baked into kind name (`ai.chat.v1`, `ai.chat.v2`) |
 
 There is **no fourth axis** (no per-channel `v:` envelopes; no substrate-level

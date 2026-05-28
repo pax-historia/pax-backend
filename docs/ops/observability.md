@@ -111,19 +111,17 @@ every emitted event. The mapping:
 
 - **S1 client→router**: HTTP `traceparent` + `tracestate` headers (W3C standard,
   accepted by Axum middleware `tower-otel`); generate fresh if absent. Stamped
-  into the signed JWT (`pax_trace_id`, `pax_run_id` claims,
-  `pax_span_id_router` so the shard knows the parent span).
+  into the signed JWT (`traceId`, `runId` claims).
 - **S2 client→parent (WS)**: trace_id arrives in the JWT (decoded once at WS
   accept). Stamped into the substrate-generated `session_id`-scoped span; every
   `onPlayerMessage` opens a child span with `parent_span_id = session.span_id`.
 - **S3 parent↔child IPC**: extend [shared/ipc-protocol/src/index.mts](../../shared/ipc-protocol/src/index.mts)
   envelope to require `trace_id`, `span_id`, `ts_ns` fields (the `requestId`
   field already exists but is unused — repurpose). Bumps `IPC_VERSION` to 2.
-- **S4 parent→gateway→URL service**: gateway sets W3C `traceparent` header on
-  outbound HTTP, plus `X-Gateway-Trace-Id`, `X-Gateway-Run-Id` for URL services
-  that don't speak W3C. The library-defined envelope grows `context.traceId`
-  and `context.spanId` fields under `X-Gateway-Envelope-Version: 2`
-  (incrementing the README's stated v1).
+- **S4 parent→gateway→URL service**: gateway sets W3C `traceparent` on
+  outbound HTTP, plus `X-Gateway-Trace-Id` and `X-Gateway-Run-Id` for URL
+  services that don't speak W3C. The library-defined envelope carries
+  `context.traceId` under `X-Gateway-Envelope-Version: 2`.
 - **S5 internal Rivet**: enable `RIVET_OTEL_ENABLED=1` and point exporter at the
   local Vector collector. Rivet already creates `guard_request`, `workflow`,
   `http_request`, `ws_to_tunnel_task` spans
