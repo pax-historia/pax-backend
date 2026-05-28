@@ -526,6 +526,28 @@ async function expectHistoryEvents(
   events: readonly string[],
   minimumPerGame: number,
 ): Promise<void> {
+  const waitMode = process.env["PAX_SCENARIO_EXPECT_HISTORY_MODE"] ?? "control-plane";
+  if (waitMode === "delay") {
+    const delayMs = parsePositiveInt(
+      process.env["PAX_SCENARIO_EXPECT_HISTORY_DELAY_MS"],
+      3_000,
+    );
+    ctx.historyWriter.append("workload.history-wait.delayed", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      expectedEvents: events,
+      minimumPerGame,
+      delayMs,
+    });
+    await sleep(delayMs);
+    return;
+  }
+  if (waitMode !== "control-plane") {
+    throw new Error(
+      `invalid PAX_SCENARIO_EXPECT_HISTORY_MODE=${waitMode}; expected control-plane or delay`,
+    );
+  }
+
   const gameIds = scenarioGameIds(ctx.workload);
   const deadline = performance.now() + ctx.phaseTimeoutMs;
   const missing = new Map<string, number>();

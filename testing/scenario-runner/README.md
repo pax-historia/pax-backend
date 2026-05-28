@@ -35,6 +35,9 @@ Current source pass provides the first runner shell:
 - can override workload game IDs with `--game-id-prefix`
 - can target non-default live endpoints with `--control-url`, `--router-url`,
   and `--phase-timeout-ms`
+- can set `PAX_SCENARIO_EXPECT_HISTORY_MODE=delay` for split deployments
+  where control-plane history cannot see shard-local events during live
+  workload pacing; final oracle replay still verifies the merged history
 - emits a `result.json`-shaped object with oracle summaries, attribution
   placeholders, scenario metadata, nemesis metadata, and run metadata
 
