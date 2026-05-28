@@ -3,10 +3,22 @@ import type { HistoryEvent, Oracle, OracleFinding } from "@pax-backend/oracles-l
 const jwtRefusalOracle: Oracle = (history) => {
   const findings: OracleFinding[] = [];
   const refusals = history.filter((event) => event.event === "workload.ws-refusal.observed");
+  const tampered = refusals.find((event) => event["tokenMutation"] === "tamper-signature");
+  const expired = refusals.find((event) => event["tokenMutation"] === "expire-token");
   const wrongGame = refusals.find(
     (event) =>
       event["tokenMutation"] === "none" && event["placementGameId"] !== event["connectGameId"],
   );
+  if (!tampered) {
+    findings.push({ code: "missing-tampered-refusal", message: "tampered JWT was not attempted" });
+  } else {
+    requireObservedCode(tampered, [4401, 1011], findings);
+  }
+  if (!expired) {
+    findings.push({ code: "missing-expired-refusal", message: "expired JWT was not attempted" });
+  } else {
+    requireObservedCode(expired, [4401, 1011], findings);
+  }
   if (!wrongGame) {
     findings.push({ code: "missing-wrong-game-refusal", message: "wrong-game JWT was not attempted" });
   } else {

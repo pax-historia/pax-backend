@@ -35,3 +35,9 @@ Verification: `pnpm --filter @pax-backend/scenario-runner check-types`, `pnpm --
 Added the compromised-bundle target-refusal lane. The hostile bundle `hostile-ws-target` opens normally, then tries to `c.ws.send` to `intruder-player`, who has no connected session. Before this pass, the parent treated that as success with `sent: 0`; that was silent acceptance. The parent now validates WS send targets and returns typed `targetInvalid` or `targetNotConnected` errors before any frame is sent.
 
 The new `testing/scenarios/compromised-bundle-adversarial` scenario asserts the bundle sees `{ ok: false, error: "targetNotConnected" }`, history records `ws.send.rejected` with the missing target detail, no frame is sent to the missing player, and no parent/child fatal event occurs. Verification: `pnpm typecheck`, `pnpm --filter @pax-backend/bundle-hostile-ws-target check-types`, `pnpm --filter @pax-backend/bundle-hostile-ws-target build`, `git diff --check`, and a live local `--oracles scenario` run all passed.
+
+## 2026-05-28 10:48 PDT
+
+Finished the JWT half of Task 3. `jwt-adversarial` now covers tampered-signature, expired-token, and wrong-game placement-token handshakes. The runner can mutate a placement token by corrupting its signature or re-signing an expired payload with `PAX_JWT_SECRET` (defaulting to the local dev secret). In the local Rivet guard path, all three public clients observed `1011 guard.websocket_service_unavailable`; parent logs confirmed `invalid signature` and `jwt expired`, while wrong-game replay also produced `connection.refused(reason=wrongGame)` history.
+
+Verification: `pnpm --filter @pax-backend/scenario-runner check-types`, `pnpm --filter @pax-backend/oracles-lib check-types`, `git diff --check`, and a live local `jwt-adversarial --oracles scenario` run all passed. The scenario took about 58 seconds because each rejected pre-open WebSocket handshake waits through the guard retry window.

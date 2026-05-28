@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -23,6 +24,7 @@ const DEFAULT_CONTROL_PLANE_URL = "http://127.0.0.1:9070";
 const DEFAULT_API_GATEWAY_URL = "http://127.0.0.1:9081";
 const DEFAULT_ROUTER_URL = "http://127.0.0.1:9080";
 const DEFAULT_PHASE_TIMEOUT_MS = 30_000;
+const DEFAULT_JWT_SECRET = "local-dev-secret";
 
 interface BundleManifest {
   readonly compatTagProduced: string;
@@ -503,8 +505,16 @@ async function expectWsRefusals(
     if (connectGameId !== placementGameId) {
       url.searchParams.set("rvt-key", connectGameId);
     }
-    if (attempt.tokenMutation === "tamper-signature") {
-      tamperPlacementToken(url);
+    switch (attempt.tokenMutation) {
+      case undefined:
+      case "none":
+        break;
+      case "tamper-signature":
+        tamperPlacementToken(url);
+        break;
+      case "expire-token":
+        expirePlacementToken(url);
+        break;
     }
     const observed = await waitForRejectedWebSocket(url, connectGameId, ctx.phaseTimeoutMs);
     ctx.historyWriter.append("workload.ws-refusal.observed", {
@@ -556,6 +566,53 @@ function tamperPlacementToken(url: URL): void {
   const last = token[token.length - 1] ?? "a";
   const replacement = last === "a" ? "b" : "a";
   url.searchParams.set(key, `${token.slice(0, -1)}${replacement}`);
+}
+
+function expirePlacementToken(url: URL): void {
+  const key = url.searchParams.has("placementToken") ? "placementToken" : "token";
+  const token = url.searchParams.get(key);
+  if (!token) throw new Error("placement URL missing placement token");
+  const [headerPart, payloadPart] = token.split(".");
+  if (!headerPart || !payloadPart) throw new Error("placement token is not a JWT");
+  const header = decodeJwtPart(headerPart);
+  const payload = decodeJwtPart(payloadPart);
+  const exp = Math.floor(Date.now() / 1000) - 60;
+  url.searchParams.set(
+    key,
+    signJwt(header, {
+      ...payload,
+      iat: exp - 60,
+      exp,
+    }),
+  );
+}
+
+function decodeJwtPart(part: string): Record<string, unknown> {
+  const decoded = JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as unknown;
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+    throw new Error("JWT part did not decode to an object");
+  }
+  return decoded as Record<string, unknown>;
+}
+
+function signJwt(
+  header: Readonly<Record<string, unknown>>,
+  payload: Readonly<Record<string, unknown>>,
+): string {
+  const encodedHeader = encodeJwtPart(header);
+  const encodedPayload = encodeJwtPart(payload);
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = createHmac(
+    "sha256",
+    process.env["PAX_JWT_SECRET"] ?? DEFAULT_JWT_SECRET,
+  )
+    .update(signingInput)
+    .digest("base64url");
+  return `${signingInput}.${signature}`;
+}
+
+function encodeJwtPart(value: Readonly<Record<string, unknown>>): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
 function waitForRejectedWebSocket(

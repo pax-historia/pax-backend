@@ -17,6 +17,18 @@ export default {
       attempts: [
         {
           placementGameIndex: 1,
+          playerId: "player-1",
+          tokenMutation: "tamper-signature",
+          expectedCodes: [4401, 1011],
+        },
+        {
+          placementGameIndex: 1,
+          playerId: "player-1",
+          tokenMutation: "expire-token",
+          expectedCodes: [4401, 1011],
+        },
+        {
+          placementGameIndex: 1,
           connectGameIndex: 2,
           playerId: "player-1",
           expectedCodes: [4403, 1011],

@@ -273,7 +273,7 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
             attempt["tokenMutation"],
             path,
             `${prefix}.attempts[${attemptIndex}].tokenMutation`,
-            ["none", "tamper-signature"],
+            ["none", "tamper-signature", "expire-token"],
           );
         }
         if (attempt["expectedReasonIncludes"] !== undefined) {

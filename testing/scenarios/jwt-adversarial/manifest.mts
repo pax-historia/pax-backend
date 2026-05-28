@@ -8,7 +8,7 @@ export default {
   defaultBackend: "live",
   defaultNemesis: "no-faults",
   description:
-    "Attempts a misrouted placement JWT handshake; the parent must reject without opening a session.",
+    "Attempts tampered, expired, and misrouted placement JWT handshakes; the parent must reject without opening a session.",
   oracleNames: [
     "allowed-only-connection",
     "history-completeness",

@@ -76,7 +76,7 @@ export interface WsRefusalAttempt {
   readonly placementGameIndex: number;
   readonly connectGameIndex?: number;
   readonly playerId: string;
-  readonly tokenMutation?: "none" | "tamper-signature";
+  readonly tokenMutation?: "none" | "tamper-signature" | "expire-token";
   readonly expectedCode?: number;
   readonly expectedCodes?: readonly number[];
   readonly expectedReasonIncludes?: string;
