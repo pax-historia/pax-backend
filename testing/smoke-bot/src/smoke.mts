@@ -1,4 +1,4 @@
-// tooling/smoke-bot — the vertical smoke driver.
+// testing/smoke-bot — the vertical smoke driver.
 //
 // Steps (matches plan §"Goal (smoke definition)"):
 //
@@ -12,7 +12,7 @@
 //  5. Read the history.jsonl tail and assert the expected channel calls
 //     show up with the same sessionId.
 
-import { readFileSync } from "node:fs";
+import { openSync, readSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -95,6 +95,16 @@ async function main(): Promise<void> {
     PLAYER_ID,
     BUNDLE_NAME,
   });
+
+  // Snapshot the history file's current size; we'll read only what got
+  // appended during this smoke. Keeps assertion time O(events-this-run)
+  // even when var/history.jsonl has accumulated MB across the dev session.
+  let historyOffsetAtStart = 0;
+  try {
+    historyOffsetAtStart = statSync(HISTORY_PATH).size;
+  } catch {
+    // File may not exist yet on a fresh repo; we'll read from 0.
+  }
 
   // 1. Seed Redis with bundle + game.
   const redis = new Redis(REDIS_URL, {
@@ -215,8 +225,19 @@ async function main(): Promise<void> {
   ws.close(1000, "smoke done");
   await new Promise<void>((r) => setTimeout(r, 500));
 
-  // 6. Read history tail and assert sessionId-threaded entries.
-  const tailLines = readFileSync(HISTORY_PATH, "utf8")
+  // 6. Read ONLY the history bytes appended during this smoke run, and
+  //    parse them as JSONL. Avoids re-reading the full accumulated file
+  //    so smoke time stays O(events-this-run).
+  const sizeNow = statSync(HISTORY_PATH).size;
+  const sliceBytes = sizeNow - historyOffsetAtStart;
+  if (sliceBytes <= 0) {
+    fail("no history written during smoke", { historyOffsetAtStart, sizeNow });
+  }
+  const fd = openSync(HISTORY_PATH, "r");
+  const buf = Buffer.alloc(sliceBytes);
+  readSync(fd, buf, 0, sliceBytes, historyOffsetAtStart);
+  const tailLines = buf
+    .toString("utf8")
     .trim()
     .split("\n")
     .map((l: string): HistoryLine | null => {

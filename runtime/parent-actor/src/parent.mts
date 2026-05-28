@@ -177,7 +177,7 @@ const bundleCache = new Map<string, LoadedBundle>();
 function loadBundle(bundleName: string): LoadedBundle {
   const cached = bundleCache.get(bundleName);
   if (cached) return cached;
-  // For smoke, bundleName resolves to tooling/bundles/<name>/dist/bundle.js
+  // For smoke, bundleName resolves to examples/bundles/<name>/dist/bundle.js
   // (the esbuild-IIFE output of the .mts source).
   const compiledPath = join(BUNDLE_DIR, bundleName, "dist", "bundle.js");
   const source = readFileSync(compiledPath, "utf8");

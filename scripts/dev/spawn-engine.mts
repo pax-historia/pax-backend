@@ -47,7 +47,7 @@ interface EngineConfig {
 
 if (!existsSync(ENGINE_BINARY)) {
   console.error(
-    `[engine] binary not found at ${ENGINE_BINARY}. Run scripts/build-engine.sh first.`,
+    `[engine] binary not found at ${ENGINE_BINARY}. Run scripts/build/build-engine.sh first.`,
   );
   process.exit(1);
 }

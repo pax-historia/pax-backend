@@ -1,11 +1,26 @@
-# `tooling/bundle-tools/`
+# `sdk/bundle-tools/` — `@pax-backend/bundle-tools`
 
-Build / publish / fetch for creator bundles. v1 uses creator-scoped,
-monotonic, **immutable-by-storage-policy** object names (e.g.
-`bundles/<creator-id>/v3`) in `pax-backend-blobs`. The directory entry
-references the bundle by name.
+Creator-facing CLI for building and publishing bundles. Lives in `sdk/`
+because it runs on the **creator's** machine (not on a deploy target, not
+on a driver). See [`../README.md`](../README.md) for the broader rules
+about the `sdk/` zone.
 
-Optional sha256 + signature helpers as defense-in-depth (off by default in v1;
-see [plan](../../README.md) §"Bundle integrity & verification").
+## Commands (planned)
 
-Stub.
+| Command | What it does |
+|---|---|
+| `pax-bundle build <pkg>` | esbuild the bundle's `src/index.mts` to `dist/bundle.js` (IIFE with the `__pax_install` footer the runtime expects). Validates the manifest in-band via `defineBundle`. |
+| `pax-bundle publish <pkg>` | Uploads the compiled bundle to `POST /admin/bundles/:bundleName`. Stores under a creator-scoped, monotonic, immutable-by-storage-policy object name in `pax-backend-blobs` (e.g. `bundles/<creator-id>/v3`). |
+| `pax-bundle verify <pkg>` | Optional sha256 + signature check as defense-in-depth (off by default in v1; see [plan](../../README.md) §"Bundle integrity & verification"). |
+
+## Sub-layout
+
+```
+src/
+  commands/<command>.ts    # one file per CLI command
+  cli.ts                   # entry point
+```
+
+Stub. M4 lands the CLI; today bundles are built via
+[`scripts/build/build-bundles.sh`](../../scripts/build/build-bundles.sh)
+directly.

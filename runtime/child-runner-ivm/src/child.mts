@@ -117,7 +117,7 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   );
 
   // Compile + run the bundle source. Bundles are pre-compiled by
-  // scripts/build-bundles.sh (esbuild → IIFE → __pax_install) and shipped to
+  // scripts/build/build-bundles.sh (esbuild → IIFE → __pax_install) and shipped to
   // the parent as plain script JS. ivm has no module loader, no async-top-
   // level, no fetch — that constraint is by design.
   try {

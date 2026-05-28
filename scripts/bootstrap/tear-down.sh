@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/tear-down.sh
+# scripts/bootstrap/tear-down.sh
 #
 # Permanently destroys the allowlisted pax-backend resources:
 #

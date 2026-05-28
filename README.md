@@ -305,14 +305,14 @@ URL services that need richer historical info — "was player X connected during
 
 #### First-party reference URL services
 
-The substrate ships four reference URL services in `tooling/url-services/`:
+The substrate ships four reference URL services in `orchestration/url-services/` (they deploy with the gateway on `pax-backend-control`):
 
 - `echo` (no-op; returns args verbatim)
 - `delay` (controllable latency)
-- `http.fetch` (real outbound HTTP against an allowlist)
+- `http-fetch` (real outbound HTTP against an allowlist)
 - `mock-ai.v1` (canned responses keyed by `args` hash; no billing logic — just a deterministic ai-shaped responder)
 
-Plus a *reference* `billing-mock.v1` URL service in `tooling/url-services/billing-mock/` that demonstrates *one way* an operator could implement balance/credit/refund/spectator logic on top of the substrate's session observability. It's a worked example for documentation and for the scenario-runner's end-to-end tests — not part of the substrate's contract. Operators are free to ignore it entirely.
+Plus a *reference* `billing-mock.v1` URL service in `examples/url-services/billing-mock.v1/` that demonstrates *one way* an operator could implement balance/credit/refund/spectator logic on top of the substrate's session observability. It's a worked example for documentation and for the scenario-runner's end-to-end tests — not part of the substrate's contract. Operators are free to ignore it entirely.
 
 #### Wire-grain recording and the replay boundary
 
@@ -896,7 +896,7 @@ The fourth surface (frontend / client bundles) is not our problem.
 6. Build the compute-plane quota system in the runtime per §"Compute-plane resources": enumerate the budgets (cpu-ms-per-tick, memory-bytes, bandwidth-bytes-per-sec, ws-messages-per-sec, state-bytes, blob-bytes, api-invocations-per-min), enforce each by killing the child or rejecting the offending call as appropriate, and expose them via `c.compute.budget()`. Fire `onCapacityWarning` events when budgets get close to limits. **The substrate has no business-plane resources** — AI tokens, credits, balances, pools all live in URL services and the operator's billing system. The substrate has no ledger, no Postgres dependency, no balance arithmetic.
 7. Build the runtime with both `child-runner-ivm` and `child-runner-noivm` from day one; CI gates the no-ivm conformance run every release. Ensure every WS connection gets a unique, cluster-wide-unique `sessionId` and that this id flows through every channel (`onPlayerConnect`/`onPlayerDisconnect`/`onPlayerMessage`), every `api.invoke` context envelope, and every session history event.
 8. Build the scenario-runner with three first-party scenarios (`chat-steady-state`, `compute-stress` (the renamed `billing-fuzz` — now focused on compute-plane quotas like CPU/bandwidth/api-rate rather than balance debits), `shard-death-resilience`), two first-party nemeses (`no-faults`, `shard-death-every-5m`), and first-party oracles for every guarantee in §"Strong platform guarantees". Treat any substrate-side oracle violation in CI as a release blocker. Billing-shaped oracles (balance correctness, refund integrity, etc.) live in operator-side test suites that target the `billing-mock.v1` reference URL service — not in the substrate's release gate.
-9. Ship a small set of hello-world creator bundles in `tooling/bundles/`, one per library feature. Each is the *minimal* demonstration of one or two channels working end-to-end — not a real game. At minimum:
+9. Ship a small set of hello-world creator bundles in `examples/bundles/`, one per library feature. Each is the *minimal* demonstration of one or two channels working end-to-end — not a real game. At minimum:
     - `hello-blob-rw` — reads `c.blob` on `onWake`, writes a small update to `c.blob` every ~30s, logs the read/write via `c.log`. Exercises blob durability.
     - `hello-state-rw` — same shape but against `c.state`. Includes an explicit `c.state.flush()` call before a crash-test point.
     - `hello-ws-echo` — echoes every `onPlayerMessage` body back to the sending player via `c.ws.send`. Exercises the WS tunnel, idempotency keys, and sessionId stability.

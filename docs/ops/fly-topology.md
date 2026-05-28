@@ -46,5 +46,5 @@ drift is verified at the end of the run.
    with the scenario-runner image; tear down after the run.
 
 Reference: this doc is updated as the topology evolves. The current set of
-provisioned resources is whatever `scripts/spin-up.sh` would create on a
+provisioned resources is whatever `scripts/bootstrap/spin-up.sh` would create on a
 fresh run.

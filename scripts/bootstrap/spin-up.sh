@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/spin-up.sh
+# scripts/bootstrap/spin-up.sh
 #
 # Idempotent: creates whatever's missing, leaves whatever exists. Safe to
 # re-run. Provisions the pax-backend infrastructure on Fly:
@@ -477,7 +477,7 @@ Local dev:
 Next:
   1. The agent owns deploys from here. See AGENTS.md.
   2. Pick a step from README.md §"Agent kickoff instructions" and land it.
-  3. Tear down via PAX_BACKEND_TEARDOWN_CONFIRM=yes ./scripts/tear-down.sh
+  3. Tear down via PAX_BACKEND_TEARDOWN_CONFIRM=yes ./scripts/bootstrap/tear-down.sh
 
 EOF
 

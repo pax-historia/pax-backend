@@ -3,7 +3,7 @@
 The acceptance gate for the substrate's first milestone is a single command:
 
 ```bash
-./scripts/local-up.sh && pnpm smoke
+./scripts/dev/local-up.sh && pnpm smoke
 ```
 
 passing on the developer's Mac. Fly deployment is a separate follow-up
@@ -13,7 +13,7 @@ milestone (M-fly). This doc records why and how.
 
 | Path | Cold rivet-engine build | Source |
 |---|---|---|
-| **Native macOS (Apple Silicon), profile=quick** | a few minutes (this repo) | scripts/build-engine.sh |
+| **Native macOS (Apple Silicon), profile=quick** | a few minutes (this repo) | scripts/build/build-engine.sh |
 | Local Docker Desktop, linux/amd64 via Rosetta | **>20 min to 43 min** | [pax-rivet-refactor scratchpad](../../../pax-rivet-refactor/scratchpad.md), [pax-rocks-spike scratchpad](../../../pax-rocks-spike/scratchpad.md) |
 | `fly deploy --local-only` (M5, Docker BuildKit Linux) | 8m44s – 18m53s | pax-rocks-spike scratchpad 2026-05-25 to 2026-05-27 |
 | Fly Depot remote builder (BuildKit cache hot) | ~8–9 min | pax-rivet-refactor scratchpad 3300 |
@@ -51,7 +51,7 @@ substrate code itself does not touch Docker.
 
 ## Build cache strategy
 
-The expensive thing is `rivet-engine`. `scripts/build-engine.sh` caches the
+The expensive thing is `rivet-engine`. `scripts/build/build-engine.sh` caches the
 built binary at `.cache/rivet-engine/rivet-engine-<vendor-sha>-<lock-hash>`
 and refuses to rebuild when the cache key still matches. A re-pin of
 `vendor/rivet/` (recorded in `vendor/rivet/UPSTREAM.md`) is the only thing
@@ -62,19 +62,19 @@ The router is built with `cargo build --release` into the crate's local
 
 `vendor/rivet/target/` is gitignored; do **not** delete it casually — that
 re-triggers the multi-minute build. If you must (re-pin, etc.), run
-`./scripts/build-engine.sh` and walk away while it does its thing.
+`./scripts/build/build-engine.sh` and walk away while it does its thing.
 
 ## Inner-loop iteration costs
 
 | Change | Action | Cost |
 |---|---|---|
-| Creator bundle (`tooling/bundles/hello-ws-echo/index.mjs`) | re-run `pnpm smoke` (parent re-reads bundle on each game create) | ms |
-| Parent actor TS (`runtime/parent-actor/`) | `./scripts/local-down.sh && ./scripts/local-up.sh` | <1s + restart cost |
+| Creator bundle (`examples/bundles/hello-ws-echo/src/index.mts`) | `pnpm build:bundles && pnpm smoke` (parent re-reads compiled bundle on each game create) | ms |
+| Parent actor TS (`runtime/parent-actor/`) | `./scripts/dev/local-down.sh && ./scripts/dev/local-up.sh` | <1s + restart cost |
 | Child runner TS (`runtime/child-runner-ivm/`) | parent forks fresh child per game, just re-run smoke | ms |
-| IPC protocol (`runtime/ipc-protocol/`) | restart parent (consumers re-read on require) | <1s |
+| IPC protocol (`shared/ipc-protocol/`) | restart parent (consumers re-read on require) | <1s |
 | Smoke bot | re-run `pnpm smoke` | ms |
-| Router Rust | `./scripts/build-router.sh && ./scripts/local-down.sh && ./scripts/local-up.sh` | seconds incremental |
-| `vendor/rivet/**` (re-pin) | `rm -rf .cache/rivet-engine && ./scripts/build-engine.sh` | minutes (cold native) |
+| Router Rust | `./scripts/build/build-router.sh && ./scripts/dev/local-down.sh && ./scripts/dev/local-up.sh` | seconds incremental |
+| `vendor/rivet/**` (re-pin) | `rm -rf .cache/rivet-engine && ./scripts/build/build-engine.sh` | minutes (cold native) |
 
 ## Anti-patterns (evidence-backed)
 
