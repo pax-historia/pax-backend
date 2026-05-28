@@ -61,6 +61,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     workloadGameIdPrefix: values.get("game-id-prefix"),
     fixtureBaseDir: values.get("fixture-base-dir"),
     controlPlaneUrl: values.get("control-url"),
+    apiGatewayUrl: values.get("api-gateway-url"),
     routerUrl: values.get("router-url"),
     phaseTimeoutMs: parseOptionalPositiveInt(values.get("phase-timeout-ms")),
     oracleScope: oracles.scope,

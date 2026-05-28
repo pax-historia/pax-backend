@@ -60,23 +60,23 @@ export function makeWorkload(input: {
         kinds: [
           {
             kindName: "ai.chat.v1",
-            url: "${controlPlaneUrl}/_url-services/mock-ai.v1/invoke",
+            url: "${apiGatewayUrl}/_url-services/mock-ai.v1/invoke",
           },
           {
             kindName: "flag.search.v1",
-            url: "${controlPlaneUrl}/_url-services/echo/invoke",
+            url: "${apiGatewayUrl}/_url-services/echo/invoke",
           },
           {
             kindName: "moderation.audit.v1",
-            url: "${controlPlaneUrl}/_url-services/echo/invoke",
+            url: "${apiGatewayUrl}/_url-services/echo/invoke",
           },
           {
             kindName: "participation.v1",
-            url: "${controlPlaneUrl}/_url-services/echo/invoke",
+            url: "${apiGatewayUrl}/_url-services/echo/invoke",
           },
           {
             kindName: "projection.sync.v1",
-            url: "${controlPlaneUrl}/_url-services/echo/invoke",
+            url: "${apiGatewayUrl}/_url-services/echo/invoke",
           },
         ],
       },

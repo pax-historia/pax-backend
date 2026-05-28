@@ -163,6 +163,7 @@ export interface ScenarioRunnerInput {
   readonly fixtureBaseDir?: string;
   readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
   readonly controlPlaneUrl?: string;
+  readonly apiGatewayUrl?: string;
   readonly routerUrl?: string;
   readonly phaseTimeoutMs?: number;
   readonly metrics?: ScenarioMetrics;

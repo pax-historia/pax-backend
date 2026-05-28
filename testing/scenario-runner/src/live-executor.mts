@@ -19,6 +19,7 @@ import type {
 } from "./types.mjs";
 
 const DEFAULT_CONTROL_PLANE_URL = "http://127.0.0.1:9070";
+const DEFAULT_API_GATEWAY_URL = "http://127.0.0.1:9081";
 const DEFAULT_ROUTER_URL = "http://127.0.0.1:9080";
 const DEFAULT_PHASE_TIMEOUT_MS = 30_000;
 
@@ -72,6 +73,7 @@ interface LiveExecutorContext {
   readonly runtimeEnvironment: ScenarioRuntimeEnvironment;
   readonly repoRoot: string;
   readonly controlPlaneUrl: string;
+  readonly apiGatewayUrl: string;
   readonly routerUrl: string;
   readonly phaseTimeoutMs: number;
   readonly sessions: ScenarioSession[];
@@ -92,6 +94,13 @@ export async function executeLiveWorkload(
   const controlPlaneUrl = trimTrailingSlash(
     input.controlPlaneUrl ?? process.env["PAX_CONTROL_URL"] ?? DEFAULT_CONTROL_PLANE_URL,
   );
+  const apiGatewayUrl = normalizeApiGatewayBaseUrl(
+    input.apiGatewayUrl ??
+      process.env["PAX_SCENARIO_API_GATEWAY_URL"] ??
+      process.env["PAX_API_GATEWAY_BASE_URL"] ??
+      process.env["PAX_API_GATEWAY_URL"] ??
+      DEFAULT_API_GATEWAY_URL,
+  );
   const historyWriter = new HistoryWriter(input.historyPath);
   const ctx: LiveExecutorContext = {
     input,
@@ -100,6 +109,7 @@ export async function executeLiveWorkload(
     runtimeEnvironment,
     repoRoot: resolve(process.env["PAX_REPO_ROOT"] ?? process.cwd()),
     controlPlaneUrl,
+    apiGatewayUrl,
     routerUrl: trimTrailingSlash(
       input.routerUrl ?? process.env["PAX_ROUTER_URL"] ?? DEFAULT_ROUTER_URL,
     ),
@@ -314,7 +324,9 @@ async function registerApiKinds(
       method: "POST",
       body: {
         ...kind,
-        url: kind.url.replaceAll("${controlPlaneUrl}", ctx.controlPlaneUrl),
+        url: kind.url
+          .replaceAll("${controlPlaneUrl}", ctx.controlPlaneUrl)
+          .replaceAll("${apiGatewayUrl}", ctx.apiGatewayUrl),
       },
     });
   }
@@ -720,6 +732,11 @@ function sleep(ms: number): Promise<void> {
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function normalizeApiGatewayBaseUrl(value: string): string {
+  const trimmed = trimTrailingSlash(value);
+  return trimmed.endsWith("/invoke") ? trimmed.slice(0, -"/invoke".length) : trimmed;
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
