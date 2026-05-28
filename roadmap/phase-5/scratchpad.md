@@ -214,3 +214,9 @@ Ninth detached monitor snapshot landed at `2026-05-28T23:47:23.838Z`. The heartb
 ## 2026-05-28 16:51 PDT
 
 Tightened the same final verifier surface so `--expect-cases 3` now means exactly three cases rather than at least three. This prevents a polluted artifact directory with extra successful histories from satisfying the release gate. Verification: `git diff --check`, the default in-progress summary still passed, and `scripts/fly/verify-v1-soak.sh` still failed the active partial soak for the expected in-progress reasons with the exact-count message.
+
+## 2026-05-28 16:52 PDT
+
+Tenth detached monitor snapshot landed at `2026-05-28T23:52:23.961Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory locally again; the summary now has ten clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true` for the non-final default gates.
+
+The run and monitor logs stayed quiet. A `/proc` child walk from the driver showed the run wrapper PID 798 still supervising the `tsx`/Node scenario-runner process, and monitor PID 2039 still running. A full metrics liveness sweep from the driver passed for control, router, gateway, and both parent `:7700/metrics` plus vendored engine `:6430/metrics` on all ten shard machines.
