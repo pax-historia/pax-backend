@@ -75,3 +75,11 @@ Two runner details changed to make the full matrix usable. First, `NemesisRuntim
 Design note: CI gates with `--oracles scenario`, i.e. each scenario manifest's declared guarantee-oracle set plus scenario-local oracles. Running all 17 guarantee oracles against every adversarial negative scenario currently produces inconclusive results for surfaces the scenario intentionally does not exercise, so docs were updated to make the scenario-selected oracle set the release-gate contract while preserving all-oracles replay as an audit mode.
 
 Verification: `bash -n scripts/test/scenario-suite-local.sh`, YAML parse of `.github/workflows/scenario-suite.yml`, `pnpm --filter @pax-backend/scenario-runner check-types`, `pnpm --filter @pax-backend/oracles-lib check-types`, root `pnpm typecheck`, and `git diff --check` all passed. Two focused suite-script smokes passed: `api-partition-adversarial × no-faults × ivm` and `api-partition-adversarial × api-kind-partition-burst × ivm`.
+
+## 2026-05-28 11:32 PDT
+
+Completed the Phase 4 verification pass. Re-read the Phase 4 directive and exit signal: compromised bundles, race conditions, stolen JWTs, compute-budget edges, partition nemeses, rolling-deploy collisions, and a CI release gate across every nemesis profile and both child runtimes. The task list now covers those surfaces: hostile bundle target refusal, tampered/expired/wrong-game JWTs, compute-budget edges, race/deploy/host-event/sleep churn, API-kind partition nemesis, and the scenario-suite workflow.
+
+The verification sweep found stale docs rather than code gaps. Updated `docs-next/subsystems/scenario-runner.md`, `docs-next/vision/guarantees.md`, `docs-next/why/why-rivet-vendored.md`, `testing/README.md`, and `testing/scenarios/README.md` so they reflect the current release-gate contract: scenario-selected guarantee oracles plus scenario-local oracles in CI, all-oracles mode retained for targeted audits, three nemesis profiles, and live workload/fault execution already present.
+
+Verification commands after the doc cleanup: root `pnpm typecheck`, `bash -n scripts/test/scenario-suite-local.sh`, YAML parse of `.github/workflows/scenario-suite.yml`, and `git diff --check` all passed. Phase 4 is complete.

@@ -104,7 +104,7 @@ namespaced `pax_*`. Both reach the same dashboards.
 3. Edit `vendor/rivet/UPSTREAM.md` to record the new SHA and any notes.
 4. Rebuild the engine binary via `scripts/build/build-engine.sh`.
 5. Run `pnpm smoke` against the new engine.
-6. Run the full scenario suite (when wired) against the new engine.
+6. Run the full scenario suite against the new engine.
 7. Commit `vendor/rivet/` and `UPSTREAM.md` together.
 
 We do not edit Rivet source inside `vendor/rivet/`. Upstream fixes go

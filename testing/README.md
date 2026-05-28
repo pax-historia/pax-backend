@@ -14,7 +14,7 @@ to demonstrate creator APIs (that's `examples/`).
 |---|---|
 | `scenario-runner/` | The scenario-bundle harness. Three run modes — load, property, fuzz — plus replay mode for cross-version oracle re-runs. Reads scenarios + nemeses + oracles, drives the substrate, writes artifacts. |
 | `scenarios/` | First-party scenarios. One folder per scenario; each contains a `bundle/` (creator code or ref), a `clients/` script, fixtures, declarative oracles, PRNG seed, determinism-level claim. |
-| `nemeses/` | Fault profiles (shard death every 5m, no faults, network blip every 30s, etc.). Orthogonal to scenarios — composed at run time. |
+| `nemeses/` | Fault profiles (`no-faults`, shard drain, API-kind partition, etc.). Orthogonal to scenarios — composed at run time. |
 | `oracles-lib/` | Reusable oracle helpers. One file per Strong Platform Guarantee. **Guarantee oracle files use stable names, not numbers** (`singleton-game.ts`, `placement-contract-safety.ts`, ...). The README's numbered §Strong Platform Guarantees becomes an index that maps "#15" → `bundle-compatibility-safety.ts`. Decouples filesystem identity from prose ordering. |
 | `smoke-bot/` | The vertical smoke driver. Seed Redis, GET placement, open WS, send/receive echo, assert history. End-to-end gate the substrate must pass before any release. |
 
@@ -55,7 +55,6 @@ nemeses/<nemesis>/
 `_internal/` is the escape hatch, kind-folders are created on first use.
 
 Smoke today ships `smoke-bot/`. `oracles-lib/` has a first-party oracle for
-each Strong Platform Guarantee, and `scenario-runner/` can replay history
-against the scenario/nemesis/workload catalogs while planning the gateway
-replay fixture environment. Live workload execution and fault injection still
-land in later passes.
+each Strong Platform Guarantee, and `scenario-runner/` can execute live
+workloads, inject nemesis actions, replay history against the catalogs, and
+plan the gateway replay fixture environment.

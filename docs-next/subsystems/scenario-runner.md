@@ -86,8 +86,7 @@ examples/bundles/<bundle>/scenarios/<scenario>/
 
 The substrate's own scenarios live at
 `testing/scenarios/<scenario>/` and follow the same shape but target
-the substrate's own three first-party bundles (`hello-ws-echo`,
-`hello-multifeature`, etc.).
+the substrate's first-party example bundles under `examples/bundles/`.
 
 ## Run modes
 

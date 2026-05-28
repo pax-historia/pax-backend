@@ -55,12 +55,12 @@ Those properties are real and important. They're not the substrate's job.
 ## Implications for the test pipeline
 
 - Every guarantee is a single-file oracle in `testing/oracles-lib/src/guarantees/`.
-- The scenario-runner runs every oracle by default on every scenario; an
-  oracle failure on **any** scenario fails CI.
+- The scenario-runner can run every oracle, but CI gates on each scenario's
+  declared oracle set plus scenario-local oracles. A selected oracle failure
+  on **any** scenario fails CI.
 - The smoke-bot vertical test is M0 only — the actual release gate is the
-  16+1 oracle suite on the canonical scenarios (`chat-steady-state`,
-  `compute-stress`, `shard-death-resilience`) plus per-bundle oracles for
-  bundle-correctness properties.
+  scenario-selected oracle suite on the canonical `testing/scenarios`
+  catalog across both child runtimes and every nemesis profile.
 
 See [`subsystems/scenario-runner.md`](../subsystems/scenario-runner.md) for
 mechanics.
