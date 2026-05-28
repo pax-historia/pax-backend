@@ -134,6 +134,16 @@ async function handleRequest(
       return;
     }
 
+    if (
+      parts[0] === "admin" &&
+      parts[1] === "players" &&
+      parts[3] === "games" &&
+      parts.length === 4
+    ) {
+      await handlePlayerGames(req, res, store, parts[2] ?? "");
+      return;
+    }
+
     if (parts[0] === "admin" && parts[1] === "games" && parts.length === 2) {
       await handleGamesCollection(req, res, store);
       return;
@@ -340,6 +350,27 @@ async function handlePlayerResource(
     ok: true,
     playerId,
     removedFromGameIds,
+  });
+}
+
+async function handlePlayerGames(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  playerId: string,
+): Promise<void> {
+  if (req.method !== "GET") {
+    throw new HttpError(405, "methodNotAllowed", { method: req.method });
+  }
+  if (playerId.length === 0) {
+    throw new HttpError(400, "badRequest", { field: "playerId" });
+  }
+  const games = await store.listGamesForAllowedPlayer(playerId);
+  writeJson(res, 200, {
+    ok: true,
+    playerId,
+    gameIds: games.map((game) => game.gameId),
+    games,
   });
 }
 

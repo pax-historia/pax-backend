@@ -97,6 +97,24 @@ export class ControlPlaneStore {
     return (await this.redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`)).sort();
   }
 
+  async listGamesForAllowedPlayer(playerId: string): Promise<readonly GameRecord[]> {
+    const keys = await scanKeys(this.redis, `${ALLOWED_PLAYERS_KEY_PREFIX}*`);
+    if (keys.length === 0) return [];
+    const tx = this.redis.multi();
+    for (const key of keys) tx.sismember(key, playerId);
+    const results = await tx.exec();
+    if (!results) return [];
+    const gameIds = keys
+      .filter((_key, index) => Number(results[index]?.[1] ?? 0) === 1)
+      .map((key) => key.slice(ALLOWED_PLAYERS_KEY_PREFIX.length))
+      .sort();
+    if (gameIds.length === 0) return [];
+    const raws = await this.redis.mget(...gameIds.map((gameId) => `${GAME_KEY_PREFIX}${gameId}`));
+    return raws
+      .flatMap((raw) => (raw ? [JSON.parse(raw) as GameRecord] : []))
+      .sort((a, b) => a.gameId.localeCompare(b.gameId));
+  }
+
   async removePlayerFromAllAllowedLists(playerId: string): Promise<readonly string[]> {
     const keys = await scanKeys(this.redis, `${ALLOWED_PLAYERS_KEY_PREFIX}*`);
     if (keys.length === 0) return [];
