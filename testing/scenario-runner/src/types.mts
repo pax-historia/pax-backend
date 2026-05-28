@@ -118,6 +118,8 @@ export interface ScenarioRunnerInput {
   readonly nemesisManifest?: NemesisManifest;
   readonly workloadPath?: string;
   readonly workloadPlan?: ScenarioWorkloadPlan;
+  readonly metrics?: ScenarioMetrics;
+  readonly attribution?: ScenarioAttribution;
   readonly oracleScope?: OracleScope;
   readonly oracleNames?: readonly string[];
   readonly samplingProfile?: SamplingProfile;
@@ -134,6 +136,16 @@ export interface AttributionCandidate {
   readonly rank: number;
   readonly p99_ms?: number;
   readonly note?: string;
+}
+
+export interface ScenarioMetrics {
+  readonly per_surface: Readonly<Record<string, unknown>>;
+}
+
+export interface ScenarioAttribution {
+  readonly sentence: string;
+  readonly candidates: readonly AttributionCandidate[];
+  readonly falsified: readonly AttributionCandidate[];
 }
 
 export interface ScenarioResult {
@@ -170,14 +182,8 @@ export interface ScenarioResult {
   readonly duration_ms: number;
   readonly worker_count: number;
   readonly worker_artifacts: readonly WorkerArtifact[];
-  readonly metrics: {
-    readonly per_surface: Readonly<Record<string, unknown>>;
-  };
-  readonly attribution: {
-    readonly sentence: string;
-    readonly candidates: readonly AttributionCandidate[];
-    readonly falsified: readonly AttributionCandidate[];
-  };
+  readonly metrics: ScenarioMetrics;
+  readonly attribution: ScenarioAttribution;
   readonly oracles: Readonly<Record<string, ScenarioOracleSummary>>;
   readonly history_url?: string;
   readonly trace_links: readonly string[];

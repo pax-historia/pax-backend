@@ -66,9 +66,9 @@ export function buildScenarioResult(
     duration_ms: Math.max(0, finishedAtMs - startedAtMs),
     worker_count: input.workerCount ?? 1,
     worker_artifacts: [],
-    metrics: { per_surface: {} },
-    attribution: {
-      sentence: "Attribution not computed by the source-only replay shell.",
+    metrics: input.metrics ?? { per_surface: {} },
+    attribution: input.attribution ?? {
+      sentence: "No attribution data was provided by the replay shell.",
       candidates: [],
       falsified: [],
     },

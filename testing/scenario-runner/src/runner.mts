@@ -4,6 +4,7 @@ import {
   runNamedGuaranteeOracles,
 } from "@pax-backend/oracles-lib";
 
+import { summarizeHistoryAttribution } from "./attribution.mjs";
 import {
   loadNemesisManifest,
   loadScenarioManifest,
@@ -15,11 +16,21 @@ import type { ScenarioResult, ScenarioRunnerInput } from "./types.mjs";
 export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult {
   const startedAtMs = Date.now();
   const history = readHistoryJsonl(input.historyPath);
+  const analysis = summarizeHistoryAttribution(history);
   const oracleResults = input.oracleNames
     ? runNamedGuaranteeOracles(history, input.oracleNames)
     : runAllGuaranteeOracles(history);
   const finishedAtMs = Date.now();
-  return buildScenarioResult(input, oracleResults, startedAtMs, finishedAtMs);
+  return buildScenarioResult(
+    {
+      ...input,
+      metrics: input.metrics ?? analysis.metrics,
+      attribution: input.attribution ?? analysis.attribution,
+    },
+    oracleResults,
+    startedAtMs,
+    finishedAtMs,
+  );
 }
 
 export async function runReplayFromCatalog(
