@@ -17,7 +17,7 @@ These are not optional and not negotiable inside the active phase.
 - **No billing primitives.** Pressure to add anything balance-, debit-, reservation-, or refund-shaped is a signal to re-read [`docs-next/why/why-no-billing.md`](docs-next/why/why-no-billing.md) and lean harder on session observability plus the URL-service pattern.
 - **No tenant-shaped abstractions.** The substrate is single-consumer by design; multi-tenancy is a design force, not a feature.
 - **The teardown allowlist in [`scripts/bootstrap/tear-down.sh`](scripts/bootstrap/tear-down.sh) is hard-coded** to three Fly apps and one Tigris bucket. Do not generalize it. If you feel the urge, stop and report.
-- **No edits inside [`vendor/rivet/`](vendor/rivet/).** Upstream changes pull from the `pax-rivet-refactor` sibling repo.
+- **No major edits inside [`vendor/rivet/`](vendor/rivet/).** Upstream changes pull from the `pax-rivet-refactor` sibling repo. However, if a small edit inside the vendor/rivet overcomes a major blocker that is acceptable. 
 - **Sibling spike repos are read-only references.** Patterns lift; code rewrites in-repo. No reads or writes into `pax-spike-fly`, `pax-sharded-spike`, or `pax-rivet-refactor` from this repo.
 
 ## Don't wait around
