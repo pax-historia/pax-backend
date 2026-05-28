@@ -17,4 +17,4 @@ game (see [plan README](../../README.md) §"Compute-plane resources"):
 
 **Not in this catalog and never will be:** AI tokens, image credits, gold,
 balances, debits, reservations, refunds. Those are operator-owned URL-service
-concerns. See [why-no-billing.md](why-no-billing.md).
+concerns. See [../why/why-no-billing.md](../why/why-no-billing.md).
