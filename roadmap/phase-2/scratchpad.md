@@ -328,3 +328,19 @@ to `draining`, then back to healthy after the replacement-ready hook — but the
 runner's `HistoryWriter` overwrote the nemesis event's selected `shardId` with
 the driver shard ID `scenario-runner`. Patched the nemesis events to emit
 `targetShardId` so the rerun artifact preserves the selected shard in history.
+
+## 2026-05-28 07:58 PDT
+
+Shard-death rerun `phase2-shard-death-20260528144159` reached the sustained
+100-game window and completed two drain/un-drain cycles with
+`targetShardId: shard-fly-iad-1`, but failed at `2026-05-28T14:54:36.723Z`
+when one session closed. Fly logs showed the root cause was the 5 GB shard
+RocksDB volume filling, not a guarantee oracle violation: RocksDB could not
+append `/data/rivet-engine/db/000049.sst`, Vector could not write local metrics
+or checkpoints, and the shard app restarted with the service check critical.
+
+Extended the existing `pax_backend_rocks` volume
+`vol_rkglge8kolq8je64` from 5 GB to 20 GB in place, restarted machine
+`2872d67f64e6e8`, and verified the shard recovered: `/data` is 25% used, the
+Fly service check is passing, `/health` returns `status: ok`, and the control
+registry reports `shard-fly-iad-1` healthy with `activeGames: 0`.
