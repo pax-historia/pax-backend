@@ -121,8 +121,9 @@ bundle. The reference production implementation lives in paxhistoria's
 covers 14 vendor providers (Google, Vertex, OpenRouter, OneRouter,
 Alibaba, Canopywave, Chutes, Grok, Anthropic, OpenAI, Zhipu, Friendli,
 Piris), `lib/billing/rules/v1.ts` retail rules, `llm_logs` + `token_ledger`
-writes, and Firestore balance updates. For the proof, none of that runs —
-the scenario-runner replays canned responses.
+writes, and Firestore balance updates. For the proof, none of that runs; the
+scenario suite uses deterministic gateway reference responses and can replay
+canned fixture responses.
 
 ## Authoring fixtures for scenarios
 

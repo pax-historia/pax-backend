@@ -14,8 +14,9 @@ repo and runs against the substrate under the scenario-runner.
 ## Success criteria
 
 - The bundle lives at `examples/bundles/historia-default/`.
-- It runs end-to-end in the scenario-runner against canned URL service
-  responses.
+- It runs end-to-end in the scenario-runner against deterministic URL
+  service responses, with API-producing scenarios carrying canned replay
+  fixtures.
 - A representative scenario suite passes (one scenario per Pax-historia
   game-session module).
 - All 17 substrate-side oracles pass on every scenario.
@@ -28,7 +29,7 @@ repo and runs against the substrate under the scenario-runner.
 | The bundle | `examples/bundles/historia-default/` (with `manifest.ts`, modules under `src/`, `dist/bundle.js`) |
 | Five URL service specs (schema-only) | `examples/url-services/<kind>/README.md` for each of `ai.chat.v1`, `flag.search.v1`, `moderation.audit.v1`, `participation.v1`, `projection.sync.v1` |
 | Bundle scenario suite | `examples/bundles/historia-default/scenarios/<scenario>/` mirroring the substrate's own `testing/scenarios/` shape |
-| Bundle-correctness oracles | `examples/bundles/historia-default/oracles-lib/` (per-bundle; never in `testing/oracles-lib/`) |
+| Bundle-correctness oracles | `examples/bundles/historia-default/scenarios/<scenario>/oracles.mts` (scenario-local; never in `testing/oracles-lib/`) |
 
 The substrate itself (`runtime/`, `orchestration/`, `sdk/`, `shared/`)
 stays pure — nothing Pax-historia-specific touches those zones.
@@ -73,8 +74,10 @@ top of the substrate's contract:
 
 ## The five URL services
 
-Each URL service is **spec-only** for the proof — no real HTTP server.
-The scenario-runner replays canned fixtures by request fingerprint.
+Each URL service is **spec-only** for the proof — no operator-owned HTTP
+server ships here. The live proof registers the kinds against deterministic
+gateway reference routes, and replay checks consume canned fixtures by request
+fingerprint.
 
 | Kind | Wraps Pax-historia's | Spec location |
 |---|---|---|
@@ -84,9 +87,9 @@ The scenario-runner replays canned fixtures by request fingerprint.
 | `projection.sync.v1` | `app/api/live-games-db/*` routes | `examples/url-services/projection.sync.v1/README.md` |
 | `participation.v1` | (new — doesn't exist in Pax-historia today; canonical participation store for the proof) | `examples/url-services/participation.v1/README.md` |
 
-The proof's scenario fixtures contain canned responses keyed by request
-fingerprint. The gateway replays them. The scenario-runner asserts the
-bundle's behavior given these fixed inputs.
+The proof's API-producing scenario fixtures contain canned responses keyed by
+request fingerprint. The gateway can replay them, and the scenario-runner
+asserts the bundle's behavior against the same fixed inputs.
 
 ### The load-bearing trust pattern in `ai.chat.v1`
 

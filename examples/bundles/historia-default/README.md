@@ -1,11 +1,9 @@
 # `historia-default`
 
-> **Status: scaffolded.** The package, manifest, TypeScript config, runtime
-> ambient declarations, minimal lifecycle entrypoint, and core
-> state/blob/migration adapter are present and build to `dist/bundle.js`.
-> The first pass of the module/workflow runtime, stateful routing, hydration,
-> and policy gates are present; scenarios and bundle oracles land in follow-up
-> Phase 3 tasks. The plan is in
+> **Status: Phase 3 proof complete.** The package builds to `dist/bundle.js`,
+> the module/workflow runtime is wired through lifecycle routing and policy
+> gates, and the ten-scenario suite has local and Fly proof artifacts under
+> `var/phase-3/local-proof/` and `var/phase-3/fly-proof/`. The target shape is in
 > [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md).
 
 `historia-default` is the reference creator bundle for the historia game
@@ -60,9 +58,10 @@ other work.
 | `projection.sync.v1` | On state changes (status, current round, player-ready, title, round-completed) | [`projection.sync.v1/README.md`](../../url-services/projection.sync.v1/README.md) |
 | `participation.v1` | On read (before deciding to bill) or write (when bundle demotes a player to spectator) | [`participation.v1/README.md`](../../url-services/participation.v1/README.md) |
 
-For the proof, none of these run as real HTTP servers — bundle calls are
-replayed from canned `api-responses` fixtures via the scenario-runner's
-existing replay-mode short-circuit.
+For the proof, none of these run as operator-owned HTTP servers. The live
+scenario suite registers the kinds against deterministic gateway reference
+routes, and API-producing scenarios also ship canned `api-responses` records
+for gateway replay checks.
 
 ## Workflow override contract
 
@@ -114,7 +113,7 @@ moderation snapshot, etc.) instead of rewriting one giant gzipped object
 on every commit like paxhistoria does today.
 
 **On round commit:** the bundle merges working state into the main blob
-snapshot in memory, calls `await c.blob.put('current', cborEncoded)`,
+snapshot in memory, calls `await c.blob.put('current', encodedSnapshot)`,
 clears working state in `c.state` only after the put resolves, and calls
 `c.state.flush()` if it needs the working-state clear durable before the
 next handler tick. **On cold-load** (`onWake`): the bundle reads
@@ -150,68 +149,52 @@ bundle scaffold. Both are documented in
    `onHostEvent` lifecycle hook; supports `wakeOnDelivery: true` for
    moderation ejects that need to reach sleeping games.
 
-The current scaffold wires `onHostEvent`; later Phase 3 work will add the
-participation and moderation dispatchers that use it.
+The bundle routes participation and moderation host events through
+`onHostEvent`; the proof suite includes both live participation updates and
+sleeping-game wake delivery.
 
-## File layout (planned)
+## File layout
 
 ```
 examples/bundles/historia-default/
-├── README.md                            (this file)
+├── README.md
 ├── package.json
 ├── tsconfig.json
-├── manifest.ts                          (compatTagProduced/Accepted/runtimeContractRequired)
+├── manifest.ts
 ├── src/
-│   ├── index.mts                        (defineBundle entrypoint, dispatches to modules)
-│   ├── ambient.d.ts                     (runtime-injected globals)
+│   ├── index.mts
+│   ├── context.mts
+│   ├── hydration.mts
+│   ├── ambient.d.ts
 │   ├── modules/
-│   │   ├── chat/
-│   │   │   ├── chat.ts
-│   │   │   ├── executor.ts
-│   │   │   ├── default-workflow.ts      (the JS string)
-│   │   │   ├── helpers/build-payloads.ts
-│   │   │   └── types.ts
-│   │   ├── advisor/
-│   │   ├── actions/
-│   │   ├── jump-forward/
-│   │   ├── moderation/
-│   │   ├── admin/
-│   │   ├── cheats/
-│   │   ├── player-management.ts
-│   │   ├── rounds.ts
-│   │   ├── round-timer.ts
-│   │   ├── map-state.ts
-│   │   ├── offline-cap.ts
-│   │   └── permissions.ts
+│   │   ├── chat/ advisor/ actions/ jump-forward/ moderation/ admin/ cheats/
+│   │   ├── player-management.mts
+│   │   ├── rounds.mts
+│   │   ├── round-timer.mts
+│   │   ├── map-state.mts
+│   │   ├── offline-cap.mts
+│   │   ├── permissions.mts
+│   │   └── types.mts
 │   ├── ai/
-│   │   ├── engine.ts                    (generic gen.next() loop)
-│   │   ├── trigger.ts                   (task dedup + wrap)
-│   │   ├── task-tracker.ts
-│   │   ├── workflow-runtime-shared.ts
-│   │   ├── ol-bundle.generated.ts       (OpenLayers IIFE; rebuild via scripts/bundle-ol.ts)
-│   │   └── polygon-clipping-bundle.generated.ts
+│   │   ├── engine.mts
+│   │   ├── executors.mts
+│   │   ├── task-tracker.mts
+│   │   └── workflow-runtime-shared.mts
 │   ├── core/
-│   │   ├── codec.mts                    (CBOR encode/decode helpers for c.blob snapshots)
-│   │   ├── persistence.mts              (load c.state + c.blob, save snapshot, clear/flush working state)
-│   │   ├── migrations.mts               (v1 → v5 compatibility dispatch on blobCompatTag)
-│   │   └── schema.mts                   (working-state and LiveGameBlob v5 shape)
+│   │   ├── codec.mts
+│   │   ├── persistence.mts
+│   │   ├── migrations.mts
+│   │   └── schema.mts
 │   ├── routing/
-│   │   ├── websocket.ts                 (dispatch + policy gates over onPlayerMessage)
-│   │   └── message-caps.ts
-│   ├── hydration.ts                     (initial client snapshot on connect)
-│   └── context.mts                      (GameContext adapter over c.*)
-├── oracles-lib/
-│   └── src/                             (bundle-correctness oracles, NOT in testing/oracles-lib)
+│   │   ├── websocket.mts
+│   │   └── host-events.mts
 └── scenarios/
     ├── chat-basic/
     │   ├── manifest.mts
     │   ├── clients/workload.mts
     │   ├── oracles.mts
     │   └── fixtures/
-    │       ├── initial-state.json
-    │       ├── initial-blob.json
-    │       ├── allowed-players.json
-    │       └── api-responses/           (canned URL service responses by request fingerprint)
+    │       └── api-responses/
     ├── jump-forward-basic/
     ├── advisor-basic/
     ├── actions-basic/
@@ -229,9 +212,9 @@ How a developer (or agent) iterates on this bundle until it works:
 
 ```mermaid
 flowchart LR
-  edit["edit module<br/>(src/modules/chat/chat.ts)"]
-  build["pnpm bundle:build<br/>(emits dist/bundle.js)"]
-  run["pnpm scenario:run --scenario historia-chat-basic<br/>(scenario-runner loads bundle + fixtures + canned api-responses)"]
+  edit["edit module<br/>(src/modules/chat/chat.mts)"]
+  build["pnpm --filter @pax-backend/bundle-historia-default build<br/>(emits dist/bundle.js)"]
+  run["pnpm exec tsx testing/scenario-runner/src/cli.mts<br/>(scenario-runner loads bundle + fixtures)"]
   result["read result.json<br/>(substrate + bundle oracles)"]
   history["walk history.jsonl<br/>(monotonic pax_seq)"]
   fix["fix bundle"]
@@ -256,7 +239,7 @@ bug to file — record it as a finding in
 **On a bundle-side oracle failure:** the bundle has a game-logic bug to
 fix in this directory.
 
-## Scenarios (planned)
+## Scenarios
 
 The proof's representative coverage set; full descriptions in
 [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md)
