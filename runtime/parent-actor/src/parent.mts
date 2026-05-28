@@ -16,7 +16,6 @@
 //  - c.blob (Tigris) and c.state (RocksDB persistence beyond Rivet's own KV).
 //  - Compute-plane quota enforcement (we ship the per-handler timeout in the
 //    child via ivm; the rest is M2+).
-//  - Allowed-players gate enforcement (we accept any valid placement JWT).
 
 import { type ChildProcess, fork } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
@@ -32,6 +31,7 @@ import pino, { type Logger } from "pino";
 import {
   ACTIVE_GAMES_KEY_PREFIX,
   ACTIVE_GAME_TTL_SECONDS,
+  ALLOWED_PLAYERS_KEY_PREFIX,
   type ApiGatewayDispatchInput,
   type ApiInvokeError,
   type ApiInvokeIpcPayload,
@@ -40,6 +40,7 @@ import {
   type BundleRecord,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
+  type DisconnectReason,
   GAME_KEY_PREFIX,
   type GameRecord,
   type ParentToChildEnvelope,
@@ -75,6 +76,10 @@ const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
 const PAX_JWT_SECRET = process.env["PAX_JWT_SECRET"] ?? "local-dev-secret";
 const PAX_API_GATEWAY_URL =
   process.env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke";
+const ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS = Number.parseInt(
+  process.env["PAX_ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS"] ?? "5000",
+  10,
+);
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
@@ -226,6 +231,7 @@ interface SessionRecord {
   readonly playerId: string;
   readonly connectedAt: number;
   readonly jwtClaims: Readonly<Record<string, unknown>>;
+  disconnectReason?: DisconnectReason;
   seq: number;
 }
 
@@ -258,6 +264,15 @@ interface WsLike {
 }
 
 const games = new Map<string, GameInstance>();
+
+if (
+  Number.isFinite(ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS) &&
+  ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS > 0
+) {
+  setInterval(() => {
+    void enforceAllowedPlayersForAllGames();
+  }, ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS).unref();
+}
 
 function ensureGame(
   actorId: string,
@@ -556,6 +571,68 @@ function isApiInvokeError(value: unknown): value is ApiInvokeError {
   );
 }
 
+async function isPlayerAllowed(gameId: string, playerId: string): Promise<boolean> {
+  const allowed = await redis.sismember(
+    `${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`,
+    playerId,
+  );
+  return allowed === 1;
+}
+
+async function allowedPlayersForGame(gameId: string): Promise<ReadonlySet<string>> {
+  return new Set(await redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`));
+}
+
+async function enforceAllowedPlayersForAllGames(): Promise<void> {
+  for (const inst of games.values()) {
+    if (inst.sessions.size === 0) continue;
+    try {
+      const allowed = await allowedPlayersForGame(inst.gameId);
+      for (const sess of inst.sessions.values()) {
+        if (!allowed.has(sess.playerId)) {
+          disconnectSession(inst, sess, "removedFromAllowedPlayers");
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(
+        { actorId: inst.actorId, gameId: inst.gameId, err: msg },
+        "allowed-players enforcement failed",
+      );
+    }
+  }
+}
+
+function disconnectSession(
+  inst: GameInstance,
+  sess: SessionRecord,
+  reason: DisconnectReason,
+): void {
+  if (sess.disconnectReason) return;
+  sess.disconnectReason = reason;
+  history("session.forceDisconnect", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    sessionId: sess.sessionId,
+    playerId: sess.playerId,
+    reason,
+  });
+  try {
+    sess.ws.close(1008, reason);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(
+      {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        sessionId: sess.sessionId,
+        err: msg,
+      },
+      "force disconnect failed",
+    );
+  }
+}
+
 function handleWsSend(
   inst: GameInstance,
   payload: Extract<ChildToParentEnvelope, { type: "ws.send" }>["payload"],
@@ -688,10 +765,21 @@ const runner = new Runner({
       ws.close(1011, "actor not ready");
       return;
     }
+    const playerId = claims.userId;
+    const allowed = await isPlayerAllowed(inst.gameId, playerId);
+    if (!allowed) {
+      history("connection.refused", {
+        actorId,
+        gameId: inst.gameId,
+        playerId,
+        reason: "notAllowed",
+      });
+      ws.close(1008, "player not allowed");
+      return;
+    }
     await forkChild(inst);
 
     const sessionId = generateSessionId();
-    const playerId = claims.userId;
     const connectedAt = Date.now();
     const sess: SessionRecord = {
       ws,
@@ -756,19 +844,21 @@ const runner = new Runner({
       "close",
       (event: { code: number; reason?: string }) => {
         inst.sessions.delete(sessionId);
+        const disconnectReason = sess.disconnectReason ?? "left";
         history("session.closed", {
           actorId,
           gameId: inst.gameId,
           sessionId,
           playerId,
           code: event.code,
-          reason: event.reason ? String(event.reason) : undefined,
+          reason: disconnectReason,
+          transportReason: event.reason ? String(event.reason) : undefined,
         });
         if (inst.child) {
           sendTyped(inst.child, "onPlayerDisconnect", {
             playerId,
             sessionId,
-            reason: "left",
+            reason: disconnectReason,
           });
         }
       },

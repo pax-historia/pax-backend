@@ -21,6 +21,7 @@ import { Redis } from "ioredis";
 import WebSocket from "ws";
 
 import {
+  ALLOWED_PLAYERS_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   GAME_KEY_PREFIX,
   type BundleRecord,
@@ -131,7 +132,8 @@ async function main(): Promise<void> {
   };
   await redis.set(`${BUNDLE_KEY_PREFIX}${BUNDLE_NAME}`, JSON.stringify(bundleRecord));
   await redis.set(`${GAME_KEY_PREFIX}${GAME_ID}`, JSON.stringify(gameRecord));
-  log("seeded bundles + games keys");
+  await redis.sadd(`${ALLOWED_PLAYERS_KEY_PREFIX}${GAME_ID}`, PLAYER_ID);
+  log("seeded bundles + games + allowed-players keys");
 
   // 2. Placement.
   const placementUrl = `${ROUTER_URL}/games/${encodeURIComponent(
