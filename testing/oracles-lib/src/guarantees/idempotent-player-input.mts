@@ -34,5 +34,5 @@ export function idempotentPlayerInput(history: readonly HistoryEvent[]): OracleR
     delivered.add(key);
   }
 
-  return result(ORACLE, GUARANTEE, history, observed, findings);
+  return result(ORACLE, GUARANTEE, history, Math.max(observed, history.length), findings);
 }

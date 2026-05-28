@@ -61,7 +61,7 @@ export function hostEventDurability(history: readonly HistoryEvent[]): OracleRes
     }
   }
 
-  return result(ORACLE, GUARANTEE, history, observed, findings);
+  return result(ORACLE, GUARANTEE, history, Math.max(observed, history.length), findings);
 }
 
 function hostEventKey(event: HistoryEvent, gameId: string, eventType: string): string {

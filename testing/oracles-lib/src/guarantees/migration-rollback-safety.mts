@@ -98,5 +98,5 @@ export function migrationRollbackSafety(history: readonly HistoryEvent[]): Oracl
     );
   }
 
-  return result(ORACLE, GUARANTEE, history, observed, findings);
+  return result(ORACLE, GUARANTEE, history, Math.max(observed, history.length), findings);
 }

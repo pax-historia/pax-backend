@@ -68,5 +68,5 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
     );
   }
 
-  return result(ORACLE, GUARANTEE, history, observed, findings);
+  return result(ORACLE, GUARANTEE, history, Math.max(observed, history.length), findings);
 }

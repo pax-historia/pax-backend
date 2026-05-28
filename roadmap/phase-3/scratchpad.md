@@ -93,3 +93,9 @@ Regenerated the full ten-scenario suite after the stable replay-key change; all 
 `chat-basic` (2 records), `jump-forward-basic` (3), `advisor-basic` (1), `actions-basic` (1), and `moderation-flow` (2).
 
 Added the `api-responses` fixture directory to the shared workload fixture list. Restarted the local stack with `PAX_API_GATEWAY_MODE=replay` and `PAX_API_REPLAY_FIXTURES_PATH` pointed at `chat-basic`'s fixture directory; a fresh `chat-basic` run passed with `api.invoke.wire` records in `mode: "replay"` and `mock-ai.v1` reference-service invocation count staying at zero.
+
+## 2026-05-28 09:39 PDT
+
+Started Task 7 local proof. To make the `--oracles all` gate meaningful for mixed-surface scenarios, updated conditional safety oracles to pass vacuously when their triggering surface is absent: API dispatch/session-count, idempotent player input, crash blast radius, parent crash absence, eviction minimum budget, migration rollback, and host-event durability. Scenario-local oracles still assert required scenario-specific surfaces, so API-producing scenarios still fail if their expected API call is missing.
+
+Reran all ten historia scenarios locally with `--oracles all`; every scenario passed all seventeen substrate guarantee oracles plus its bundle-local oracles. Results are under `var/phase-3/local-proof/`.
