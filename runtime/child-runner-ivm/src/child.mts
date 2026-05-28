@@ -337,12 +337,12 @@ type HandlerName =
   | "onPlayerMessage"
   | "onCapacityWarning";
 
-async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<void> {
-  if (!bundleExports || !context) return;
+async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<boolean> {
+  if (!bundleExports || !context) return true;
   const fnRef = (await bundleExports.get(handlerName, { reference: true })) as
     | ivm.Reference
     | undefined;
-  if (!fnRef) return;
+  if (!fnRef) return true;
   const cRef = (await context.global.get("c", { reference: true })) as ivm.Reference;
   const previousTriggeringSessionId = currentTriggeringSessionId;
   currentTriggeringSessionId = triggeringSessionIdFor(handlerName, payload);
@@ -352,10 +352,12 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
       [cRef.derefInto(), new ivm.ExternalCopy(payload).copyInto()],
       { timeout: PER_HANDLER_TIMEOUT_MS },
     );
+    return true;
   } catch (err) {
     const errStr =
       err instanceof Error ? err.stack ?? err.message : JSON.stringify(err);
     emitOne("child.handlerError", { handler: handlerName, error: errStr });
+    return false;
   } finally {
     currentTriggeringSessionId = previousTriggeringSessionId;
   }
@@ -485,7 +487,12 @@ process.on("message", async (raw: unknown) => {
         await invokeHandler("onWake", raw.payload);
         return;
       case PARENT_TO_CHILD.onSleep:
-        await invokeHandler("onSleep", raw.payload);
+        if (await invokeHandler("onSleep", raw.payload)) {
+          emitOne(CHILD_TO_PARENT.lifecycleSleepComplete, {
+            reason: raw.payload.reason,
+            deadline: raw.payload.deadline,
+          });
+        }
         return;
       case PARENT_TO_CHILD.onPlayerConnect:
         await invokeHandler("onPlayerConnect", raw.payload);

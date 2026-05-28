@@ -232,9 +232,9 @@ type HandlerName =
   | "onPlayerMessage"
   | "onCapacityWarning";
 
-async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<void> {
+async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<boolean> {
   const handler = bundleExports?.[handlerName];
-  if (!handler) return;
+  if (!handler) return true;
   const previousTriggeringSessionId = currentTriggeringSessionId;
   currentTriggeringSessionId = triggeringSessionIdFor(handlerName, payload);
   try {
@@ -245,10 +245,12 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
       PER_HANDLER_TIMEOUT_MS,
       handlerName,
     );
+    return true;
   } catch (err) {
     const errStr =
       err instanceof Error ? err.stack ?? err.message : JSON.stringify(err);
     emitOne("child.handlerError", { handler: handlerName, error: errStr });
+    return false;
   } finally {
     currentTriggeringSessionId = previousTriggeringSessionId;
   }
@@ -318,7 +320,12 @@ process.on("message", async (raw: unknown) => {
         await invokeHandler("onWake", raw.payload);
         return;
       case PARENT_TO_CHILD.onSleep:
-        await invokeHandler("onSleep", raw.payload);
+        if (await invokeHandler("onSleep", raw.payload)) {
+          emitOne(CHILD_TO_PARENT.lifecycleSleepComplete, {
+            reason: raw.payload.reason,
+            deadline: raw.payload.deadline,
+          });
+        }
         return;
       case PARENT_TO_CHILD.onPlayerConnect:
         await invokeHandler("onPlayerConnect", raw.payload);

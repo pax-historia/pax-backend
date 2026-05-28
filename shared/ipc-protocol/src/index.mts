@@ -322,6 +322,11 @@ export interface ChildUnknownMessagePayload {
   readonly type: string;
 }
 
+export interface LifecycleSleepCompletePayload {
+  readonly reason: OnSleepPayload["reason"];
+  readonly deadline: number;
+}
+
 export type ChildToParentEnvelope =
   | IpcEnvelope<"ready", { bundleName: string; bundleCompatTag: string; runId: string; gameId: string }>
   | IpcEnvelope<"api.invoke", ApiInvokeIpcPayload>
@@ -337,6 +342,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
+  | IpcEnvelope<"lifecycle.sleepComplete", LifecycleSleepCompletePayload>
   | IpcEnvelope<"child.fatal", ChildFatalPayload>
   | IpcEnvelope<"child.handlerError", ChildHandlerErrorPayload>
   | IpcEnvelope<"child.unknownMessage", ChildUnknownMessagePayload>;
@@ -376,6 +382,7 @@ export const CHILD_TO_PARENT = Object.freeze({
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",
+  lifecycleSleepComplete: "lifecycle.sleepComplete",
 } as const);
 
 // ----- Redis row schemas (must match what parent-actor writes) -----------

@@ -608,6 +608,9 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
     case CHILD_TO_PARENT.lifecycleRequestSleep:
       handleLifecycleRequestSleep(inst);
       return;
+    case CHILD_TO_PARENT.lifecycleSleepComplete:
+      void handleLifecycleSleepComplete(inst, raw.payload);
+      return;
     case "child.fatal":
       history("child.fatal", {
         actorId: inst.actorId,
@@ -732,6 +735,46 @@ function handleLifecycleRequestSleep(inst: GameInstance): void {
     runId: inst.runId,
   });
   sendOnSleep(inst, "requestedBySleep");
+}
+
+async function handleLifecycleSleepComplete(
+  inst: GameInstance,
+  payload: Extract<ChildToParentEnvelope, { type: "lifecycle.sleepComplete" }>["payload"],
+): Promise<void> {
+  if (inst.sleepTimer) {
+    clearTimeout(inst.sleepTimer);
+    inst.sleepTimer = null;
+  }
+  inst.blobCompatTag = inst.bundleCompatTag;
+  try {
+    const raw = await redis.get(`${GAME_KEY_PREFIX}${inst.gameId}`);
+    if (raw) {
+      const game = JSON.parse(raw) as GameRecord;
+      const updated: GameRecord = {
+        ...game,
+        blobCompatTag: inst.bundleCompatTag,
+      };
+      await redis.set(`${GAME_KEY_PREFIX}${inst.gameId}`, JSON.stringify(updated));
+    }
+    history("lifecycle.sleepComplete", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason: payload.reason,
+      deadline: payload.deadline,
+      bundleName: inst.bundleName,
+      blobCompatTag: inst.bundleCompatTag,
+    });
+  } catch (err) {
+    history("lifecycle.sleepComplete.error", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason: payload.reason,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  inst.child?.kill();
 }
 
 function sendOnSleep(

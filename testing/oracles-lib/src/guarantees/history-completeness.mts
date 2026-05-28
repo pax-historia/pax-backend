@@ -16,6 +16,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "compute.budget": ["actorId", "gameId", "requestId"],
   "game.deleted": ["gameId"],
   "log.emit": ["actorId", "gameId", "runId"],
+  "lifecycle.sleepComplete": ["actorId", "gameId", "runId", "blobCompatTag"],
   "metrics.emit": ["actorId", "gameId", "runId"],
   "onPlayerMessage": ["actorId", "gameId", "sessionId", "playerId"],
   "onWake.sent": ["actorId", "gameId", "runId", "bundleCompatTag"],
