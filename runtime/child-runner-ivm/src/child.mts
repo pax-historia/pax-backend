@@ -226,6 +226,51 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
         };
       }
     };
+    const __pax_console_message_part = (value) => {
+      if (typeof value === "string") return value;
+      if (value instanceof Error) return value.stack || value.message;
+      try {
+        const json = JSON.stringify(value);
+        return typeof json === "string" ? json : String(value);
+      } catch {
+        return String(value);
+      }
+    };
+    const __pax_console_payload_part = (value) => {
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack,
+        };
+      }
+      if (typeof value === "bigint") return value.toString();
+      if (typeof value === "function") return "[Function " + (value.name || "anonymous") + "]";
+      if (typeof value === "symbol") return String(value);
+      try {
+        return JSON.parse(JSON.stringify(value));
+      } catch {
+        return String(value);
+      }
+    };
+    const __pax_console_emit = (level, args) => {
+      __pax_c_log_emit.applySync(undefined, [
+        JSON.stringify({
+          event: "console",
+          source: "console",
+          level,
+          message: args.map(__pax_console_message_part).join(" "),
+          args: args.map(__pax_console_payload_part),
+        }),
+      ]);
+    };
+    globalThis.console = Object.assign(globalThis.console || {}, {
+      debug: (...args) => __pax_console_emit("debug", args),
+      log: (...args) => __pax_console_emit("log", args),
+      info: (...args) => __pax_console_emit("info", args),
+      warn: (...args) => __pax_console_emit("warn", args),
+      error: (...args) => __pax_console_emit("error", args),
+    });
     globalThis.c = {
       rng: () => __pax_c_rng.applySync(undefined, []),
       now: () => __pax_c_now.applySync(undefined, []),

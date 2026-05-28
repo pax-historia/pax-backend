@@ -92,6 +92,7 @@ async function bootstrap(cfg: BootstrapPayload): Promise<void> {
     g.__pax_bundle = bundle;
   };
   g.c = makeContext();
+  installConsoleProxy();
 
   try {
     const runBundle = new Function(cfg.bundleSource) as () => void;
@@ -225,6 +226,57 @@ function completeParentRequest(requestId: string | undefined, value: unknown): v
   pendingParentRequests.delete(requestId);
   clearTimeout(pending.timeout);
   pending.resolve(value);
+}
+
+type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error";
+
+function installConsoleProxy(): void {
+  Object.assign(globalThis.console, {
+    debug: (...args: unknown[]) => emitConsole("debug", args),
+    log: (...args: unknown[]) => emitConsole("log", args),
+    info: (...args: unknown[]) => emitConsole("info", args),
+    warn: (...args: unknown[]) => emitConsole("warn", args),
+    error: (...args: unknown[]) => emitConsole("error", args),
+  });
+}
+
+function emitConsole(level: ConsoleLevel, args: readonly unknown[]): void {
+  emitOne(CHILD_TO_PARENT.logEmit, {
+    event: "console",
+    source: "console",
+    level,
+    message: args.map(consoleMessagePart).join(" "),
+    args: args.map(consolePayloadPart),
+  });
+}
+
+function consoleMessagePart(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.stack ?? value.message;
+  try {
+    const json = JSON.stringify(value);
+    return typeof json === "string" ? json : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function consolePayloadPart(value: unknown): unknown {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    };
+  }
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
+  if (typeof value === "symbol") return String(value);
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
 }
 
 type HandlerName =

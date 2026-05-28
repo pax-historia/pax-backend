@@ -311,9 +311,10 @@ All proxied via IPC to the parent, which:
   point of `c.log.emit` call (parent receives IPC frame, opens a child span,
   emits).
 
-`console.log` proxy (per README): inside ivm, replace
-`console.{log,info,warn,error}` with shims that call `c.log.*` with
-`source: 'console'`.
+Creator `console.{debug,log,info,warn,error}` calls are replaced inside both
+child runners with shims that emit `log.emit` history payloads carrying
+`event: "console"`, `source: "console"`, `level`, `message`, and normalized
+`args`.
 
 CPU-ms-per-tick measurement: child runners time bundle eval and handler
 invocation with the parent-provided `handlerTimeoutMs` budget. They emit

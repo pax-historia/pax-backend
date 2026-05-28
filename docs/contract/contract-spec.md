@@ -67,7 +67,7 @@ The SDK type `SubstrateContext` is authoritative. The child runner injects:
 |---|---|
 | Determinism | `rng()`, `now()` |
 | Websocket | `ws.send(target, body)` |
-| Observability | `log.emit(payload)`, `metrics.emit(payload)` |
+| Observability | `log.emit(payload)`, `metrics.emit(payload)`, `console.*` proxy |
 | Lifecycle | `lifecycle.requestSleep()` |
 | URL services | `api.invoke(kind, args, options?)` |
 | Session views | `players.allowed()`, `players.connected()` |
@@ -80,6 +80,10 @@ error: "bandwidthExceeded" | "rateExceeded" | "serializationFailed", detail? }`.
 
 Storage write responses are `{ ok: true }` or `{ ok: false, error:
 "sizeExceeded" | "storageUnavailable", detail? }`.
+
+Console proxy records use `log.emit` with `event: "console"`,
+`source: "console"`, a severity `level`, a string `message`, and normalized
+`args`.
 
 ## API gateway envelope
 
