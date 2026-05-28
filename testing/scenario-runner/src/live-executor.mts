@@ -374,6 +374,28 @@ async function openOneSession(
   const placement = await requestPlacement(ctx, gameId, playerId);
   const ws = new WebSocket(placement.webSocketUrl, [...rivetProtocols(gameId)]);
   const ready = await waitForReady(ws, ctx.phaseTimeoutMs, gameId, playerId);
+  ws.on("close", (code: number, reason: Buffer) => {
+    ctx.historyWriter.append("workload.session.closed", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      playerId,
+      sessionId: ready.sessionId,
+      readyState: ws.readyState,
+      code,
+      reason: reason.toString("utf8"),
+    });
+  });
+  ws.on("error", (err: Error) => {
+    ctx.historyWriter.append("workload.session.error", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      playerId,
+      sessionId: ready.sessionId,
+      message: err.message,
+    });
+  });
   return {
     gameId,
     playerId,

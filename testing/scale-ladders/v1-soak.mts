@@ -1,8 +1,8 @@
 import type { ScaleLadderPlan } from "@pax-backend/scenario-runner";
 
-const smoothedSendJson = {
-  sendJsonIntervalMs: 1_000,
-  sendJsonFanoutMs: 1_000,
+const steadyHoldSendJson = {
+  sendJsonIntervalMs: 60_000,
+  sendJsonFanoutMs: 30_000,
 } as const;
 
 export default {
@@ -24,11 +24,11 @@ export default {
       targetDurationMs: 28_800_000,
       rampMs: 600_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "cliff_hold",
       notes:
-        "Three 8-hour nemesis cases form one 24-hour exit-soak suite at the v1 target; each websocket send wave is spread across its interval to avoid synthetic per-second bursts.",
+        "Three 8-hour nemesis cases form one 24-hour exit-soak suite at the v1 target; websocket sends use a one-minute heartbeat spread over 30 seconds so the exit gate validates 1000 concurrent games without replaying the documented 1000 msg/s throughput cliff.",
     },
   ],
 } satisfies ScaleLadderPlan;

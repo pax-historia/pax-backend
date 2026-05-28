@@ -260,8 +260,8 @@ of 1000 games on 10 shard machines. The scale runner executes a selected
 rung by cloning the scenario workload with rung-specific `maxGames`,
 `open-sessions` ramp/session count, target duration, nemesis set, and
 sampling profile. Rungs can also override the `send-json` interval and fanout
-window to keep long soaks from creating artificial burst cliffs. During live
-runs it scrapes router, control-plane,
+window so a concurrency soak can run at a bounded heartbeat while separate
+throughput probes exercise higher message rates. During live runs it scrapes router, control-plane,
 gateway, parent, and vendored-engine Prometheus endpoints, aggregates
 samples online, applies the `cliff_hold` fast-family allowlist to engine
 metrics, then ranks histogram/counter candidates for the attribution

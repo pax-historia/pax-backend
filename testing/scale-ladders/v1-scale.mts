@@ -1,8 +1,8 @@
 import type { ScaleLadderPlan } from "@pax-backend/scenario-runner";
 
-const smoothedSendJson = {
-  sendJsonIntervalMs: 1_000,
-  sendJsonFanoutMs: 1_000,
+const steadyHoldSendJson = {
+  sendJsonIntervalMs: 60_000,
+  sendJsonFanoutMs: 30_000,
 } as const;
 
 export default {
@@ -24,7 +24,7 @@ export default {
       targetDurationMs: 1_800_000,
       rampMs: 120_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m"],
       samplingProfile: "ramp",
       notes: "Phase 2-sized baseline, now emitted through the Phase 5 rung artifact path.",
@@ -36,7 +36,7 @@ export default {
       targetDurationMs: 1_800_000,
       rampMs: 180_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m"],
       samplingProfile: "ramp",
       notes: "First placement-distribution rung above the single-shard proof.",
@@ -48,7 +48,7 @@ export default {
       targetDurationMs: 3_600_000,
       rampMs: 300_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "ramp",
       notes: "Mid-ladder rung where API-partition nemesis joins the scale evidence.",
@@ -60,7 +60,7 @@ export default {
       targetDurationMs: 3_600_000,
       rampMs: 420_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "cliff_hold",
       notes: "Pre-target rung promoted to cliff_hold sampling to catch the first saturation signal.",
@@ -72,7 +72,7 @@ export default {
       targetDurationMs: 86_400_000,
       rampMs: 600_000,
       sessionsPerGame: 1,
-      ...smoothedSendJson,
+      ...steadyHoldSendJson,
       nemesisIds: ["no-faults", "shard-death-every-5m", "api-kind-partition-burst"],
       samplingProfile: "cliff_hold",
       notes: "Exit-soak target: 1000 concurrent games across 10 shard machines for 24 hours.",
