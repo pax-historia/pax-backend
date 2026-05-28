@@ -104,3 +104,11 @@ Root-cause work found a scenario-runner issue: `waitForReady` left its WebSocket
 Stopped the invalid detached attempt at `2026-05-28T20:19:26Z`; it had no final `exit.code` because it was terminated externally. Also fixed retry isolation: scale-ladder workload game prefixes now include the per-case start timestamp. That prevents a retry from reusing the same 1000 game IDs while old active-game directory keys can still be alive for up to one hour.
 
 Closed the retry metrics coverage gap as well. The collector now accepts `PAX_PARENT_METRICS_URLS` and `PAX_RIVET_METRICS_URLS` as comma-separated `label=url` entries, producing per-shard surfaces such as `parent:shard-fly-iad-1` and `engine:shard-fly-iad-1`. This avoids merging identically named parent/engine series across all 10 shard machines in the retry artifacts.
+
+## 2026-05-28 13:27 PDT
+
+Redeployed `pax-backend-driver` with image `deployment-01KSR425ES7C1TNHD8VQ57FX1D`, which contains the WS retention fix, retry-unique scale game IDs, and per-shard metrics endpoint parsing. Restarted all ten shard machines after stopping the invalid attempt; control-plane `/admin/shards` then reported 10 healthy accepting shards with 0 active games, including `shard-fly-iad-10` back in the registry.
+
+Verified from the driver that all 20 private shard metrics endpoints were reachable: parent `:7700/metrics` and vendored engine `:6430/metrics` for each `shard-fly-iad-1` through `shard-fly-iad-10`. Also verified control/router/gateway metrics on the pinned control machine.
+
+Launch correction: the first retry directory, `/data/phase-5/soak/ivm-20260528T202556Z`, exited immediately with code 127 because `pnpm` is not on the runtime image PATH for `fly machine exec` shells. Relaunched with the explicit `/app/node_modules/.bin/tsx` binary. The active corrected retry is `/data/phase-5/soak/ivm-20260528T202649Z`, PID 796, and started the no-faults case at `2026-05-28T20:27:12.761Z`.
