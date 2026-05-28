@@ -1,11 +1,17 @@
 # Phase 4 — Adversarial correctness
 
-> Status: `to_do` · Directive and exit signal: [README](../README.md)
+> Status: `in_progress` · Directive and exit signal: [README](../README.md)
 
 ## Tasks
 
-Filled in when this phase becomes `in_progress`. Each task is a few sentences and a progress field — see [`phase-0/task-tracker.md`](../phase-0/task-tracker.md) for the format. Anything that grows beyond a couple of sentences of progress lives in [`scratchpad.md`](scratchpad.md) instead. The last row is always the phase-verification task below; new tasks get added above it and the verification row gets renumbered to stay last.
+Each row is a unit of work — big enough to be a task, not an entire major project, and not a single trivial change. Progress is a few sentences max; for anything that grows beyond that, log the detail in [`scratchpad.md`](scratchpad.md) and keep the cell short. The last row is always a phase-verification task — re-read the directive and exit signal, walk the docs the phase touches, and confirm nothing was missed. If something was, add rows above the verification row and rerun.
 
 | # | Task | Progress |
 |---|---|---|
-| — | **Phase verification** — Re-read this phase's directive and exit signal in the [README](../README.md). Walk every [`docs-next/`](../../docs-next/) page and code path the phase touches; confirm every subtask above has been enumerated and that the exit signal is actually met. If anything is missing, add rows above this one and rerun. | `to_do` |
+| 1 | **Adversarial surface audit** — Re-read the Phase 4 directive/exit signal, current scenario/nemesis/CI docs, and the runtime surfaces named in the directive. Convert the phase from a placeholder into a task list that can actually close the CI release-gate exit signal. | `complete` — Phase 4 is now active. Current coverage is three first-party scenarios, two nemeses, no scenario-suite CI gate, and no explicit ivm/noivm matrix. Work is split across runner matrix support, adversarial scenarios, new nemeses, CI wiring, and final verification. |
+| 2 | **Runtime and suite matrix foundation** — Add scenario-runner support and docs for running a full scenario catalog under both `ivm` and `noivm`, with every nemesis profile applied consistently. This is the harness layer the later adversarial scenarios and CI gate depend on. | `to_do` |
+| 3 | **Compromised-bundle and JWT scenarios** — Add adversarial scenarios for hostile bundle behavior and stolen/tampered/expired/misrouted JWTs. The expected result is typed refusal, forced disconnect, or an explicit weakened-guarantee doc plus oracle, never silent acceptance. | `to_do` |
+| 4 | **Compute-budget edge scenarios** — Drive CPU, websocket message, bandwidth, state/blob, and API-invocation budgets to their edges. Assert budget rejections are typed, URL services are not contacted after `apiRateExceeded`, and parent/shard processes stay inside the crash-blast-radius guarantees. | `to_do` |
+| 5 | **Race and partition nemeses** — Add nemesis profiles and scenarios for host-event/sleep races, connect/disconnect churn, API-gateway/control-plane partition behavior, and rolling-deploy or bundle-flip collisions. Any real failure gets fixed or documented as a weakened guarantee with a matching oracle. | `to_do` |
+| 6 | **CI release gate** — Wire the full scenario suite under every nemesis profile across both runtimes into CI, with artifacts that preserve result JSON and history for failed runs. | `to_do` |
+| 7 | **Phase verification** — Re-read this phase's directive and exit signal in the [README](../README.md). Walk every [`docs-next/`](../../docs-next/) page and code path the phase touches; confirm every subtask above has been enumerated and that the exit signal is actually met. If anything is missing, add rows above this one and rerun. | `to_do` |
