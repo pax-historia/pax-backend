@@ -52,3 +52,14 @@ non-interactive tool command were reaped after the command returned, so the
 successful smoke run used persistent tool sessions for engine, control plane,
 API gateway, parent actor, and router. This appears to be tool-session process
 lifetime behavior rather than a substrate runtime issue.
+
+## 2026-05-28 03:55 PDT
+
+Completed the dependency audit pass. `pnpm audit` returned
+`No known vulnerabilities found`.
+
+`cargo audit` was not installed on this Mac, so installed `cargo-audit v0.22.1`
+with `cargo install cargo-audit --locked` and ran it against
+`orchestration/placement-router/Cargo.lock`. The refreshed RustSec database had
+1098 advisories, the lockfile had 197 dependencies, and the audit reported
+zero vulnerabilities.
