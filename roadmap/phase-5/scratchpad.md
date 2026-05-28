@@ -146,3 +146,7 @@ Preflight from the driver verified all 20 per-shard metrics endpoints, parent `:
 The heartbeat `ivm` retry reached the full v1 target and entered hold. The no-faults case completed `open-sessions` at `2026-05-28T22:47:07.373Z` after 1,545,296 ms, then started `send-json`. The history file showed 1000 `placement.accepted` events across all 10 shards with distribution: shard-fly-iad-1=100, shard-fly-iad-2=101, shard-fly-iad-3=100, shard-fly-iad-4=99, shard-fly-iad-5=99, shard-fly-iad-6=100, shard-fly-iad-7=100, shard-fly-iad-8=101, shard-fly-iad-9=98, shard-fly-iad-10=102.
 
 The simultaneous control-plane `/admin/shards` snapshot matched: 10 healthy accepting shards and `total_active_games=1000` with the same 98-102 per-shard distribution. Runner-side history still had zero `workload.phase.failed`, zero `workload.session.closed`, and zero `workload.session.error` events at hold entry.
+
+## 2026-05-28 16:01 PDT
+
+The heartbeat retry cleared the earlier no-faults hold failure window. At about 14.5 minutes after `send-json` started, the detached driver process was still alive, no `exit.code` existed, and the no-faults history still had zero `workload.phase.failed`, zero `workload.session.closed`, and zero `workload.session.error` events. This is the first retry to stay healthy past the prior 1000 msg/s cliff timing; leave the run detached and continue periodic hold checks.
