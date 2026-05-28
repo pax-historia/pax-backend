@@ -310,3 +310,12 @@ registry at 100 active games and found no `handlerError`, timeout, disconnect,
 internal-error, span-drop, or workflow-backlog signatures in Fly logs. The
 runner result's top attribution candidate was
 `parent.compute.memory-bytes.usage_ratio` with max 2.06, but no oracle failed.
+
+## 2026-05-28 07:32 PDT
+
+Starting task 5 with the same paced 100-game workload and the
+`shard-death-every-5m` nemesis. The active nemesis implementation follows the
+Phase 0 documented shape: `kill-shard` calls the control-plane drain endpoint,
+and the runner's replacement-ready hook un-drains the shard after the configured
+delay so the single-Fly-shard topology can continue receiving placements
+between injections.
