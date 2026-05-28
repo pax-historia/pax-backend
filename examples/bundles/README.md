@@ -7,9 +7,9 @@ for the broader rules about the `examples/` zone.
 | Bundle | What it exercises | Status |
 |---|---|---|
 | `hello-ws-echo/` | The WS tunnel, idempotency keys, `sessionId` stability. Echoes every `onPlayerMessage` body back via `c.ws.send`. The vertical smoke loads this. | shipped |
-| `hello-blob-rw/` | `c.blob` durability. Reads on `onWake`, writes every ~30s, logs via `c.log.emit`. | planned (M3) |
-| `hello-state-rw/` | `c.state` durability with explicit `c.state.flush()` before a crash-test point. | planned (M3) |
-| `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player every minute. The URL service sees the `connectedSessions` snapshot. | planned (M2) |
+| `hello-blob-rw/` | `c.blob` durability. Reads on `onWake`, writes compact message history, logs via `c.log.emit`. | source added (untested) |
+| `hello-state-rw/` | `c.state` durability with explicit `c.state.flush()` after each write. | source added (untested) |
+| `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |
 | `hello-multifeature/` | All of the above slowly enough to be readable in a tail of `GET /admin/history`. The integration smoke. | planned (M4) |
 
 ## Per-bundle layout
