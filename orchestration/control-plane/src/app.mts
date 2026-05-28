@@ -412,6 +412,9 @@ async function handleGameResource(
     }
     if (req.method === "DELETE") {
       const deleted = await store.deleteGame(gameId);
+      if (deleted) {
+        appendControlHistory(config, "game.deleted", { gameId });
+      }
       writeJson(res, deleted ? 200 : 404, { ok: deleted });
       return;
     }

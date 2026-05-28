@@ -77,6 +77,7 @@ export class ControlPlaneStore {
     const deletedGame = await this.redis.del(`${GAME_KEY_PREFIX}${gameId}`);
     if (deletedGame === 0) return false;
     await this.redis.del(
+      `${ACTIVE_GAMES_KEY_PREFIX}${gameId}`,
       `${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`,
       storageKey(gameId, "state"),
       storageKey(gameId, "blob"),
