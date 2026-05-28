@@ -228,3 +228,7 @@ Tightened the placement-shard final gate to apply per case instead of across the
 ## 2026-05-28 16:56 PDT
 
 Added one more final-gate guard: if a case has a `.result.json` file but it is not a recognized `scenario-result` artifact, `scripts/fly/summarize-soak.mts` now reports that explicitly. Verification: `git diff --check`, the default in-progress summary still passed, `scripts/fly/verify-v1-soak.sh` still failed the active partial soak for the expected in-progress reasons, and `pnpm typecheck` passed.
+
+## 2026-05-28 16:58 PDT
+
+Eleventh detached monitor snapshot landed at `2026-05-28T23:57:24.049Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory locally again; the summary now has eleven clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true` for the non-final default gates.
