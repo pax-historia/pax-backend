@@ -10,6 +10,7 @@ export {
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
 export { runReplayFromCatalog, runReplayFromHistory } from "./runner.mjs";
+export { discoverNemesisIds, discoverScenarioIds, runScenarioSuite } from "./suite.mjs";
 export type {
   AttributionCandidate,
   ApiKindWorkloadRegistration,
@@ -21,6 +22,7 @@ export type {
   ResolvedWorkloadFixture,
   SamplingProfile,
   ScenarioBackend,
+  ScenarioRuntimeKind,
   ScenarioAttribution,
   ScenarioManifest,
   ScenarioMetrics,
@@ -29,6 +31,9 @@ export type {
   ScenarioRuntimeEnvironment,
   ScenarioRunnerInput,
   ScenarioRunMode,
+  ScenarioSuiteCaseSummary,
+  ScenarioSuiteResult,
+  ScenarioSuiteRunnerInput,
   ScenarioWorkloadPhase,
   ScenarioWorkloadPlan,
   WorkerArtifact,

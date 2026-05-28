@@ -2,6 +2,7 @@ import type { Oracle, OracleResult } from "@pax-backend/oracles-lib";
 
 export type ScenarioRunMode = "load" | "property" | "fuzz" | "replay";
 export type ScenarioBackend = "live" | "mock-shard" | "in-memory";
+export type ScenarioRuntimeKind = "ivm" | "noivm";
 export type DeterminismLevel = "low" | "medium" | "high";
 export type OracleScope = "all" | "scenario" | "explicit";
 export type SamplingProfile = "ramp" | "cliff_hold" | "replay";
@@ -172,6 +173,58 @@ export interface ScenarioRunnerInput {
   readonly oracleNames?: readonly string[];
   readonly scenarioLocalOracles?: readonly Oracle[];
   readonly samplingProfile?: SamplingProfile;
+}
+
+export interface ScenarioSuiteRunnerInput {
+  readonly scenarioCatalogDir?: string;
+  readonly nemesisCatalogDir?: string;
+  readonly scenarioIds?: readonly string[];
+  readonly nemesisIds?: readonly NemesisKind[];
+  readonly runtimeKind: ScenarioRuntimeKind;
+  readonly outputDir: string;
+  readonly mode?: ScenarioRunMode;
+  readonly backend?: ScenarioBackend;
+  readonly workerCount?: number;
+  readonly controlPlaneUrl?: string;
+  readonly apiGatewayUrl?: string;
+  readonly routerUrl?: string;
+  readonly phaseTimeoutMs?: number;
+  readonly oracleScope?: OracleScope;
+  readonly oracleNames?: readonly string[];
+  readonly samplingProfile?: SamplingProfile;
+}
+
+export interface ScenarioSuiteCaseSummary {
+  readonly scenario_id: string;
+  readonly nemesis_id: NemesisKind;
+  readonly runtime_kind: ScenarioRuntimeKind;
+  readonly mode: ScenarioRunMode;
+  readonly backend: ScenarioBackend;
+  readonly status: "pass" | "fail" | "error";
+  readonly history_path: string;
+  readonly result_path?: string;
+  readonly duration_ms: number;
+  readonly failing_oracles: readonly string[];
+  readonly error?: string;
+}
+
+export interface ScenarioSuiteResult {
+  readonly schema_version: 1;
+  readonly kind: "scenario-suite";
+  readonly runtime_kind: ScenarioRuntimeKind;
+  readonly scenario_catalog_dir: string;
+  readonly nemesis_catalog_dir: string;
+  readonly output_dir: string;
+  readonly started_at: string;
+  readonly finished_at: string;
+  readonly duration_ms: number;
+  readonly summary: {
+    readonly total: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly errored: number;
+  };
+  readonly cases: readonly ScenarioSuiteCaseSummary[];
 }
 
 export interface WorkerArtifact {

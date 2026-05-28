@@ -35,6 +35,12 @@ Current source pass provides the first runner shell:
 - can override workload game IDs with `--game-id-prefix`
 - can target non-default live endpoints with `--control-url`, `--router-url`,
   and `--phase-timeout-ms`
+- can run a whole catalog with `--suite <dir>`, producing one history/result
+  pair per scenario × nemesis combination plus a `suite.result.json` summary
+- tags suite runs with `--runtime ivm|noivm`; the local stack still needs to be
+  started with matching `PAX_CHILD_RUNNER_KIND`, which
+  [`scripts/test/scenario-suite-local.sh`](../../scripts/test/scenario-suite-local.sh)
+  does for both runtimes
 - can set `PAX_SCENARIO_EXPECT_HISTORY_MODE=delay` for split deployments
   where control-plane history cannot see shard-local events during live
   workload pacing; final oracle replay still verifies the merged history
@@ -45,3 +51,30 @@ It does not yet execute the later stress-only phase families
 (`invoke-api`, `state-blob-churn`, `sleep-wake`), start the planned runtime
 environment, shrink fuzz failures, or spin driver machines. Those stay as
 later source passes.
+
+## Suite mode
+
+Run one catalog against an already-running local or remote stack:
+
+```bash
+pnpm exec tsx testing/scenario-runner/src/cli.mts \
+  --suite testing/scenarios \
+  --runtime ivm \
+  --nemeses all \
+  --output-dir var/scenario-suite/ivm/testing
+```
+
+`--nemeses all` discovers every `testing/nemeses/*/fault-profile.mts`; use a
+comma-separated list such as `--nemeses no-faults,shard-death-every-5m` to
+pin the matrix. `--scenarios` can likewise narrow the catalog.
+
+For the local runtime matrix:
+
+```bash
+PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios \
+  scripts/test/scenario-suite-local.sh
+```
+
+The script restarts the local stack once with `PAX_CHILD_RUNNER_KIND=ivm` and
+once with `PAX_CHILD_RUNNER_KIND=noivm`, then invokes suite mode for each
+catalog. CI can use the same contract with an explicit runtime matrix.

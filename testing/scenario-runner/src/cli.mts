@@ -3,26 +3,39 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { runReplayFromCatalog } from "./runner.mjs";
+import { runScenarioSuite } from "./suite.mjs";
 import type {
   NemesisKind,
   OracleScope,
   SamplingProfile,
   ScenarioBackend,
   ScenarioResult,
+  ScenarioRuntimeKind,
   ScenarioRunMode,
   ScenarioRunnerInput,
+  ScenarioSuiteResult,
+  ScenarioSuiteRunnerInput,
 } from "./types.mjs";
 
 interface CliOptions extends ScenarioRunnerInput {
   readonly outputPath?: string;
 }
 
+interface SuiteCliOptions extends ScenarioSuiteRunnerInput {
+  readonly outputPath?: string;
+}
+
+type ParsedCliOptions =
+  | { readonly kind: "single"; readonly options: CliOptions }
+  | { readonly kind: "suite"; readonly options: SuiteCliOptions };
+
 const MODES = new Set<ScenarioRunMode>(["load", "property", "fuzz", "replay"]);
 const BACKENDS = new Set<ScenarioBackend>(["live", "mock-shard", "in-memory"]);
 const NEMESES = new Set<NemesisKind>(["no-faults", "shard-death-every-5m"]);
 const SAMPLING_PROFILES = new Set<SamplingProfile>(["ramp", "cliff_hold", "replay"]);
+const RUNTIMES = new Set<ScenarioRuntimeKind>(["ivm", "noivm"]);
 
-export function parseCliArgs(argv: readonly string[]): CliOptions {
+export function parseCliArgs(argv: readonly string[]): ParsedCliOptions {
   const values = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -38,6 +51,10 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     i += 1;
   }
 
+  if (values.has("suite")) {
+    return { kind: "suite", options: parseSuiteOptions(values) };
+  }
+
   const scenarioId = required(values, "scenario");
   const historyPath = required(values, "history");
   const mode = parseMode(values.get("mode") ?? "replay");
@@ -46,20 +63,73 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   const oracles = parseOracles(values.get("oracles"));
 
   return {
-    scenarioId,
-    historyPath,
-    mode,
-    backend,
-    runId: values.get("run-id"),
-    workerCount,
-    nemesisId: parseOptionalNemesis(values.get("nemesis")),
-    scenarioCatalogDir: values.get("scenarios-dir"),
+    kind: "single",
+    options: {
+      scenarioId,
+      historyPath,
+      mode,
+      backend,
+      runId: values.get("run-id"),
+      workerCount,
+      nemesisId: parseOptionalNemesis(values.get("nemesis")),
+      scenarioCatalogDir: values.get("scenarios-dir"),
+      nemesisCatalogDir: values.get("nemeses-dir"),
+      scenarioManifestPath: values.get("scenario-manifest"),
+      nemesisProfilePath: values.get("nemesis-profile"),
+      workloadPath: values.get("workload"),
+      workloadGameIdPrefix: values.get("game-id-prefix"),
+      fixtureBaseDir: values.get("fixture-base-dir"),
+      controlPlaneUrl: values.get("control-url"),
+      apiGatewayUrl: values.get("api-gateway-url"),
+      routerUrl: values.get("router-url"),
+      phaseTimeoutMs: parseOptionalPositiveInt(values.get("phase-timeout-ms")),
+      oracleScope: oracles.scope,
+      oracleNames: oracles.names,
+      samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),
+      outputPath: values.get("output"),
+    },
+  };
+}
+
+export async function runCli(argv: readonly string[]): Promise<number> {
+  try {
+    const parsed = parseCliArgs(argv);
+    const result =
+      parsed.kind === "suite"
+        ? await runScenarioSuite(parsed.options)
+        : await runReplayFromCatalog(parsed.options);
+    const raw = `${JSON.stringify(result, null, 2)}\n`;
+    const outputPath = parsed.options.outputPath;
+    if (outputPath) {
+      writeFileSync(outputPath, raw);
+    } else {
+      process.stdout.write(raw);
+    }
+    return hasBlockingResult(result) ? 2 : 0;
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+}
+
+function parseSuiteOptions(values: ReadonlyMap<string, string>): SuiteCliOptions {
+  const oracles = parseOracles(values.get("oracles"));
+  const runtimeKind = parseRuntime(
+    values.get("runtime") ?? process.env["PAX_CHILD_RUNNER_KIND"] ?? "ivm",
+  );
+  const outputDir =
+    values.get("output-dir") ??
+    `var/scenario-suite/${runtimeKind}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
+  return {
+    scenarioCatalogDir: values.get("suite"),
     nemesisCatalogDir: values.get("nemeses-dir"),
-    scenarioManifestPath: values.get("scenario-manifest"),
-    nemesisProfilePath: values.get("nemesis-profile"),
-    workloadPath: values.get("workload"),
-    workloadGameIdPrefix: values.get("game-id-prefix"),
-    fixtureBaseDir: values.get("fixture-base-dir"),
+    scenarioIds: parseOptionalList(values.get("scenarios")),
+    nemesisIds: parseOptionalNemesisList(values.get("nemeses")),
+    runtimeKind,
+    outputDir,
+    mode: values.has("mode") ? parseMode(required(values, "mode")) : undefined,
+    backend: values.has("backend") ? parseBackend(required(values, "backend")) : undefined,
+    workerCount: parseOptionalPositiveInt(values.get("workers")),
     controlPlaneUrl: values.get("control-url"),
     apiGatewayUrl: values.get("api-gateway-url"),
     routerUrl: values.get("router-url"),
@@ -69,23 +139,6 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),
     outputPath: values.get("output"),
   };
-}
-
-export async function runCli(argv: readonly string[]): Promise<number> {
-  try {
-    const options = parseCliArgs(argv);
-    const result = await runReplayFromCatalog(options);
-    const raw = `${JSON.stringify(result, null, 2)}\n`;
-    if (options.outputPath) {
-      writeFileSync(options.outputPath, raw);
-    } else {
-      process.stdout.write(raw);
-    }
-    return hasBlockingOracle(result) ? 2 : 0;
-  } catch (err) {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-    return 1;
-  }
 }
 
 function required(values: ReadonlyMap<string, string>, key: string): string {
@@ -116,12 +169,42 @@ function parseOptionalNemesis(value: string | undefined): NemesisKind | undefine
   return value as NemesisKind;
 }
 
+function parseOptionalNemesisList(value: string | undefined): readonly NemesisKind[] | undefined {
+  if (value === undefined || value === "all") return undefined;
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      if (!NEMESES.has(entry as NemesisKind)) {
+        throw new Error(`invalid nemesis ${entry}`);
+      }
+      return entry as NemesisKind;
+    });
+}
+
 function parseOptionalSamplingProfile(value: string | undefined): SamplingProfile | undefined {
   if (value === undefined) return undefined;
   if (!SAMPLING_PROFILES.has(value as SamplingProfile)) {
     throw new Error(`invalid --sampling-profile ${value}`);
   }
   return value as SamplingProfile;
+}
+
+function parseRuntime(value: string): ScenarioRuntimeKind {
+  if (!RUNTIMES.has(value as ScenarioRuntimeKind)) {
+    throw new Error(`invalid --runtime ${value}`);
+  }
+  return value as ScenarioRuntimeKind;
+}
+
+function parseOptionalList(value: string | undefined): readonly string[] | undefined {
+  if (value === undefined || value === "all") return undefined;
+  const items = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return items.length > 0 ? items : undefined;
 }
 
 function parseOptionalPositiveInt(value: string | undefined): number | undefined {
@@ -148,7 +231,10 @@ function parseOracles(
   return { scope: "explicit", names };
 }
 
-function hasBlockingOracle(result: ScenarioResult): boolean {
+function hasBlockingResult(result: ScenarioResult | ScenarioSuiteResult): boolean {
+  if (result.kind === "scenario-suite") {
+    return result.summary.failed > 0 || result.summary.errored > 0;
+  }
   return Object.values(result.oracles).some((oracle) => oracle.status !== "pass");
 }
 

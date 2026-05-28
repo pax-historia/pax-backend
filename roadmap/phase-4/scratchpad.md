@@ -15,3 +15,9 @@ Started Phase 4 after closing the historia-default proof. Re-read the directive 
 Current inventory before new work: `testing/scenarios/` has `chat-steady-state`, `compute-stress`, and `shard-death-resilience`; `examples/bundles/historia-default/scenarios/` has the ten proof scenarios from Phase 3; `testing/nemeses/` has `no-faults` and `shard-death-every-5m`; CI has smoke/type/deploy workflows but no full scenario-suite release gate. The runner already supports live workloads, scenario-local oracles, delayed Fly history waits, archived history filtering, and nemesis scheduling for `kill-shard`, but it does not yet expose a full catalog x nemesis x runtime matrix as a single release-gate command.
 
 Task split for this phase: first build the runtime/suite matrix foundation, then add adversarial scenarios for compromised bundles/JWTs, compute-budget edges, race/partition/deploy collisions, wire CI as the gate, and finally verify all docs/code touched by the phase.
+
+## 2026-05-28 10:22 PDT
+
+Finished the runtime/suite matrix foundation. The scenario-runner now has suite mode (`--suite <catalog>`) that discovers scenario manifests and nemesis profiles, runs every scenario × nemesis case, writes isolated history/result files, and emits a `suite.result.json` summary tagged with `--runtime ivm|noivm`. The runner still assumes the live stack already matches the requested runtime; the new `scripts/test/scenario-suite-local.sh` provides that local wrapper by restarting the stack once with `PAX_CHILD_RUNNER_KIND=ivm` and once with `PAX_CHILD_RUNNER_KIND=noivm`.
+
+Verification: `pnpm --filter @pax-backend/scenario-runner check-types` passed, `bash -n scripts/test/scenario-suite-local.sh` passed, and a replay-mode smoke over `chat-steady-state × no-faults` produced the expected `suite.result.json` with exit code `2` because the intentionally empty history fails the oracles. That validates the suite CLI/artifact path without starting a long live workload.

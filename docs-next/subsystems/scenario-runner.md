@@ -24,6 +24,9 @@ Same artifact, two consumers.
   bundle-correctness oracles.
 - Emit `result.json` with pass/fail per oracle, attribution sentences,
   and per-surface metric snapshots.
+- Run a scenario catalog as a suite matrix, emitting one history/result pair
+  per scenario × nemesis combination and a `suite.result.json` summary tagged
+  with the child runtime (`ivm` or `noivm`).
 
 ## Owns
 
@@ -59,6 +62,7 @@ Same artifact, two consumers.
 | Destination | What |
 |---|---|
 | `result.json` | Pass/fail per oracle, attribution sentence, per-surface metrics, scenario metadata, history pointer |
+| `suite.result.json` | Pass/fail summary for a scenario catalog under a runtime/nemesis matrix |
 | Tigris (if shipping) | History archive for replay |
 | Self (Prometheus) | `pax_driver_*` metrics for the run |
 
@@ -249,8 +253,17 @@ high-cardinality scrapes (a sister-spike lesson).
 
 ```yaml
 # .github/workflows/scenario-suite.yml
-- run: pnpm scenario:run --suite testing/scenarios/ --runtime ivm --nemesis no-faults --gate-on-oracles
-- run: pnpm scenario:run --suite testing/scenarios/ --runtime noivm --nemesis no-faults --gate-on-oracles
+strategy:
+  matrix:
+    runtime: [ivm, noivm]
+steps:
+  - run: PAX_CHILD_RUNNER_KIND=${{ matrix.runtime }} ./scripts/dev/local-up.sh
+  - run: |
+      pnpm exec tsx testing/scenario-runner/src/cli.mts \
+        --suite testing/scenarios \
+        --runtime ${{ matrix.runtime }} \
+        --nemeses all \
+        --output-dir var/scenario-suite/${{ matrix.runtime }}/testing
 ```
 
 Any oracle failure exits non-zero. The smoke bot
