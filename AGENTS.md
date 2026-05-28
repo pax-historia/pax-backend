@@ -6,6 +6,8 @@
 
 [`roadmap/README.md`](roadmap/README.md) is the current execution status: one row per phase, three states (`complete`, `in_progress`, `to_do`), one directive and one exit signal each. Look here to find out which phase is active and where to write notes. Per-phase notes live in `roadmap/phase-N/task-tracker.md` (table of tasks with short progress notes per task) and `roadmap/phase-N/scratchpad.md` (timestamped running log of what was done, what worked, what didn't, and design decisions made along the way).
 
+The codebase is just code — don't scatter READMEs or heavy in-code documentation; if some high level decision / insight needs writing down, it belongs in `docs-next/` (the target) or `roadmap/` (progress toward it).
+
 ## Standing constraints
 
 These are not optional and not negotiable inside the active phase.
