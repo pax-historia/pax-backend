@@ -14,9 +14,11 @@ See [`../README.md`](../README.md) for the broader rules about the
 Current source pass provides the first runner shell:
 
 - reads a history JSONL file
-- runs every substrate guarantee oracle from `@pax-backend/oracles-lib`
+- loads scenario manifests and optional nemesis profiles
+- runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
+- can narrow replay checks with `--oracles scenario` or an explicit comma-separated list
 - emits a `result.json`-shaped object with oracle summaries, attribution
-  placeholders, and run metadata
+  placeholders, scenario metadata, nemesis metadata, and run metadata
 
 It does not yet drive clients, compose nemeses, shrink fuzz failures, or spin
 driver machines. Those stay as later source passes.

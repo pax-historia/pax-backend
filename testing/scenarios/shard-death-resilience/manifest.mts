@@ -6,6 +6,7 @@ export default {
   determinism: "medium",
   defaultMode: "property",
   defaultBackend: "live",
+  defaultNemesis: "shard-death-every-5m",
   description:
     "Composes with shard-death-every-5m to assert that blob is the global recovery tier and shard loss does not corrupt session history.",
   oracleNames: [

@@ -49,6 +49,20 @@ export function runAllGuaranteeOracles(
   return guaranteeIndex.map((entry) => entry.oracle(history));
 }
 
+export function runNamedGuaranteeOracles(
+  history: readonly HistoryEvent[],
+  names: readonly string[],
+): readonly OracleResult[] {
+  const byName = new Map(guaranteeIndex.map((entry) => [entry.name, entry]));
+  return names.map((name) => {
+    const entry = byName.get(name);
+    if (!entry) {
+      throw new Error(`unknown guarantee oracle: ${name}`);
+    }
+    return entry.oracle(history);
+  });
+}
+
 export {
   allowedOnlyConnection,
   blobDurability,

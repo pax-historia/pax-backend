@@ -2,8 +2,16 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { runReplayFromHistory } from "./runner.mjs";
-import type { ScenarioBackend, ScenarioRunMode, ScenarioRunnerInput } from "./types.mjs";
+import { runReplayFromCatalog } from "./runner.mjs";
+import type {
+  NemesisKind,
+  OracleScope,
+  SamplingProfile,
+  ScenarioBackend,
+  ScenarioResult,
+  ScenarioRunMode,
+  ScenarioRunnerInput,
+} from "./types.mjs";
 
 interface CliOptions extends ScenarioRunnerInput {
   readonly outputPath?: string;
@@ -11,6 +19,8 @@ interface CliOptions extends ScenarioRunnerInput {
 
 const MODES = new Set<ScenarioRunMode>(["load", "property", "fuzz", "replay"]);
 const BACKENDS = new Set<ScenarioBackend>(["live", "mock-shard", "in-memory"]);
+const NEMESES = new Set<NemesisKind>(["no-faults", "shard-death-every-5m"]);
+const SAMPLING_PROFILES = new Set<SamplingProfile>(["ramp", "cliff_hold", "replay"]);
 
 export function parseCliArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -33,6 +43,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   const mode = parseMode(values.get("mode") ?? "replay");
   const backend = parseBackend(values.get("backend") ?? "live");
   const workerCount = parseOptionalPositiveInt(values.get("workers"));
+  const oracles = parseOracles(values.get("oracles"));
 
   return {
     scenarioId,
@@ -41,14 +52,22 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     backend,
     runId: values.get("run-id"),
     workerCount,
+    nemesisId: parseOptionalNemesis(values.get("nemesis")),
+    scenarioCatalogDir: values.get("scenarios-dir"),
+    nemesisCatalogDir: values.get("nemeses-dir"),
+    scenarioManifestPath: values.get("scenario-manifest"),
+    nemesisProfilePath: values.get("nemesis-profile"),
+    oracleScope: oracles.scope,
+    oracleNames: oracles.names,
+    samplingProfile: parseOptionalSamplingProfile(values.get("sampling-profile")),
     outputPath: values.get("output"),
   };
 }
 
-export function runCli(argv: readonly string[]): number {
+export async function runCli(argv: readonly string[]): Promise<number> {
   try {
     const options = parseCliArgs(argv);
-    const result = runReplayFromHistory(options);
+    const result = await runReplayFromCatalog(options);
     const raw = `${JSON.stringify(result, null, 2)}\n`;
     if (options.outputPath) {
       writeFileSync(options.outputPath, raw);
@@ -82,6 +101,22 @@ function parseBackend(value: string): ScenarioBackend {
   return value as ScenarioBackend;
 }
 
+function parseOptionalNemesis(value: string | undefined): NemesisKind | undefined {
+  if (value === undefined) return undefined;
+  if (!NEMESES.has(value as NemesisKind)) {
+    throw new Error(`invalid --nemesis ${value}`);
+  }
+  return value as NemesisKind;
+}
+
+function parseOptionalSamplingProfile(value: string | undefined): SamplingProfile | undefined {
+  if (value === undefined) return undefined;
+  if (!SAMPLING_PROFILES.has(value as SamplingProfile)) {
+    throw new Error(`invalid --sampling-profile ${value}`);
+  }
+  return value as SamplingProfile;
+}
+
 function parseOptionalPositiveInt(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -91,10 +126,27 @@ function parseOptionalPositiveInt(value: string | undefined): number | undefined
   return parsed;
 }
 
-function hasBlockingOracle(result: ReturnType<typeof runReplayFromHistory>): boolean {
+function parseOracles(
+  value: string | undefined,
+): { readonly scope: OracleScope; readonly names?: readonly string[] } {
+  if (value === undefined || value === "all") return { scope: "all" };
+  if (value === "scenario") return { scope: "scenario" };
+  const names = value
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (names.length === 0) {
+    throw new Error("--oracles must be all, scenario, or a comma-separated oracle list");
+  }
+  return { scope: "explicit", names };
+}
+
+function hasBlockingOracle(result: ScenarioResult): boolean {
   return Object.values(result.oracles).some((oracle) => oracle.status !== "pass");
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  process.exitCode = runCli(process.argv.slice(2));
+  void runCli(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
 }

@@ -6,6 +6,7 @@ export default {
   determinism: "medium",
   defaultMode: "load",
   defaultBackend: "live",
+  defaultNemesis: "no-faults",
   description:
     "Baseline chat-like churn: create allowed players, connect clients, send JSON messages, and assert session, websocket, input, and history guarantees.",
   oracleNames: [

@@ -6,6 +6,7 @@ export default {
   determinism: "medium",
   defaultMode: "fuzz",
   defaultBackend: "live",
+  defaultNemesis: "no-faults",
   description:
     "Compute-plane stress scenario focused on websocket throughput, API rate limiting, state/blob byte caps, and budget observability. It deliberately avoids billing-shaped resources.",
   oracleNames: [

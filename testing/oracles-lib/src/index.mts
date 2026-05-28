@@ -13,4 +13,5 @@ export {
   guaranteeIndex,
   guaranteeOracles,
   runAllGuaranteeOracles,
+  runNamedGuaranteeOracles,
 } from "./guarantees/index.mjs";
