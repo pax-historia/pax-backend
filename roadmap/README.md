@@ -10,7 +10,7 @@ Per-phase notes live in `phase-N/task-tracker.md` (table of tasks with short pro
 |---|---|---|---|
 | 0 — Scaffold completion | `complete` | [phase-0/task-tracker.md](phase-0/task-tracker.md) | [phase-0/scratchpad.md](phase-0/scratchpad.md) |
 | 1 — Local Mac build + smoke | `complete` | [phase-1/task-tracker.md](phase-1/task-tracker.md) | [phase-1/scratchpad.md](phase-1/scratchpad.md) |
-| 2 — Fly medium-scale proof | `in_progress` | [phase-2/task-tracker.md](phase-2/task-tracker.md) | [phase-2/scratchpad.md](phase-2/scratchpad.md) |
+| 2 — Fly medium-scale proof | `complete` | [phase-2/task-tracker.md](phase-2/task-tracker.md) | [phase-2/scratchpad.md](phase-2/scratchpad.md) |
 | 3 — historia-default port | `to_do` | [phase-3/task-tracker.md](phase-3/task-tracker.md) | [phase-3/scratchpad.md](phase-3/scratchpad.md) |
 | 4 — Adversarial correctness | `to_do` | [phase-4/task-tracker.md](phase-4/task-tracker.md) | [phase-4/scratchpad.md](phase-4/scratchpad.md) |
 | 5 — Scale climb to v1 | `to_do` | [phase-5/task-tracker.md](phase-5/task-tracker.md) | [phase-5/scratchpad.md](phase-5/scratchpad.md) |

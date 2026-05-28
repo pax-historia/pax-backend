@@ -378,3 +378,38 @@ Monitoring during and after the run found no workload phase failures, no
 nemesis action failures, no `No space left on device`, no handler errors, no
 API invoke timeouts, no engine-runner disconnects, no core internal errors,
 and the shard volume stayed at 29% used after the proof.
+
+## 2026-05-28 08:41 PDT
+
+Phase verification pass complete. Re-read the Phase 2 directive and exit
+signal: this phase is a topology proof for the three Fly apps with Tigris,
+Upstash, and the observability pipeline live, and exits only when 100 games
+sustain 30 minutes under both no-fault and shard-death-every-5m with all 17
+oracles green plus a continuous placement-to-URL-service trace exemplar.
+
+Walked the `docs-next/` tree and the Phase 2-touched code paths:
+bootstrap/deploy descriptors, Fly health checks, observability Vector/Tigris
+buffering, placement/wake, control-plane drain endpoints, scenario-runner live
+execution, nemesis runtime, ivm child handler invocation, and the 17-oracle
+library. The phase work stayed inside the documented substrate shape: no
+billing primitives, no tenant abstractions, no teardown allowlist
+generalization, and no sibling-repo writes.
+
+Exit evidence on file:
+
+- No-fault run `phase2-no-fault-20260528135419`: 100 games, 1,830,218 ms
+  message phase, all 17 oracles green over 70,491 checked events.
+- Shard-death run `phase2-shard-death-20260528145918`: 100 games,
+  1,830,212 ms message phase, seven drain/replacement cycles, all 17 oracles
+  green over 70,502 checked events.
+- Trace exemplar `964179eb9b4e84753fa40d94dbbc4f80`: placement through URL
+  service and back present in the Tigris-backed observability sink.
+- Current Fly health: control and shard HTTPS health endpoints are OK, control
+  and shard machines are passing checks, driver active machine is passing, and
+  the shard registry reports `activeGames: 0`.
+
+Better Stack direct ingest remains blocked by an invalid source token, so the
+apps stay on the documented `PAX_OBSERVABILITY=buffer` path with Vector
+shipping the proof artifacts to Tigris. The supplied Better Stack token/team
+metadata has been saved in Infisical `dev` for the next credential correction
+pass.
