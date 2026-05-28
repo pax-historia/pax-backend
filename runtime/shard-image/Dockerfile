@@ -47,10 +47,11 @@ RUN apt-get update \
 
 COPY . .
 RUN --mount=type=cache,target=/pnpm/store \
+  pnpm build:vendor-ts
+RUN --mount=type=cache,target=/pnpm/store \
   pnpm install --frozen-lockfile
 RUN --mount=type=cache,target=/pnpm/store \
-  pnpm build:vendor-ts \
-  && pnpm --filter @pax-backend/ipc-protocol build \
+  pnpm --filter @pax-backend/ipc-protocol build \
   && pnpm --filter @pax-backend/runtime-sdk build \
   && pnpm --filter @pax-backend/child-runner-noivm build \
   && pnpm --filter @pax-backend/child-runner-ivm build \
