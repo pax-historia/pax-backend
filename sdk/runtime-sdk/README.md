@@ -9,6 +9,6 @@ mirrors the admin endpoint's upload-time check
 (`compatTagProduced ∈ compatTagsAccepted`).
 
 Current source pass exposes the typed creator surface for lifecycle hooks,
-websocket send with typed quota responses, logs, metrics, URL-service calls,
+websocket send with typed quota/serialization responses, logs, metrics, URL-service calls,
 players, compute budgets, state/blob storage, and deterministic `c.rng()` /
 `c.now()` helpers.

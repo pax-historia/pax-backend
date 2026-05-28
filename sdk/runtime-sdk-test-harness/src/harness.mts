@@ -8,6 +8,7 @@ import type {
   OnWakePayload,
   StorageWriteResponse,
   SubstrateContext,
+  WsSendResponse,
 } from "@pax-backend/runtime-sdk";
 
 import { fingerprintArgs } from "./fingerprint.mjs";
@@ -60,12 +61,15 @@ export function createRuntimeSdkHarness(
     },
     ws: {
       send: async (target, body) => {
+        const targetJson = tryJsonStringify(target, "target");
+        if (!targetJson.ok) return targetJson.response;
+        const bodyJson = tryJsonStringify(body, "body");
+        if (!bodyJson.ok) return bodyJson.response;
         wsMessages.push({ target, body });
-        const raw = JSON.stringify(body);
         return {
           ok: true,
           sent: 1,
-          bytes: typeof raw === "string" ? Buffer.byteLength(raw, "utf8") : 0,
+          bytes: Buffer.byteLength(bodyJson.value, "utf8"),
         };
       },
     },
@@ -177,6 +181,33 @@ export function createRuntimeSdkHarness(
       } finally {
         currentTriggeringSessionId = null;
       }
+    },
+  };
+}
+
+type JsonStringifyResult =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly response: WsSendResponse };
+
+function tryJsonStringify(value: unknown, field: string): JsonStringifyResult {
+  try {
+    const raw = JSON.stringify(value);
+    if (typeof raw !== "string") {
+      return serializationFailed(field, "value must be JSON-serializable");
+    }
+    return { ok: true, value: raw };
+  } catch (err) {
+    return serializationFailed(field, err instanceof Error ? err.message : String(err));
+  }
+}
+
+function serializationFailed(field: string, message: string): JsonStringifyResult {
+  return {
+    ok: false,
+    response: {
+      ok: false,
+      error: "serializationFailed",
+      detail: { field, message },
     },
   };
 }

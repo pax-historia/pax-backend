@@ -226,6 +226,34 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
         };
       }
     };
+    const __pax_encode_json_arg = (field, value) => {
+      try {
+        const valueJson = JSON.stringify(value);
+        if (typeof valueJson !== "string") {
+          return {
+            ok: false,
+            response: {
+              ok: false,
+              error: "serializationFailed",
+              detail: { field, message: "value must be JSON-serializable" },
+            },
+          };
+        }
+        return { ok: true, valueJson };
+      } catch (err) {
+        return {
+          ok: false,
+          response: {
+            ok: false,
+            error: "serializationFailed",
+            detail: {
+              field,
+              message: err && typeof err.message === "string" ? err.message : String(err),
+            },
+          },
+        };
+      }
+    };
     const __pax_console_message_part = (value) => {
       if (typeof value === "string") return value;
       if (value instanceof Error) return value.stack || value.message;
@@ -276,9 +304,13 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       now: () => __pax_c_now.applySync(undefined, []),
       ws: {
         send: (target, body) => {
+          const targetJson = __pax_encode_json_arg("target", target);
+          if (!targetJson.ok) return Promise.resolve(targetJson.response);
+          const bodyJson = __pax_encode_json_arg("body", body);
+          if (!bodyJson.ok) return Promise.resolve(bodyJson.response);
           const responseJson = __pax_c_ws_send.applySyncPromise(undefined, [
-            JSON.stringify(target),
-            JSON.stringify(body),
+            targetJson.valueJson,
+            bodyJson.valueJson,
           ]);
           return Promise.resolve(JSON.parse(responseJson));
         },

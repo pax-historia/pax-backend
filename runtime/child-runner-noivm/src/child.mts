@@ -123,11 +123,16 @@ function makeContext(): SubstrateContext {
       return nextNow;
     },
     ws: {
-      send: async (target, body) =>
-        (await invokeParent(CHILD_TO_PARENT.wsSend, {
-          target: jsonClone(target),
-          body: jsonClone(body),
-        })) as WsSendResponse,
+      send: async (target, body) => {
+        const targetClone = tryJsonClone(target, "target");
+        if (!targetClone.ok) return targetClone.response;
+        const bodyClone = tryJsonClone(body, "body");
+        if (!bodyClone.ok) return bodyClone.response;
+        return (await invokeParent(CHILD_TO_PARENT.wsSend, {
+          target: targetClone.value,
+          body: bodyClone.value,
+        })) as WsSendResponse;
+      },
     },
     log: {
       emit: (payload) => emitOne(CHILD_TO_PARENT.logEmit, jsonClone(payload)),
@@ -477,6 +482,28 @@ function jsonClone<T>(value: T): T {
     throw new Error("value must be JSON-serializable");
   }
   return JSON.parse(raw) as T;
+}
+
+type JsonCloneResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly response: WsSendResponse };
+
+function tryJsonClone<T>(value: T, field: string): JsonCloneResult<T> {
+  try {
+    return { ok: true, value: jsonClone(value) };
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        ok: false,
+        error: "serializationFailed",
+        detail: {
+          field,
+          message: err instanceof Error ? err.message : String(err),
+        },
+      },
+    };
+  }
 }
 
 function hashSeed(input: string): number {
