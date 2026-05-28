@@ -15,8 +15,8 @@
 // What this process does NOT do (deferred):
 //  - Native c.blob (Tigris) and c.state (RocksDB) adapters; this pass uses
 //    Redis-backed storage under the same IPC contract.
-//  - Full compute-plane quota enforcement (we ship the per-handler timeout in
-//    the child runners; the rest is M2+).
+//  - Full CPU/RAM kill enforcement. This pass exposes budget snapshots and
+//    tracks storage/API/WS usage under the same compute-plane contract.
 
 import { type ChildProcess, fork } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
@@ -42,7 +42,9 @@ import {
   type BundleRecord,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
+  type ComputeBudgetName,
   type ComputeBudgetSnapshot,
+  type ComputeBudgetUsage,
   type ConnectedSessionSnapshot,
   DEFAULT_BLOB_BYTES_LIMIT,
   DEFAULT_STATE_BYTES_LIMIT,
@@ -117,6 +119,13 @@ const API_INVOCATIONS_PER_MIN_LIMIT = Number.parseInt(
   process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
   10,
 );
+const CAPACITY_WARNING_RATIO = parseCapacityWarningRatio(
+  process.env["PAX_CAPACITY_WARNING_RATIO"] ?? "0.8",
+);
+const CAPACITY_WARNING_COOLDOWN_MS = parseNonNegativeInteger(
+  process.env["PAX_CAPACITY_WARNING_COOLDOWN_MS"] ?? "10000",
+  10_000,
+);
 const SLEEP_MINIMUM_BUDGET_MS = Number.parseInt(
   process.env["PAX_SLEEP_MINIMUM_BUDGET_MS"] ?? "5000",
   10,
@@ -135,6 +144,16 @@ const CHILD_RUNNER_ENTRY = join(
   "child.mts",
 );
 const TSX_LOADER_ENTRY = join(REPO_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+
+function parseCapacityWarningRatio(raw: string): number {
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 && value <= 1 ? value : 0.8;
+}
+
+function parseNonNegativeInteger(raw: string, fallback: number): number {
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
 
 // runtimeContractsSupported [min, max]. For smoke we ship version 1 and
 // accept only games whose bundle.runtimeContractRequired == 1.
@@ -296,6 +315,7 @@ interface GameInstance {
   readonly sessions: Map<string, SessionRecord>;
   readonly wsUsageSamples: UsageSample[];
   readonly apiInvokeSamples: UsageSample[];
+  readonly capacityWarningSentAt: Map<ComputeBudgetName, number>;
   stateBytes: number;
   blobBytes: number;
   ready: boolean;
@@ -351,6 +371,7 @@ function ensureGame(
     sessions: new Map(),
     wsUsageSamples: [],
     apiInvokeSamples: [],
+    capacityWarningSentAt: new Map(),
     stateBytes: 0,
     blobBytes: 0,
     ready: false,
@@ -663,6 +684,7 @@ function handleComputeBudget(
     gameId: inst.gameId,
     requestId,
   });
+  maybeSendCapacityWarnings(inst, budget);
   if (inst.child) {
     sendTyped(inst.child, "compute.budget.response", { budget }, requestId);
   }
@@ -1049,6 +1071,7 @@ async function writeGameStorage(
   }
   if (tier === "state") inst.stateBytes = bytes;
   else inst.blobBytes = bytes;
+  maybeSendCapacityWarnings(inst);
   return { ok: true };
 }
 
@@ -1059,11 +1082,46 @@ function storageKey(gameId: string, tier: "state" | "blob"): string {
 function recordWsUsage(inst: GameInstance, bytes: number): void {
   inst.wsUsageSamples.push({ at: Date.now(), amount: bytes });
   pruneUsageSamples(inst.wsUsageSamples, 1_000);
+  maybeSendCapacityWarnings(inst);
 }
 
 function recordApiInvokeUsage(inst: GameInstance): void {
   inst.apiInvokeSamples.push({ at: Date.now(), amount: 1 });
   pruneUsageSamples(inst.apiInvokeSamples, 60_000);
+  maybeSendCapacityWarnings(inst);
+}
+
+function maybeSendCapacityWarnings(
+  inst: GameInstance,
+  snapshot = computeBudgetSnapshot(inst),
+): void {
+  if (!inst.child) return;
+  const now = Date.now();
+  for (const [budget, usage] of Object.entries(snapshot) as [
+    ComputeBudgetName,
+    ComputeBudgetUsage,
+  ][]) {
+    if (usage.limit <= 0) continue;
+    const ratio = usage.currentUsage / usage.limit;
+    if (ratio < CAPACITY_WARNING_RATIO) continue;
+    const lastSentAt = inst.capacityWarningSentAt.get(budget) ?? 0;
+    if (now - lastSentAt < CAPACITY_WARNING_COOLDOWN_MS) continue;
+    inst.capacityWarningSentAt.set(budget, now);
+    sendTyped(inst.child, "onCapacityWarning", {
+      budget,
+      currentUsage: usage.currentUsage,
+      limit: usage.limit,
+    });
+    history("onCapacityWarning.sent", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      budget,
+      currentUsage: usage.currentUsage,
+      limit: usage.limit,
+      ratio,
+    });
+  }
 }
 
 function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
