@@ -140,6 +140,10 @@ healthcheck.enabled = true
   max_size = 536870912
   when_full = "block"
 
+  [sinks.history_tigris.batch]
+  max_bytes = 1048576
+  timeout_secs = 10
+
 [sinks.trace_tigris]
 type = "aws_s3"
 inputs = ["otlp.traces"]
@@ -162,3 +166,7 @@ healthcheck.enabled = true
   type = "disk"
   max_size = 536870912
   when_full = "block"
+
+  [sinks.trace_tigris.batch]
+  max_bytes = 1048576
+  timeout_secs = 10
