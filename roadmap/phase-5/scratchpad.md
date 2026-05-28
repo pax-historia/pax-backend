@@ -52,3 +52,9 @@ Proof artifacts:
 - `var/phase-5/fly-placement-proof-10-distribution.json` showed all 10 shards observed in placement distribution: 23, 28, 28, 32, 28, 27, 25, 24, 19, and 22 placements by shard.
 
 The smoke was stopped after placement and message/close phases because the scenario's in-band `expect-history-events` phase waits on control-plane history before the runner's post-workload archive collection can append shard history. That is a scenario-runner ergonomics issue for future full soaks, not a placement-distribution blocker; the placement proof itself is complete.
+
+## 2026-05-28 12:45 PDT
+
+Added the first 10k-game cost projection at `roadmap/phase-5/cost-projection.md`. It uses current public Fly, Tigris, and Better Stack pricing checked today plus measured Task 4 topology: ten `performance-4x` 8GB shard machines in `iad`, ten attached 20GB shard volumes, two started control machines, and one active driver machine.
+
+The projection keeps the proven density of 100 games per shard. At 10k games that means 100 shard machines and 2TB of provisioned Fly volume capacity. The working 10k monthly projection is $13,619.44: $12,802.24 for compute plus provisioned volume, $52 for a Tigris request/storage budget, $15.20 for low-change Fly volume snapshots, and a $750 Better Stack telemetry cap. This is infrastructure spend only; no substrate gameplay accounting primitive was added or implied.
