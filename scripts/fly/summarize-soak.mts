@@ -8,6 +8,7 @@ interface CliOptions {
   readonly expectCases?: number;
   readonly expectTargetGames?: number;
   readonly expectPlacementShards?: number;
+  readonly expectMinCaseDurationMs?: number;
   readonly expectCompletedPhases: readonly string[];
   readonly expectExitCode?: string;
   readonly requireResults: boolean;
@@ -37,6 +38,7 @@ interface CaseSummary {
   readonly error_events: readonly string[];
   readonly first_event_at?: string;
   readonly last_event_at?: string;
+  readonly duration_ms?: number;
   readonly result_status?: "pass" | "fail" | "error";
   readonly failing_oracles: readonly string[];
   readonly attribution_sentence?: string;
@@ -179,6 +181,7 @@ async function summarizeCase(
   }
 
   const result = resultPath ? await readScenarioResult(resultPath) : undefined;
+  const durationMs = durationMsBetween(firstEventAt, lastEventAt);
   return {
     case_id: caseIdFromPath(historyPath, ".history.jsonl"),
     history_path: relative(root, historyPath),
@@ -195,6 +198,7 @@ async function summarizeCase(
     error_events: errorEvents,
     first_event_at: firstEventAt,
     last_event_at: lastEventAt,
+    duration_ms: durationMs,
     result_status: result?.status,
     failing_oracles: result?.failingOracles ?? [],
     attribution_sentence: result?.attributionSentence,
@@ -314,6 +318,15 @@ function gateFailuresFor(
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
     if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
     if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
+    if (options.expectMinCaseDurationMs !== undefined) {
+      if (entry.duration_ms === undefined) {
+        failures.push(`${entry.case_id} missing measurable case duration`);
+      } else if (entry.duration_ms < options.expectMinCaseDurationMs) {
+        failures.push(
+          `${entry.case_id} expected at least ${options.expectMinCaseDurationMs}ms duration, saw ${entry.duration_ms}ms`,
+        );
+      }
+    }
     if (options.expectCompletedPhases.length > 0) {
       const completed = new Set(entry.phases_completed.map(phaseName));
       const missing = options.expectCompletedPhases.filter((phase) => !completed.has(phase));
@@ -389,10 +402,22 @@ function parseArgs(argv: readonly string[]): CliOptions {
     expectCases: positiveIntOption(values, "expect-cases"),
     expectTargetGames: positiveIntOption(values, "expect-target-games"),
     expectPlacementShards: positiveIntOption(values, "expect-placement-shards"),
+    expectMinCaseDurationMs: positiveIntOption(values, "expect-min-case-duration-ms"),
     expectCompletedPhases: stringListOption(values, "expect-completed-phases"),
     expectExitCode: stringOption(values, "expect-exit-code"),
     requireResults: values.get("require-results") === true,
   };
+}
+
+function durationMsBetween(
+  firstTimestamp: string | undefined,
+  lastTimestamp: string | undefined,
+): number | undefined {
+  if (!firstTimestamp || !lastTimestamp) return undefined;
+  const firstMs = Date.parse(firstTimestamp);
+  const lastMs = Date.parse(lastTimestamp);
+  if (!Number.isFinite(firstMs) || !Number.isFinite(lastMs)) return undefined;
+  return lastMs - firstMs;
 }
 
 function stringOption(values: ReadonlyMap<string, string | true>, key: string): string | undefined {

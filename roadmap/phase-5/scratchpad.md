@@ -204,3 +204,9 @@ Added `scripts/fly/verify-v1-soak.sh`, a small wrapper around `scripts/fly/summa
 ## 2026-05-28 16:43 PDT
 
 Eighth detached monitor snapshot landed at `2026-05-28T23:42:23.715Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. The pulled local summary now has eight clean monitor snapshots and still reports `gates_ok=true` for the in-progress default gates.
+
+## 2026-05-28 16:48 PDT
+
+Closed a final verifier gap before the run gets much farther: `scripts/fly/summarize-soak.mts` now records per-case `duration_ms` from the first and last history timestamps, and `scripts/fly/verify-v1-soak.sh` requires each expected v1 soak case to span at least 28,800,000 ms. Verification: `git diff --check`, `bash -n scripts/fly/verify-v1-soak.sh`, the default in-progress summary still passed, the final verifier still failed for the right in-progress reasons plus the new under-duration gate, and `pnpm typecheck` passed.
+
+Ninth detached monitor snapshot landed at `2026-05-28T23:47:23.838Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory locally again; the summary now has nine clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true` for the non-final default gates.
