@@ -151,6 +151,10 @@ struct PlacementResponse {
     game_id: String,
     #[serde(rename = "shardId")]
     shard_id: String,
+    #[serde(rename = "runtimeContractRequired")]
+    runtime_contract_required: u32,
+    #[serde(rename = "runtimeContractsSupported")]
+    runtime_contracts_supported: [u32; 2],
     #[serde(rename = "shardUrl")]
     shard_url: String,
     #[serde(rename = "webSocketUrl")]
@@ -215,10 +219,21 @@ impl IntoResponse for PlacementError {
             PlacementError::ContractOutOfRange { .. } => (StatusCode::CONFLICT, "contractOutOfRange"),
             PlacementError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
+        let detail = match &self {
+            PlacementError::NoEligibleShards { required, seen } => serde_json::json!({
+                "required": required,
+                "seen": seen,
+            }),
+            PlacementError::ContractOutOfRange { required } => serde_json::json!({
+                "required": required,
+            }),
+            _ => serde_json::json!({}),
+        };
         let body = serde_json::json!({
             "ok": false,
             "error": code,
             "message": self.to_string(),
+            "detail": detail,
         });
         (status, Json(body)).into_response()
     }
@@ -363,6 +378,8 @@ async fn placement(
     Ok(Json(PlacementResponse {
         game_id,
         shard_id: picked.shard_id.clone(),
+        runtime_contract_required: required,
+        runtime_contracts_supported: picked.runtime_contracts_supported,
         shard_url: picked.url.clone(),
         web_socket_url: ws_url,
         placement_token: token,

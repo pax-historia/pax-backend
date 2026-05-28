@@ -6,8 +6,11 @@ game's `bundle.runtimeContractRequired`, signs a short-lived JWT, returns it
 to the client. Client then opens WS direct to the shard (router is **not** in
 the WS path).
 
-Step 3 of the plan's kickoff: port verbatim from
-[pax-sharded-spike/orchestration/router-placement/](../../../pax-sharded-spike/orchestration/router-placement/),
-then add the contract-version placement gate (Strong Platform Guarantee #16).
+Current source passes include the smoke-grade Redis router, the
+`runtimeContractRequired ∈ runtimeContractsSupported` gate, and placement
+responses/error details that expose the required contract and selected shard
+range so the scenario-runner can record `placement.accepted` /
+`placement.rejected` history.
 
-Stub.
+Still pending: production stickiness, atomic wake claims, recent-wake
+accounting, metrics, and direct actor-create calls.
