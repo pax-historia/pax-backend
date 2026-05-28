@@ -28,6 +28,7 @@ export interface ApiGatewayServerConfig {
   readonly baseUrl: string;
   readonly recordsPath: string;
   readonly defaultMode: "live" | "replay";
+  readonly providerTimeoutMs: number;
   readonly referenceServices: ReferenceServiceConfig;
 }
 
@@ -50,6 +51,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ApiGatewayServerConfig {
     baseUrl,
     recordsPath,
     defaultMode: mode,
+    providerTimeoutMs: parsePositiveInteger(env["PAX_API_PROVIDER_TIMEOUT_MS"] ?? "30000", 30_000),
     referenceServices: referenceServiceConfigFromEnv(env),
   };
 }
@@ -64,6 +66,7 @@ export function createApiGatewayServer(
     budget: budgetFromEnv(process.env),
     records: new JsonlWireRecordStore(config.recordsPath),
     defaultMode: config.defaultMode,
+    providerTimeoutMs: config.providerTimeoutMs,
   });
 
   const server = createServer((req, res) => {
@@ -294,6 +297,11 @@ function parseBind(raw: string): { host: string; port: number } {
     throw new Error(`invalid PAX_API_GATEWAY_BIND port: ${raw}`);
   }
   return { host, port };
+}
+
+function parsePositiveInteger(raw: string, fallback: number): number {
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 class HttpError extends Error {

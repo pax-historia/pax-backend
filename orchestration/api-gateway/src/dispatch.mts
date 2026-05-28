@@ -16,6 +16,7 @@ export interface ApiGatewayOptions {
   readonly budget: ApiInvocationBudget;
   readonly records: WireRecordStore;
   readonly defaultMode: "live" | "replay";
+  readonly providerTimeoutMs?: number;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -25,6 +26,7 @@ export class ApiGateway {
   readonly #records: WireRecordStore;
   readonly #defaultMode: "live" | "replay";
   readonly #fetch: typeof fetch;
+  readonly #providerTimeoutMs: number;
 
   constructor(options: ApiGatewayOptions) {
     this.#registry = options.registry;
@@ -32,6 +34,7 @@ export class ApiGateway {
     this.#records = options.records;
     this.#defaultMode = options.defaultMode;
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#providerTimeoutMs = options.providerTimeoutMs ?? 30_000;
   }
 
   async invoke(input: ApiGatewayDispatchInput): Promise<ApiInvokeResponse> {
@@ -71,11 +74,15 @@ export class ApiGateway {
       return apiInvokeResponseFromHttp(recorded.statusCode, recorded.rawInbound);
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.#providerTimeoutMs);
+    timeout.unref();
     try {
       const res = await this.#fetch(url, {
         method: "POST",
         headers: envelope.headers,
         body: envelope.rawOutbound,
+        signal: controller.signal,
       });
       const rawInbound = await res.text();
       const response = apiInvokeResponseFromHttp(res.status, rawInbound);
@@ -96,8 +103,11 @@ export class ApiGateway {
       return response;
     } catch (err) {
       return this.#recordAndReturn(input, envelope, mode, 0, "providerError", {
+        timeoutMs: this.#providerTimeoutMs,
         message: err instanceof Error ? err.message : String(err),
       });
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
