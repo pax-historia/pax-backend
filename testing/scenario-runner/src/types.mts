@@ -91,6 +91,7 @@ export type ScenarioWorkloadPhase =
       readonly channel: "websocket";
       readonly messagesPerSession: number;
       readonly intervalMs: number;
+      readonly fanoutMs?: number;
       readonly body: Readonly<Record<string, unknown>>;
     }
   | {

@@ -201,6 +201,9 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requireOneOf(value["channel"], path, `${prefix}.channel`, ["websocket"]);
       requirePositiveNumber(value["messagesPerSession"], path, `${prefix}.messagesPerSession`);
       requireNonNegativeNumber(value["intervalMs"], path, `${prefix}.intervalMs`);
+      if (value["fanoutMs"] !== undefined) {
+        requireNonNegativeNumber(value["fanoutMs"], path, `${prefix}.fanoutMs`);
+      }
       if (!isRecord(value["body"])) {
         throw new Error(`${path} field ${prefix}.body must be an object`);
       }

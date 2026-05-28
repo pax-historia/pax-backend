@@ -272,3 +272,22 @@ waits `PAX_NEMESIS_REPLACEMENT_READY_MS` (default 60s), calls
 issues both drain and un-drain calls and writes the nemesis history events.
 The runner also clears any pending replacement-ready timer during scenario
 shutdown so a late nemesis tick does not leave the shard stuck in `draining`.
+
+## 2026-05-28 06:51 PDT
+
+The clean no-fault attempt `phase2-no-fault-20260528133647` reached 100 games
+on the patched shard and completed the host-event and bundle-flip probes
+without the previous missing-handler errors. It failed during the 30-minute
+message phase at `2026-05-28T13:47:54.019Z` after one session closed.
+
+Shard logs showed the pressure point: the workload was sending 100 messages in
+a burst every 10 seconds, and each `hello-multifeature` player message performs
+state read/write/flush, blob get/put, and a `mock-ai.v1` API invoke. Under that
+burst, API invokes timed out after 30 seconds, `onPlayerMessage` handlers ran
+for roughly 78 seconds, and the engine runner disconnected with
+`core.internal_error#h8l6m9qz3dontp9sx3sawmqps2dl00`.
+
+Updated the runner to support per-wave message fanout and changed the Phase 2
+no-fault workload to spread each send-json wave across 30 seconds, with 31
+one-minute waves. This keeps the proof at a 30-minute sustained window while
+removing the artificial per-wave burst that was saturating the shard.

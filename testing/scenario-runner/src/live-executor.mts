@@ -169,7 +169,13 @@ async function executePhase(
       await openSessions(ctx, phase.sessionsPerGame, phase.rampMs);
       return;
     case "send-json":
-      await sendJson(ctx, phase.messagesPerSession, phase.intervalMs, phase.body);
+      await sendJson(
+        ctx,
+        phase.messagesPerSession,
+        phase.intervalMs,
+        phase.fanoutMs ?? 0,
+        phase.body,
+      );
       return;
     case "send-host-events":
       await sendHostEvents(
@@ -428,20 +434,27 @@ async function sendJson(
   ctx: LiveExecutorContext,
   messagesPerSession: number,
   intervalMs: number,
+  fanoutMs: number,
   body: Readonly<Record<string, unknown>>,
 ): Promise<void> {
   if (ctx.sessions.length === 0) {
     throw new Error("send-json requires at least one open session");
   }
+  const perSessionDelayMs =
+    fanoutMs > 0 && ctx.sessions.length > 1 ? fanoutMs / (ctx.sessions.length - 1) : 0;
   for (let messageIndex = 0; messageIndex < messagesPerSession; messageIndex += 1) {
-    for (const session of ctx.sessions) {
+    const waveStartedAt = performance.now();
+    for (const [sessionIndex, session] of ctx.sessions.entries()) {
       if (session.ws.readyState !== WebSocket.OPEN) {
         throw new Error(`session ${session.sessionId} is not open`);
       }
       session.ws.send(JSON.stringify(body));
+      if (perSessionDelayMs > 0 && sessionIndex + 1 < ctx.sessions.length) {
+        await sleep(perSessionDelayMs);
+      }
     }
     if (messageIndex + 1 < messagesPerSession && intervalMs > 0) {
-      await sleep(intervalMs);
+      await sleep(Math.max(0, intervalMs - (performance.now() - waveStartedAt)));
     }
   }
 }

@@ -37,8 +37,9 @@ export default {
     {
       type: "send-json",
       channel: "websocket",
-      messagesPerSession: 181,
-      intervalMs: 10_000,
+      messagesPerSession: 31,
+      intervalMs: 60_000,
+      fanoutMs: 30_000,
       body: { type: "phase2-no-fault", payloadBytes: 256 },
     },
     {
