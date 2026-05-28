@@ -86,3 +86,7 @@ pnpm exec tsx testing/scenario-runner/src/cli.mts \
 ```
 
 The process PID is recorded at `/data/phase-5/soak/ivm-20260528T193858Z/run.pid`; stdout/stderr goes to `run.log`; final exit code goes to `exit.code`.
+
+## 2026-05-28 13:02 PDT
+
+Added `scripts/fly/summarize-soak.mts` for the eventual soak completion audit. It reads a pulled soak artifact directory, summarizes each `*.history.jsonl` and matching `*.result.json`, counts placements and shard distribution, lists completed workload phases, records failing oracles and attribution sentences, and can enforce expected case/game/shard gates. Verified it against the Task 4 placement-smoke artifacts: 256 placements across all 10 shards, no JSONL parse errors.
