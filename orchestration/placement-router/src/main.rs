@@ -26,13 +26,13 @@
 //   - No active-game directory stickiness (smoke is a single game).
 //   - No atomic SET NX + Lua claim (no contention).
 //   - No recent-wakes accounting.
-//   - No metrics endpoint (defer).
 //   - No PUT /actors call (we use Rivet's getOrCreate URL pattern so no
 //     pre-creation step is needed).
 
 use std::collections::BTreeMap;
 use std::env;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -251,6 +251,15 @@ impl IntoResponse for PlacementError {
 struct AppState {
     redis: redis::Client,
     cfg: Arc<Config>,
+    metrics: Arc<RouterMetrics>,
+}
+
+#[derive(Default)]
+struct RouterMetrics {
+    placement_requests_total: AtomicU64,
+    placement_accepted_total: AtomicU64,
+    placement_rejected_total: AtomicU64,
+    placement_contract_rejected_total: AtomicU64,
 }
 
 async fn health() -> impl IntoResponse {
@@ -261,6 +270,34 @@ async fn health() -> impl IntoResponse {
     }))
 }
 
+async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let body = format!(
+        concat!(
+            "# HELP pax_placement_requests_total Total placement requests received.\n",
+            "# TYPE pax_placement_requests_total counter\n",
+            "pax_placement_requests_total {}\n",
+            "# HELP pax_placement_accepted_total Total successful placements.\n",
+            "# TYPE pax_placement_accepted_total counter\n",
+            "pax_placement_accepted_total {}\n",
+            "# HELP pax_placement_rejected_total Total placement requests rejected by router gates.\n",
+            "# TYPE pax_placement_rejected_total counter\n",
+            "pax_placement_rejected_total {}\n",
+            "# HELP pax_placement_contract_rejected_total Placements rejected by runtime contract gate.\n",
+            "# TYPE pax_placement_contract_rejected_total counter\n",
+            "pax_placement_contract_rejected_total {}\n",
+            "# HELP pax_placement_router_build_info Placement router build metadata.\n",
+            "# TYPE pax_placement_router_build_info gauge\n",
+            "pax_placement_router_build_info{{version=\"{}\"}} 1\n",
+        ),
+        state.metrics.placement_requests_total.load(Ordering::Relaxed),
+        state.metrics.placement_accepted_total.load(Ordering::Relaxed),
+        state.metrics.placement_rejected_total.load(Ordering::Relaxed),
+        state.metrics.placement_contract_rejected_total.load(Ordering::Relaxed),
+        VERSION,
+    );
+    ([("content-type", "text/plain; version=0.0.4; charset=utf-8")], body)
+}
+
 async fn placement(
     State(state): State<AppState>,
     Path(game_id): Path<String>,
@@ -269,6 +306,7 @@ async fn placement(
 ) -> Result<Json<PlacementResponse>, PlacementError> {
     let mut timings = BTreeMap::new();
     let t0 = std::time::Instant::now();
+    state.metrics.placement_requests_total.fetch_add(1, Ordering::Relaxed);
 
     let mut conn = state
         .redis
@@ -320,8 +358,11 @@ async fn placement(
             .iter()
             .any(|s| s.runtime_contracts_supported[0] <= required && required <= s.runtime_contracts_supported[1]);
         if !any_supports && !shards.is_empty() {
+            state.metrics.placement_rejected_total.fetch_add(1, Ordering::Relaxed);
+            state.metrics.placement_contract_rejected_total.fetch_add(1, Ordering::Relaxed);
             return Err(PlacementError::ContractOutOfRange { required });
         }
+        state.metrics.placement_rejected_total.fetch_add(1, Ordering::Relaxed);
         return Err(PlacementError::NoEligibleShards {
             required,
             seen: shards.len(),
@@ -382,6 +423,7 @@ async fn placement(
     let ws_url = build_ws_url(picked, &game_id, &token, &admin_token, &user_id);
 
     timings.insert("totalMs".to_string(), t0.elapsed().as_millis());
+    state.metrics.placement_accepted_total.fetch_add(1, Ordering::Relaxed);
 
     Ok(Json(PlacementResponse {
         game_id,
@@ -527,9 +569,14 @@ async fn main() -> Result<()> {
     let pong: String = redis::cmd("PING").query_async(&mut probe).await.context("redis ping")?;
     info!(pong = %pong, "redis ok");
 
-    let state = AppState { redis, cfg: cfg.clone() };
+    let state = AppState {
+        redis,
+        cfg: cfg.clone(),
+        metrics: Arc::new(RouterMetrics::default()),
+    };
     let app = Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(metrics))
         .route("/games/:game_id/placement", get(placement))
         .with_state(state);
 

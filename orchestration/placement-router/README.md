@@ -10,7 +10,9 @@ Current source passes include the smoke-grade Redis router, the
 `runtimeContractRequired ∈ runtimeContractsSupported` gate, and placement
 responses/error details that expose the required contract and selected shard
 range so the scenario-runner can record `placement.accepted` /
-`placement.rejected` history.
+`placement.rejected` history. `/metrics` exposes Prometheus text counters for
+placement requests, accepted placements, router-gate rejections, and runtime
+contract gate rejections, plus build info.
 
 Still pending: production stickiness, atomic wake claims, recent-wake
-accounting, metrics, and direct actor-create calls.
+accounting, and direct actor-create calls.
