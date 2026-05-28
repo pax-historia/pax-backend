@@ -310,6 +310,9 @@ function gateFailuresFor(
   }
   for (const entry of cases) {
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
+    if (entry.result_path && entry.result_status === undefined) {
+      failures.push(`${entry.case_id} has an unrecognized result file`);
+    }
     if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
     if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
     if (

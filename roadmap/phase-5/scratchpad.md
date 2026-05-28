@@ -224,3 +224,7 @@ The run and monitor logs stayed quiet. A `/proc` child walk from the driver show
 ## 2026-05-28 16:54 PDT
 
 Tightened the placement-shard final gate to apply per case instead of across the union of all case histories. That ensures each nemesis case must independently show placements across all 10 shard machines. Verification: `git diff --check`, the default in-progress summary still passed with the no-faults case observing 10 shards, `scripts/fly/verify-v1-soak.sh` still failed the active partial soak for the expected in-progress reasons, and `pnpm typecheck` passed.
+
+## 2026-05-28 16:56 PDT
+
+Added one more final-gate guard: if a case has a `.result.json` file but it is not a recognized `scenario-result` artifact, `scripts/fly/summarize-soak.mts` now reports that explicitly. Verification: `git diff --check`, the default in-progress summary still passed, `scripts/fly/verify-v1-soak.sh` still failed the active partial soak for the expected in-progress reasons, and `pnpm typecheck` passed.
