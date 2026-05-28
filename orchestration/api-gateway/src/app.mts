@@ -401,12 +401,23 @@ function readOptionalEnv(env: NodeJS.ProcessEnv, key: string): string | undefine
 }
 
 function parseBind(raw: string): { host: string; port: number } {
+  if (raw.startsWith("[")) {
+    const closeBracket = raw.indexOf("]");
+    if (closeBracket <= 1 || raw[closeBracket + 1] !== ":") {
+      throw new Error(`invalid PAX_API_GATEWAY_BIND: ${raw}`);
+    }
+    return parseBindParts(raw.slice(1, closeBracket), raw.slice(closeBracket + 2), raw);
+  }
+
   const lastColon = raw.lastIndexOf(":");
   if (lastColon <= 0 || lastColon === raw.length - 1) {
     throw new Error(`invalid PAX_API_GATEWAY_BIND: ${raw}`);
   }
-  const host = raw.slice(0, lastColon);
-  const port = Number.parseInt(raw.slice(lastColon + 1), 10);
+  return parseBindParts(raw.slice(0, lastColon), raw.slice(lastColon + 1), raw);
+}
+
+function parseBindParts(host: string, rawPort: string, raw: string): { host: string; port: number } {
+  const port = Number.parseInt(rawPort, 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`invalid PAX_API_GATEWAY_BIND port: ${raw}`);
   }

@@ -173,3 +173,12 @@ to `http://pax-backend-control.internal:9081/invoke` over Fly private
 networking. Also changed the API gateway's own base URL back to
 `http://127.0.0.1:9081`, because the fallback reference URL-service registry is
 in-process and should not point at the public router.
+
+The first driver-side trace probe could not connect from `pax-backend-driver`
+to `pax-backend-control.internal` on 9070, 9080, or 9081 even though those
+services were healthy on control-local `127.0.0.1`. Fly `.internal` DNS targets
+the app's private IPv6 machine addresses, so the control image's IPv4
+`0.0.0.0` binds were not sufficient for app-to-app private networking.
+Changed the control image/Fly config to bind router, control-plane, and gateway
+on `[::]`, and taught the Node control-plane and API gateway bind parsers to
+accept bracketed IPv6 socket addresses.
