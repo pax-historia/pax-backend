@@ -11,7 +11,7 @@ import type {
 
 import { budgetFromEnv } from "./budgets.mjs";
 import { ApiGateway } from "./dispatch.mjs";
-import { loadRegistryFromEnv, type ApiKindRegistry } from "./registry.mjs";
+import { loadRedisRegistryFromEnv, type ApiKindRegistry } from "./registry.mjs";
 import { JsonlWireRecordStore } from "./record-replay.mjs";
 import {
   handleReferenceService,
@@ -58,7 +58,7 @@ export function createApiGatewayServer(
   config: ApiGatewayServerConfig,
 ): ApiGatewayServer {
   mkdirSync(dirname(config.recordsPath), { recursive: true });
-  const registry = loadRegistryFromEnv(process.env, config.baseUrl);
+  const registry = loadRedisRegistryFromEnv(process.env, config.baseUrl);
   const gateway = new ApiGateway({
     registry,
     budget: budgetFromEnv(process.env),
@@ -102,14 +102,14 @@ async function handleRequest(
     }
 
     if (req.method === "GET" && url.pathname === "/admin/api-kinds") {
-      writeJson(res, 200, { ok: true, kinds: registry.list() });
+      writeJson(res, 200, { ok: true, kinds: await registry.list() });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/admin/api-kinds") {
       const body = asApiKindRegistration(await readJson(req));
       try {
-        registry.set(body);
+        await registry.set(body);
       } catch (err) {
         throw new HttpError(400, "badRequest", {
           message: err instanceof Error ? err.message : String(err),
@@ -121,7 +121,7 @@ async function handleRequest(
 
     if (req.method === "DELETE" && url.pathname.startsWith("/admin/api-kinds/")) {
       const kindName = decodeURIComponent(url.pathname.slice("/admin/api-kinds/".length));
-      const deleted = registry.delete(kindName);
+      const deleted = await registry.delete(kindName);
       writeJson(res, deleted ? 200 : 404, { ok: deleted });
       return;
     }

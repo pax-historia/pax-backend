@@ -47,7 +47,7 @@ export class ApiGateway {
       });
     }
 
-    const url = this.#registry.get(input.kind);
+    const url = await this.#registry.get(input.kind);
     if (!url) {
       return this.#recordAndReturn(input, envelope, mode, 0, "kindUnknown", {
         kind: input.kind,

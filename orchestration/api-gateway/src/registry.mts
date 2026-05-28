@@ -1,14 +1,19 @@
 import { readFileSync } from "node:fs";
 
-import type { ApiKindRegistration } from "@pax-backend/ipc-protocol";
+import { Redis } from "ioredis";
+
+import {
+  API_KIND_KEY_PREFIX,
+  type ApiKindRegistration,
+} from "@pax-backend/ipc-protocol";
 
 export type { ApiKindRegistration } from "@pax-backend/ipc-protocol";
 
 export interface ApiKindRegistry {
-  get(kindName: string): string | undefined;
-  list(): readonly ApiKindRegistration[];
-  set(registration: ApiKindRegistration): void;
-  delete(kindName: string): boolean;
+  get(kindName: string): Promise<string | undefined>;
+  list(): Promise<readonly ApiKindRegistration[]>;
+  set(registration: ApiKindRegistration): Promise<void>;
+  delete(kindName: string): Promise<boolean>;
 }
 
 export class InMemoryApiKindRegistry implements ApiKindRegistry {
@@ -16,27 +21,72 @@ export class InMemoryApiKindRegistry implements ApiKindRegistry {
 
   constructor(registrations: readonly ApiKindRegistration[] = []) {
     for (const registration of registrations) {
-      this.set(registration);
+      assertApiKindRegistration(registration);
+      this.#registrations.set(registration.kindName, registration.url);
     }
   }
 
-  get(kindName: string): string | undefined {
+  async get(kindName: string): Promise<string | undefined> {
     return this.#registrations.get(kindName);
   }
 
-  list(): readonly ApiKindRegistration[] {
+  async list(): Promise<readonly ApiKindRegistration[]> {
     return Array.from(this.#registrations.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([kindName, url]) => ({ kindName, url }));
   }
 
-  set(registration: ApiKindRegistration): void {
+  async set(registration: ApiKindRegistration): Promise<void> {
     assertApiKindRegistration(registration);
     this.#registrations.set(registration.kindName, registration.url);
   }
 
-  delete(kindName: string): boolean {
+  async delete(kindName: string): Promise<boolean> {
     return this.#registrations.delete(kindName);
+  }
+}
+
+export class RedisApiKindRegistry implements ApiKindRegistry {
+  readonly #redis: Redis;
+  readonly #fallback: InMemoryApiKindRegistry;
+
+  constructor(redis: Redis, fallback: InMemoryApiKindRegistry) {
+    this.#redis = redis;
+    this.#fallback = fallback;
+  }
+
+  async get(kindName: string): Promise<string | undefined> {
+    const raw = await this.#redis.get(`${API_KIND_KEY_PREFIX}${kindName}`);
+    if (raw) return (JSON.parse(raw) as ApiKindRegistration).url;
+    return this.#fallback.get(kindName);
+  }
+
+  async list(): Promise<readonly ApiKindRegistration[]> {
+    const fallback = await this.#fallback.list();
+    const operator = await this.#listOperatorRegistrations();
+    const merged = new Map<string, ApiKindRegistration>();
+    for (const registration of fallback) merged.set(registration.kindName, registration);
+    for (const registration of operator) merged.set(registration.kindName, registration);
+    return Array.from(merged.values()).sort((a, b) => a.kindName.localeCompare(b.kindName));
+  }
+
+  async set(registration: ApiKindRegistration): Promise<void> {
+    assertApiKindRegistration(registration);
+    await this.#redis.set(
+      `${API_KIND_KEY_PREFIX}${registration.kindName}`,
+      JSON.stringify({ ...registration, registeredAt: registration.registeredAt ?? Date.now() }),
+    );
+  }
+
+  async delete(kindName: string): Promise<boolean> {
+    return (await this.#redis.del(`${API_KIND_KEY_PREFIX}${kindName}`)) > 0;
+  }
+
+  async #listOperatorRegistrations(): Promise<readonly ApiKindRegistration[]> {
+    const keys = await scanKeys(this.#redis, `${API_KIND_KEY_PREFIX}*`);
+    if (keys.length === 0) return [];
+    const raws = await this.#redis.mget(...keys);
+    return raws.flatMap((raw) => (raw ? [JSON.parse(raw) as ApiKindRegistration] : []));
   }
 }
 
@@ -59,6 +109,19 @@ export function loadRegistryFromEnv(
     ...loadOperatorRegistrations(env),
   ];
   return new InMemoryApiKindRegistry(registrations);
+}
+
+export function loadRedisRegistryFromEnv(
+  env: NodeJS.ProcessEnv,
+  fallbackBaseUrl: string,
+): RedisApiKindRegistry {
+  return new RedisApiKindRegistry(
+    new Redis(env["REDIS_URL"] ?? "redis://127.0.0.1:6379", {
+      lazyConnect: false,
+      maxRetriesPerRequest: null,
+    }),
+    loadRegistryFromEnv(env, fallbackBaseUrl),
+  );
 }
 
 function loadOperatorRegistrations(env: NodeJS.ProcessEnv): readonly ApiKindRegistration[] {
@@ -119,4 +182,15 @@ function assertApiKindRegistration(registration: ApiKindRegistration): void {
 
 function isApiKindName(kindName: string): boolean {
   return /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v[0-9]+$/.test(kindName);
+}
+
+async function scanKeys(redis: Redis, pattern: string): Promise<string[]> {
+  let cursor = "0";
+  const keys: string[] = [];
+  do {
+    const [next, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
+    cursor = next;
+    keys.push(...batch);
+  } while (cursor !== "0");
+  return keys;
 }
