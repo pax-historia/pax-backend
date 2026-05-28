@@ -48,6 +48,14 @@ parse_volume_id() {
   jq -r 'if type == "array" then .[0].id else (.id // .ID) end'
 }
 
+unattached_volume_id() {
+  fly volumes list -a "$APP" --json | jq -r --arg name "$VOLUME_NAME" --argjson size "$1" '
+    [.[] | select(.name == $name and (.attached_machine_id == null or .attached_machine_id == "") and .size_gb == $size)]
+    | sort_by(.created_at // "")
+    | first.id // ""
+  '
+}
+
 machine_count() {
   jq 'length'
 }
@@ -84,6 +92,9 @@ normalize_machine_env() {
     args+=(--skip-start)
   fi
   fly "${args[@]}" >/dev/null
+  if [[ "$skip_start" != "yes" ]]; then
+    fly machine wait "$machine_id" -a "$APP" --state started --wait-timeout 5m >/dev/null
+  fi
   ok "$machine_id env -> $shard_id ($internal_url)"
 }
 
@@ -114,7 +125,10 @@ if (( current_count > TARGET )); then
 fi
 
 say "Normalize existing machine identity"
-mapfile -t existing_ids < <(printf "%s\n" "$machines" | jq -r 'sort_by(.created_at)[] | .id')
+existing_ids=()
+while IFS= read -r machine_id; do
+  existing_ids+=("$machine_id")
+done < <(printf "%s\n" "$machines" | jq -r 'sort_by(.created_at)[] | .id')
 slot=1
 for machine_id in "${existing_ids[@]}"; do
   normalize_machine_env "$machine_id" "$slot"
@@ -135,17 +149,22 @@ while (( current_count < TARGET )); do
   next_slot=$((current_count + 1))
   name="pax-shard-${REGION}-${next_slot}"
 
-  say "Create volume for $name"
-  volume_json="$(fly volumes create "$VOLUME_NAME" -a "$APP" -r "$REGION" -s "$volume_size_gb" --yes --json)"
-  volume_id="$(parse_volume_id <<<"$volume_json")"
-  [[ -n "$volume_id" && "$volume_id" != "null" ]] || err "could not parse created volume id"
-  ok "created volume $volume_id (${volume_size_gb}GB)"
+  say "Prepare volume for $name"
+  volume_id="$(unattached_volume_id "$volume_size_gb")"
+  if [[ -n "$volume_id" && "$volume_id" != "null" ]]; then
+    ok "reusing unattached volume $volume_id (${volume_size_gb}GB)"
+  else
+    volume_json="$(fly volumes create "$VOLUME_NAME" -a "$APP" -r "$REGION" -s "$volume_size_gb" --yes --json)"
+    volume_id="$(parse_volume_id <<<"$volume_json")"
+    [[ -n "$volume_id" && "$volume_id" != "null" ]] || err "could not parse created volume id"
+    ok "created volume $volume_id (${volume_size_gb}GB)"
+  fi
 
   tmp_config="$(mktemp)"
   create_machine_config "$source_machine" "$volume_id" "$tmp_config"
   say "Create stopped machine $name"
   fly machine create "$image_ref" -a "$APP" -r "$REGION" --name "$name" \
-    --machine-config "$tmp_config" >/dev/null
+    --machine-config "$(cat "$tmp_config")" >/dev/null
   rm -f "$tmp_config"
 
   machines="$(machines_json)"
