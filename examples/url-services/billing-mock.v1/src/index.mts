@@ -89,6 +89,14 @@ interface RefundAction {
   readonly memo?: string;
 }
 
+interface RefundEventAction {
+  readonly action: "refund";
+  readonly playerId: string;
+  readonly amount: number;
+  readonly relatedEventId: string;
+  readonly memo?: string;
+}
+
 export class BillingMockStore {
   readonly #accounts = new Map<string, AccountSnapshot>();
   readonly #events = new Map<string, AccountEvent>();
@@ -240,14 +248,7 @@ export class BillingMockStore {
   }
 
   #event(
-    action:
-      | GrantAction
-      | ChargeAction
-      | (RefundAction & {
-          readonly playerId: string;
-          readonly amount: number;
-          readonly relatedEventId: string;
-        }),
+    action: GrantAction | ChargeAction | RefundEventAction,
     request: GatewayHttpRequestBody,
     at: number,
   ): AccountEvent {

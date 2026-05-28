@@ -19,3 +19,12 @@ Initial root `pnpm typecheck` result: one failure in
 refund record passed to the ledger is missing the required `eventId` field.
 Because this is a billing-shaped example outside the substrate, re-read
 `docs-next/why/why-no-billing.md` before touching it.
+
+Fixed the typecheck blocker by introducing an internal `RefundEventAction`
+shape for the example URL service's generated refund event. This keeps the
+parsed refund request (`eventId` points at the original charge) separate from
+the ledger event (`relatedEventId` points at that charge while a new event id
+is generated). No substrate billing contract was added or changed.
+
+Verification: `pnpm --filter @pax-backend/example-url-service-billing-mock-v1
+check-types` and root `pnpm typecheck` both pass.
