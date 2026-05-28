@@ -139,6 +139,7 @@ else
   ( cd "$REPO_ROOT" && \
     REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}" \
     PAX_CONTROL_BIND="${PAX_CONTROL_BIND:-127.0.0.1:9070}" \
+    PAX_HISTORY_PATH="${PAX_HISTORY_PATH:-$REPO_ROOT/var/history.jsonl}" \
     nohup ./node_modules/.bin/tsx orchestration/control-plane/src/app.mts \
       >"$CONTROL_LOG" 2>&1 & echo $! > "$CONTROL_PIDFILE" )
   ok "control-plane pid $(cat "$CONTROL_PIDFILE") (log: $CONTROL_LOG)"

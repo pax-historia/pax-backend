@@ -1,19 +1,29 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Redis } from "ioredis";
 
 import type { BundleRecord, GameRecord } from "@pax-backend/ipc-protocol";
 
+import {
+  connectedPlayersForGame,
+  queryHistory,
+  sessionById,
+  sessionsForGame,
+} from "./history.mjs";
 import { checkBundleCompat, assertBundleManifest } from "./manifest.mjs";
 import { ControlPlaneStore } from "./store.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 
 export interface ControlPlaneConfig {
   readonly bindHost: string;
   readonly bindPort: number;
   readonly baseUrl: string;
   readonly redisUrl: string;
+  readonly historyPath: string;
 }
 
 export interface ControlPlaneServer {
@@ -29,6 +39,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ControlPlaneConfig {
     bindPort: bind.port,
     baseUrl: env["PAX_CONTROL_BASE_URL"] ?? `http://${bind.host}:${bind.port}`,
     redisUrl: env["REDIS_URL"] ?? "redis://127.0.0.1:6379",
+    historyPath: env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl"),
   };
 }
 
@@ -69,6 +80,21 @@ async function handleRequest(
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/admin/history") {
+      handleHistory(res, config, url);
+      return;
+    }
+
+    if (
+      req.method === "GET" &&
+      parts[0] === "admin" &&
+      parts[1] === "sessions" &&
+      parts.length === 3
+    ) {
+      handleSessionLookup(res, config, parts[2] ?? "");
+      return;
+    }
+
     if (parts[0] === "admin" && parts[1] === "bundles" && parts.length === 3) {
       await handleBundle(req, res, store, parts[2] ?? "");
       return;
@@ -96,7 +122,7 @@ async function handleRequest(
     }
 
     if (parts[0] === "admin" && parts[1] === "games" && parts.length >= 3) {
-      await handleGameResource(req, res, store, parts, url);
+      await handleGameResource(req, res, store, config, parts, url);
       return;
     }
 
@@ -172,6 +198,7 @@ async function handleGameResource(
   req: IncomingMessage,
   res: ServerResponse,
   store: ControlPlaneStore,
+  config: ControlPlaneConfig,
   parts: readonly string[],
   url: URL,
 ): Promise<void> {
@@ -213,6 +240,34 @@ async function handleGameResource(
     return;
   }
 
+  if (parts.length === 4 && parts[3] === "connected-players" && req.method === "GET") {
+    await requireGame(store, gameId);
+    writeJson(res, 200, {
+      ok: true,
+      gameId,
+      connectedPlayers: connectedPlayersForGame(config.historyPath, gameId).map((session) => ({
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+        connectedAt: session.connectedAt,
+      })),
+    });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "sessions" && req.method === "GET") {
+    await requireGame(store, gameId);
+    writeJson(res, 200, {
+      ok: true,
+      gameId,
+      sessions: sessionsForGame(config.historyPath, gameId, {
+        from: url.searchParams.get("from") ?? undefined,
+        to: url.searchParams.get("to") ?? undefined,
+        playerId: url.searchParams.get("playerId") ?? undefined,
+      }),
+    });
+    return;
+  }
+
   if (parts.length === 5 && parts[3] === "allowed-players") {
     await requireGame(store, gameId);
     const playerId = parts[4] ?? "";
@@ -229,6 +284,39 @@ async function handleGameResource(
   }
 
   throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });
+}
+
+function handleHistory(
+  res: ServerResponse,
+  config: ControlPlaneConfig,
+  url: URL,
+): void {
+  const limit = clampInt(url.searchParams.get("limit"), 1, 1000, 500);
+  const cursor = optionalInt(url.searchParams.get("cursor"));
+  writeJson(res, 200, {
+    ok: true,
+    ...queryHistory(config.historyPath, {
+      event: url.searchParams.get("event") ?? undefined,
+      gameId: url.searchParams.get("gameId") ?? undefined,
+      playerId: url.searchParams.get("playerId") ?? undefined,
+      sessionId: url.searchParams.get("sessionId") ?? undefined,
+      shardId: url.searchParams.get("shardId") ?? undefined,
+      from: url.searchParams.get("from") ?? undefined,
+      to: url.searchParams.get("to") ?? undefined,
+      cursor,
+      limit,
+    }),
+  });
+}
+
+function handleSessionLookup(
+  res: ServerResponse,
+  config: ControlPlaneConfig,
+  sessionId: string,
+): void {
+  const session = sessionById(config.historyPath, sessionId);
+  if (!session) throw new HttpError(404, "sessionNotFound", { sessionId });
+  writeJson(res, 200, { ok: true, session });
 }
 
 async function handleBundleFlip(
@@ -368,6 +456,24 @@ function readOptionalStringArray(
     throw new HttpError(400, "badRequest", { field, expected: "string array" });
   }
   return value;
+}
+
+function optionalInt(value: string | null): number | undefined {
+  if (value === null || value.length === 0) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function clampInt(
+  value: string | null,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (value === null || value.length === 0) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function parseBind(raw: string): { host: string; port: number } {
