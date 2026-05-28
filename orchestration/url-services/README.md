@@ -38,3 +38,8 @@ billing primitives".
 `ReferenceUrlService` descriptor. The API gateway imports the catalog so
 fallback `kindName -> URL` registrations stay in sync with the HTTP
 routes that actually handle calls.
+
+The dispatcher also keeps bounded per-kind Prometheus counters for
+invokes, error responses, and total handler duration. In the co-located v1
+topology, the API gateway's `/metrics` response includes these
+`pax_url_service_*` rows alongside gateway-owned counters.

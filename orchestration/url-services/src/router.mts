@@ -7,6 +7,7 @@ import { mockAiV1Service } from "./services/mock-ai-v1.mjs";
 import type {
   ReferenceServiceCatalogEntry,
   ReferenceServiceConfig,
+  ReferenceServiceMetricsSnapshot,
   ReferenceServiceResult,
   ReferenceUrlService,
 } from "./types.mjs";
@@ -22,6 +23,23 @@ export const REFERENCE_SERVICE_CATALOG: readonly ReferenceServiceCatalogEntry[] 
   SERVICES.map(({ kindName, pathname, purpose }) => ({ kindName, pathname, purpose })),
 );
 
+interface MutableReferenceServiceMetrics {
+  invocationsTotal: number;
+  errorsTotal: number;
+  durationMsSum: number;
+}
+
+const metricsByKindName = new Map<string, MutableReferenceServiceMetrics>(
+  SERVICES.map((service) => [
+    service.kindName,
+    {
+      invocationsTotal: 0,
+      errorsTotal: 0,
+      durationMsSum: 0,
+    },
+  ]),
+);
+
 export async function handleReferenceService(
   pathname: string,
   request: GatewayHttpRequestBody,
@@ -35,7 +53,22 @@ export async function handleReferenceService(
       body: { error: "notFound", detail: { pathname } },
     };
   }
-  return service.handle(request, config);
+
+  const metrics = metricsFor(service.kindName);
+  metrics.invocationsTotal += 1;
+  const startedAt = Date.now();
+  try {
+    const result = await service.handle(request, config);
+    if (result.statusCode >= 400) {
+      metrics.errorsTotal += 1;
+    }
+    return result;
+  } catch (err) {
+    metrics.errorsTotal += 1;
+    throw err;
+  } finally {
+    metrics.durationMsSum += Math.max(0, Date.now() - startedAt);
+  }
 }
 
 export function referenceKindRegistrations(baseUrl: string): readonly ApiKindRegistration[] {
@@ -44,4 +77,28 @@ export function referenceKindRegistrations(baseUrl: string): readonly ApiKindReg
     kindName,
     url: `${normalized}${pathname}`,
   }));
+}
+
+export function referenceServiceMetricsSnapshot(): readonly ReferenceServiceMetricsSnapshot[] {
+  return SERVICES.map((service) => {
+    const metrics = metricsFor(service.kindName);
+    return {
+      kindName: service.kindName,
+      invocationsTotal: metrics.invocationsTotal,
+      errorsTotal: metrics.errorsTotal,
+      durationMsSum: metrics.durationMsSum,
+    };
+  });
+}
+
+function metricsFor(kindName: string): MutableReferenceServiceMetrics {
+  const existing = metricsByKindName.get(kindName);
+  if (existing) return existing;
+  const metrics: MutableReferenceServiceMetrics = {
+    invocationsTotal: 0,
+    errorsTotal: 0,
+    durationMsSum: 0,
+  };
+  metricsByKindName.set(kindName, metrics);
+  return metrics;
 }

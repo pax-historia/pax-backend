@@ -29,3 +29,10 @@ export interface ReferenceServiceCatalogEntry {
   readonly pathname: string;
   readonly purpose: string;
 }
+
+export interface ReferenceServiceMetricsSnapshot {
+  readonly kindName: string;
+  readonly invocationsTotal: number;
+  readonly errorsTotal: number;
+  readonly durationMsSum: number;
+}

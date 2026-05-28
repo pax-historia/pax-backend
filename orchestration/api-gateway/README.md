@@ -16,7 +16,8 @@ The substrate's only egress to operator-owned URL services. Implements
    `replayCoverageGap` if no match** (no silent fall-through to live).
 
 `/metrics` exposes Prometheus text counters for total invokes, successful
-invokes, and substrate-owned error outcomes.
+invokes, substrate-owned error outcomes, and the co-located reference URL
+service invoke/error/duration counters.
 
 The gateway has **zero opinion** about `args` or `result` bodies. It does not
 interpret billing, validate kind-specific schemas, or model debits. Strong
@@ -30,5 +31,5 @@ Current source passes include:
 - Live and replay dispatch modes with wire-record JSONL storage.
 - Provider timeout handling via `PAX_API_PROVIDER_TIMEOUT_MS`.
 
-Still pending: richer deployment configuration, production metrics, and
+Still pending: richer deployment configuration, production scrape wiring, and
 driver-owned replay fixture loading.

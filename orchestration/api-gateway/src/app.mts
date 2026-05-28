@@ -11,7 +11,9 @@ import type {
 import {
   handleReferenceService,
   referenceServiceConfigFromEnv,
+  referenceServiceMetricsSnapshot,
   type ReferenceServiceConfig,
+  type ReferenceServiceMetricsSnapshot,
 } from "@pax-backend/url-services";
 
 import { budgetFromEnv } from "./budgets.mjs";
@@ -105,7 +107,11 @@ async function handleRequest(
     }
 
     if (req.method === "GET" && url.pathname === "/metrics") {
-      writeText(res, 200, metricsText(gateway.metricsSnapshot()));
+      writeText(
+        res,
+        200,
+        metricsText(gateway.metricsSnapshot(), referenceServiceMetricsSnapshot()),
+      );
       return;
     }
 
@@ -195,7 +201,10 @@ function writeText(res: ServerResponse, statusCode: number, body: string): void 
   res.end(body);
 }
 
-function metricsText(snapshot: ApiGatewayMetricsSnapshot): string {
+function metricsText(
+  snapshot: ApiGatewayMetricsSnapshot,
+  referenceServices: readonly ReferenceServiceMetricsSnapshot[],
+): string {
   const lines = [
     "# HELP pax_api_gateway_invocations_total Total c.api.invoke calls handled by the gateway.",
     "# TYPE pax_api_gateway_invocations_total counter",
@@ -209,7 +218,39 @@ function metricsText(snapshot: ApiGatewayMetricsSnapshot): string {
   for (const [error, count] of Object.entries(snapshot.errorsTotal)) {
     lines.push(`pax_api_gateway_invocations_error_total{error="${error}"} ${count}`);
   }
+  lines.push(
+    "# HELP pax_url_service_invocations_total Total reference URL service invokes by kind.",
+    "# TYPE pax_url_service_invocations_total counter",
+  );
+  for (const service of referenceServices) {
+    const labels = urlServiceLabels(service.kindName);
+    lines.push(`pax_url_service_invocations_total{${labels}} ${service.invocationsTotal}`);
+  }
+  lines.push(
+    "# HELP pax_url_service_errors_total Total reference URL service invokes that returned errors by kind.",
+    "# TYPE pax_url_service_errors_total counter",
+  );
+  for (const service of referenceServices) {
+    const labels = urlServiceLabels(service.kindName);
+    lines.push(`pax_url_service_errors_total{${labels}} ${service.errorsTotal}`);
+  }
+  lines.push(
+    "# HELP pax_url_service_duration_ms_sum Total reference URL service handler duration in milliseconds by kind.",
+    "# TYPE pax_url_service_duration_ms_sum counter",
+  );
+  for (const service of referenceServices) {
+    const labels = urlServiceLabels(service.kindName);
+    lines.push(`pax_url_service_duration_ms_sum{${labels}} ${service.durationMsSum}`);
+  }
   return `${lines.join("\n")}\n`;
+}
+
+function urlServiceLabels(kindName: string): string {
+  return `kind="${prometheusLabel(kindName)}"`;
+}
+
+function prometheusLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, '\\"');
 }
 
 function asDispatchInput(raw: unknown): ApiGatewayDispatchInput {
