@@ -1,0 +1,309 @@
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
+
+interface CliOptions {
+  readonly soakDir: string;
+  readonly outputPath: string;
+  readonly expectCases?: number;
+  readonly expectTargetGames?: number;
+  readonly expectPlacementShards?: number;
+  readonly requireResults: boolean;
+}
+
+interface HistoryEvent {
+  readonly event?: unknown;
+  readonly ts?: unknown;
+  readonly phaseType?: unknown;
+  readonly phaseIndex?: unknown;
+  readonly placedShardId?: unknown;
+  readonly shardId?: unknown;
+  readonly error?: unknown;
+}
+
+interface CaseSummary {
+  readonly case_id: string;
+  readonly history_path: string;
+  readonly result_path?: string;
+  readonly history_events: number;
+  readonly parse_errors: readonly string[];
+  readonly placement_count: number;
+  readonly placement_distribution: Readonly<Record<string, number>>;
+  readonly observed_placement_shards: number;
+  readonly phases_started: readonly string[];
+  readonly phases_completed: readonly string[];
+  readonly error_events: readonly string[];
+  readonly first_event_at?: string;
+  readonly last_event_at?: string;
+  readonly result_status?: "pass" | "fail" | "error";
+  readonly failing_oracles: readonly string[];
+  readonly attribution_sentence?: string;
+}
+
+interface SoakSummary {
+  readonly schema_version: 1;
+  readonly kind: "phase-5-soak-summary";
+  readonly generated_at: string;
+  readonly soak_dir: string;
+  readonly cases: readonly CaseSummary[];
+  readonly summary: {
+    readonly total_cases: number;
+    readonly result_files: number;
+    readonly total_history_events: number;
+    readonly total_placements: number;
+    readonly observed_placement_shards: number;
+    readonly parse_error_count: number;
+    readonly failing_cases: number;
+    readonly errored_cases: number;
+    readonly gates_ok: boolean;
+    readonly gate_failures: readonly string[];
+  };
+}
+
+const options = parseArgs(process.argv.slice(2));
+const soakDir = resolve(options.soakDir);
+const files = await listFiles(soakDir);
+const historyPaths = files.filter((path) => path.endsWith(".history.jsonl")).sort();
+const resultByCase = new Map(
+  files
+    .filter((path) => path.endsWith(".result.json"))
+    .map((path) => [caseIdFromPath(path, ".result.json"), path] as const),
+);
+const cases = await Promise.all(
+  historyPaths.map((historyPath) =>
+    summarizeCase(soakDir, historyPath, resultByCase.get(caseIdFromPath(historyPath, ".history.jsonl"))),
+  ),
+);
+const allShardIds = new Set<string>();
+for (const entry of cases) {
+  for (const shardId of Object.keys(entry.placement_distribution)) allShardIds.add(shardId);
+}
+const gateFailures = gateFailuresFor(options, cases, allShardIds.size);
+const summary: SoakSummary = {
+  schema_version: 1,
+  kind: "phase-5-soak-summary",
+  generated_at: new Date().toISOString(),
+  soak_dir: soakDir,
+  cases,
+  summary: {
+    total_cases: cases.length,
+    result_files: cases.filter((entry) => entry.result_path).length,
+    total_history_events: cases.reduce((sum, entry) => sum + entry.history_events, 0),
+    total_placements: cases.reduce((sum, entry) => sum + entry.placement_count, 0),
+    observed_placement_shards: allShardIds.size,
+    parse_error_count: cases.reduce((sum, entry) => sum + entry.parse_errors.length, 0),
+    failing_cases: cases.filter((entry) => entry.result_status === "fail").length,
+    errored_cases: cases.filter((entry) => entry.result_status === "error").length,
+    gates_ok: gateFailures.length === 0,
+    gate_failures: gateFailures,
+  },
+};
+
+await mkdir(dirname(resolve(options.outputPath)), { recursive: true });
+await writeFile(options.outputPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+if (!summary.summary.gates_ok) process.exitCode = 2;
+
+async function summarizeCase(
+  root: string,
+  historyPath: string,
+  resultPath: string | undefined,
+): Promise<CaseSummary> {
+  const raw = await readFile(historyPath, "utf8");
+  const placementCounts = new Map<string, number>();
+  const phasesStarted: string[] = [];
+  const phasesCompleted: string[] = [];
+  const parseErrors: string[] = [];
+  const errorEvents: string[] = [];
+  let historyEvents = 0;
+  let firstEventAt: string | undefined;
+  let lastEventAt: string | undefined;
+
+  for (const [index, line] of raw.split(/\r?\n/).entries()) {
+    if (line.trim().length === 0) continue;
+    let event: HistoryEvent;
+    try {
+      event = JSON.parse(line) as HistoryEvent;
+    } catch (err) {
+      parseErrors.push(
+        `${relative(root, historyPath)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      continue;
+    }
+    historyEvents += 1;
+    const timestamp = stringValue(event.ts);
+    if (timestamp && !firstEventAt) firstEventAt = timestamp;
+    if (timestamp) lastEventAt = timestamp;
+
+    if (event.event === "placement.accepted") {
+      const shardId = stringValue(event.placedShardId) ?? stringValue(event.shardId);
+      if (shardId) placementCounts.set(shardId, (placementCounts.get(shardId) ?? 0) + 1);
+    }
+    if (event.event === "workload.phase.started") {
+      phasesStarted.push(phaseLabel(event));
+    }
+    if (event.event === "workload.phase.completed") {
+      phasesCompleted.push(phaseLabel(event));
+    }
+    if (String(event.event ?? "").includes("error") || event.error !== undefined) {
+      errorEvents.push(`${String(event.event ?? "unknown")}: ${stringValue(event.error) ?? ""}`.trim());
+    }
+  }
+
+  const result = resultPath ? await readScenarioResult(resultPath) : undefined;
+  return {
+    case_id: caseIdFromPath(historyPath, ".history.jsonl"),
+    history_path: relative(root, historyPath),
+    result_path: resultPath ? relative(root, resultPath) : undefined,
+    history_events: historyEvents,
+    parse_errors: parseErrors,
+    placement_count: Array.from(placementCounts.values()).reduce((sum, count) => sum + count, 0),
+    placement_distribution: Object.fromEntries(
+      Array.from(placementCounts.entries()).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+    observed_placement_shards: placementCounts.size,
+    phases_started: phasesStarted,
+    phases_completed: phasesCompleted,
+    error_events: errorEvents,
+    first_event_at: firstEventAt,
+    last_event_at: lastEventAt,
+    result_status: result?.status,
+    failing_oracles: result?.failingOracles ?? [],
+    attribution_sentence: result?.attributionSentence,
+  };
+}
+
+async function readScenarioResult(
+  path: string,
+): Promise<
+  | {
+      readonly status: "pass" | "fail" | "error";
+      readonly failingOracles: readonly string[];
+      readonly attributionSentence?: string;
+    }
+  | undefined
+> {
+  const raw = await readFile(path, "utf8");
+  const value = JSON.parse(raw) as Record<string, unknown>;
+  if (value["kind"] !== "scenario-result") return undefined;
+  const oracles = isRecord(value["oracles"]) ? value["oracles"] : {};
+  const failingOracles = Object.entries(oracles)
+    .filter(([_name, oracle]) => isRecord(oracle) && (oracle["ok"] !== true || oracle["status"] !== "pass"))
+    .map(([name]) => name);
+  const attribution = isRecord(value["attribution"]) ? value["attribution"] : undefined;
+  const error = stringValue(value["error"]);
+  return {
+    status: error ? "error" : failingOracles.length > 0 ? "fail" : "pass",
+    failingOracles,
+    attributionSentence: stringValue(attribution?.["sentence"]),
+  };
+}
+
+function gateFailuresFor(
+  options: CliOptions,
+  cases: readonly CaseSummary[],
+  observedPlacementShards: number,
+): readonly string[] {
+  const failures: string[] = [];
+  if (options.expectCases !== undefined && cases.length < options.expectCases) {
+    failures.push(`expected at least ${options.expectCases} case(s), saw ${cases.length}`);
+  }
+  if (options.requireResults) {
+    const missing = cases.filter((entry) => !entry.result_path).map((entry) => entry.case_id);
+    if (missing.length > 0) failures.push(`missing result files for ${missing.join(", ")}`);
+  }
+  if (options.expectTargetGames !== undefined) {
+    for (const entry of cases) {
+      if (entry.placement_count < options.expectTargetGames) {
+        failures.push(
+          `${entry.case_id} expected ${options.expectTargetGames} placements, saw ${entry.placement_count}`,
+        );
+      }
+    }
+  }
+  if (options.expectPlacementShards !== undefined && observedPlacementShards < options.expectPlacementShards) {
+    failures.push(
+      `expected placements on at least ${options.expectPlacementShards} shard(s), saw ${observedPlacementShards}`,
+    );
+  }
+  for (const entry of cases) {
+    if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
+    if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
+    if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
+  }
+  return failures;
+}
+
+async function listFiles(root: string): Promise<readonly string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFiles(path)));
+    } else if (entry.isFile()) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+function caseIdFromPath(path: string, suffix: string): string {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  return base.endsWith(suffix) ? base.slice(0, -suffix.length) : base;
+}
+
+function phaseLabel(event: HistoryEvent): string {
+  const index = typeof event.phaseIndex === "number" ? `${event.phaseIndex}:` : "";
+  return `${index}${stringValue(event.phaseType) ?? "unknown"}`;
+}
+
+function parseArgs(argv: readonly string[]): CliOptions {
+  const values = new Map<string, string | true>();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg?.startsWith("--")) throw new Error(`unexpected positional argument: ${arg ?? ""}`);
+    if (arg === "--require-results") {
+      values.set("require-results", true);
+      continue;
+    }
+    const value = argv[i + 1];
+    if (!value || value.startsWith("--")) throw new Error(`missing value for ${arg}`);
+    values.set(arg.slice(2), value);
+    i += 1;
+  }
+  const soakDir = stringOption(values, "soak-dir") ?? "var/phase-5/soak";
+  return {
+    soakDir,
+    outputPath: stringOption(values, "output") ?? join(soakDir, "soak-summary.json"),
+    expectCases: positiveIntOption(values, "expect-cases"),
+    expectTargetGames: positiveIntOption(values, "expect-target-games"),
+    expectPlacementShards: positiveIntOption(values, "expect-placement-shards"),
+    requireResults: values.get("require-results") === true,
+  };
+}
+
+function stringOption(values: ReadonlyMap<string, string | true>, key: string): string | undefined {
+  const value = values.get(key);
+  return typeof value === "string" ? value : undefined;
+}
+
+function positiveIntOption(
+  values: ReadonlyMap<string, string | true>,
+  key: string,
+): number | undefined {
+  const value = stringOption(values, key);
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`--${key} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
