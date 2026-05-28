@@ -1,0 +1,22 @@
+{
+  "name": "@pax-backend/control-plane",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "exports": {
+    ".": {
+      "types": "./src/index.mts",
+      "import": "./src/index.mts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx src/app.mts",
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pax-backend/ipc-protocol": "workspace:*",
+    "ioredis": "^5.4.1"
+  }
+}

@@ -3,6 +3,7 @@
   "references": [
     { "path": "./shared/ipc-protocol" },
     { "path": "./sdk/runtime-sdk" },
+    { "path": "./orchestration/control-plane" },
     { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },
     { "path": "./runtime/parent-actor" },

@@ -20,6 +20,7 @@ export const SHARD_REGISTRY_KEY_PREFIX = "shards:" as const;
 export const PLACEMENT_RECENT_WAKES_KEY_PREFIX = "placement_recent_wakes:" as const;
 export const BUNDLE_KEY_PREFIX = "bundles:" as const;
 export const GAME_KEY_PREFIX = "games:" as const;
+export const ALLOWED_PLAYERS_KEY_PREFIX = "allowed_players:" as const;
 
 export const SHARD_REGISTRY_TTL_SECONDS = 45 as const;
 export const ACTIVE_GAME_TTL_SECONDS = 3600 as const;

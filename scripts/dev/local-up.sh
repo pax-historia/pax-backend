@@ -4,9 +4,10 @@
 # Brings up:
 #   1. Local Redis (Docker container, single-port mapping)
 #   2. rivet-engine (cached binary from scripts/build/build-engine.sh)
-#   3. api-gateway Node process
-#   4. parent-actor Node process
-#   5. placement-router Rust binary
+#   3. control-plane Node process
+#   4. api-gateway Node process
+#   5. parent-actor Node process
+#   6. placement-router Rust binary
 #
 # Run scripts/dev/local-down.sh to stop everything (kills processes,
 # removes Redis container). Logs land under ./var/local-up/<service>.log.
@@ -126,6 +127,34 @@ for i in $(seq 1 90); do
 done
 
 # ---------------------------------------------------------------------------
+# Control plane
+# ---------------------------------------------------------------------------
+say "control-plane"
+CONTROL_LOG="$LOG_DIR/control-plane.log"
+CONTROL_PIDFILE="$PID_DIR/control-plane.pid"
+if [[ -f "$CONTROL_PIDFILE" ]] && kill -0 "$(cat "$CONTROL_PIDFILE")" 2>/dev/null; then
+  ok "control-plane already running (pid $(cat "$CONTROL_PIDFILE"))"
+else
+  : > "$CONTROL_LOG"
+  ( cd "$REPO_ROOT" && \
+    REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}" \
+    PAX_CONTROL_BIND="${PAX_CONTROL_BIND:-127.0.0.1:9070}" \
+    nohup ./node_modules/.bin/tsx orchestration/control-plane/src/app.mts \
+      >"$CONTROL_LOG" 2>&1 & echo $! > "$CONTROL_PIDFILE" )
+  ok "control-plane pid $(cat "$CONTROL_PIDFILE") (log: $CONTROL_LOG)"
+fi
+for i in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:9070/health >/dev/null 2>&1; then
+    ok "control-plane /health responding"
+    break
+  fi
+  sleep 0.5
+  if (( i == 20 )); then
+    err "control-plane did not become ready in 10s; see $CONTROL_LOG"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 # API gateway
 # ---------------------------------------------------------------------------
 say "api-gateway"
@@ -225,6 +254,7 @@ done
 say "Local stack up"
 ok "redis:         redis://127.0.0.1:6379"
 ok "engine:        http://127.0.0.1:6420 (admin token: ${RIVET_ADMIN_TOKEN:-dev})"
+ok "control-plane: http://127.0.0.1:9070"
 ok "api-gateway:   http://127.0.0.1:9081"
 ok "parent-actor:  pid $(cat "$PARENT_PIDFILE") -> shards:${PAX_SHARD_ID:-shard-local}"
 ok "router:        http://127.0.0.1:9080"

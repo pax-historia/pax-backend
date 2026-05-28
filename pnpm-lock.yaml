@@ -91,6 +91,15 @@ importers:
         specifier: workspace:*
         version: link:../../shared/ipc-protocol
 
+  orchestration/control-plane:
+    dependencies:
+      '@pax-backend/ipc-protocol':
+        specifier: workspace:*
+        version: link:../../shared/ipc-protocol
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.11.0
+
   sdk/runtime-sdk:
     dependencies:
       '@pax-backend/ipc-protocol':
