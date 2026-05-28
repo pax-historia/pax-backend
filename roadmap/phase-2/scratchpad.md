@@ -99,5 +99,24 @@ started machines and all three Fly checks passing. Driver deployment completed
 with one started machine, one standby machine, and its health check passing.
 Public router health returned `{"runtime":"placement-router","status":"ok"}`;
 internal control-plane, API gateway, and driver health endpoints all returned
-`status:"ok"`. The shard deployment is still running after the install-order
-fix; wait for it before closing task 2.
+`status:"ok"`.
+
+The shard deploy hit a Depot deadline during the first full vendored
+`rivet-engine` compile, retried automatically, then reused enough remote Cargo
+cache to finish. The final shard image deployed with one started machine and
+its Fly check passing. Shard verification:
+
+- parent `/health` returned `status:"ok"` for `shard-fly-iad-1`;
+- parent `/metrics` exposed `parent.ready`;
+- Rivet `/datacenters` returned the default datacenter using the deployed
+  `PAX_LOCAL_ENGINE_ADMIN_TOKEN`;
+- Rivet `/metrics` exposed request histogram rows for `/datacenters`;
+- control-plane `/admin/shards` reported `shard-fly-iad-1` as healthy and
+  accepting wakes;
+- Redis `PING` from the deployed control-plane package returned `PONG`;
+- Tigris write/delete from the deployed shard package succeeded against
+  `pax-backend-blobs`.
+
+Task 2 is complete. Next task is the production observability path: turn the
+Vector/OTel pipeline from scaffold into a deployed, verifiable trace and
+history archive path.
