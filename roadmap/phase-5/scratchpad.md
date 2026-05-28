@@ -172,3 +172,7 @@ Extended `scripts/fly/summarize-soak.mts` to include `monitor/status.jsonl` when
 ## 2026-05-28 16:21 PDT
 
 Preliminary Phase 5 verification audit caught cost-projection drift from the soak driver resize. `fly machines list` now shows the active and standby driver machines on `shared-cpu-4x` / 2GB, while the projection still used the earlier `shared-cpu-1x` / 1GB row. Updated `roadmap/phase-5/cost-projection.md`: the 1k-game v1 footprint is now $1,294.18/month for compute plus provisioned volume and the working 1k monthly projection is $1,541.38.
+
+## 2026-05-28 16:22 PDT
+
+Fourth detached monitor snapshot landed at `2026-05-28T23:22:23.363Z`. The heartbeat `ivm` no-faults case remained in `send-json`, process alive with no `exit.code`, 1000 active games across 10 healthy accepting shards, and zero workload failures/session closes/session errors. This puts the no-faults hold about 35 minutes past start and still stable.
