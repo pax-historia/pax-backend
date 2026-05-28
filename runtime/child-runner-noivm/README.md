@@ -10,4 +10,7 @@ maintainer-risk story.
 release.** If it ever passes when `child-runner-ivm` fails (or vice versa), the
 IPC schema has drifted and the release is blocked.
 
-Stub. Implementation lands in step 7 of the plan's kickoff.
+Current source pass implements the same parent/child IPC contract as
+`child-runner-ivm`, evaluates the compiled bundle directly in the Node child
+process, injects the same `c.*` surface, and can be selected locally with
+`PAX_CHILD_RUNNER_KIND=noivm`.

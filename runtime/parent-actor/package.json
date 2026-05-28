@@ -12,6 +12,7 @@
   "dependencies": {
     "@pax-backend/ipc-protocol": "workspace:*",
     "@pax-backend/child-runner-ivm": "workspace:*",
+    "@pax-backend/child-runner-noivm": "workspace:*",
     "@rivetkit/bare-ts": "^0.6.2",
     "@rivetkit/engine-runner": "file:../../vendor/rivet/rivetkit-typescript/packages/engine-runner",
     "@rivetkit/engine-runner-protocol": "file:../../vendor/rivet/rivetkit-typescript/packages/engine-runner-protocol",

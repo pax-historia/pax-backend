@@ -7,6 +7,7 @@
     { "path": "./orchestration/control-plane" },
     { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },
+    { "path": "./runtime/child-runner-noivm" },
     { "path": "./runtime/parent-actor" },
     { "path": "./testing/oracles-lib" },
     { "path": "./testing/scenario-runner" },

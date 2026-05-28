@@ -3,7 +3,7 @@
 // One Node process per shard machine. Runs:
 //  - One @rivetkit/engine-runner connected to the local rivet-engine
 //  - One "pax-game" actor whose websocket() callback verifies the placement
-//    JWT, forks an isolated-vm child per game, and brokers IPC + WS frames.
+//    JWT, forks a child runner per game, and brokers IPC + WS frames.
 //  - A 5-second self-registration loop that writes the shard's row into the
 //    Redis registry the placement router reads (skipping the control plane
 //    entirely for the smoke milestone).
@@ -15,8 +15,8 @@
 // What this process does NOT do (deferred):
 //  - Native c.blob (Tigris) and c.state (RocksDB) adapters; this pass uses
 //    Redis-backed storage under the same IPC contract.
-//  - Compute-plane quota enforcement (we ship the per-handler timeout in the
-//    child via ivm; the rest is M2+).
+//  - Full compute-plane quota enforcement (we ship the per-handler timeout in
+//    the child runners; the rest is M2+).
 
 import { type ChildProcess, fork } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
@@ -125,10 +125,12 @@ const SLEEP_MINIMUM_BUDGET_MS = Number.parseInt(
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
 const BUNDLE_DIR = join(REPO_ROOT, "examples", "bundles");
+const CHILD_RUNNER_KIND =
+  process.env["PAX_CHILD_RUNNER_KIND"] === "noivm" ? "noivm" : "ivm";
 const CHILD_RUNNER_ENTRY = join(
   REPO_ROOT,
   "runtime",
-  "child-runner-ivm",
+  CHILD_RUNNER_KIND === "noivm" ? "child-runner-noivm" : "child-runner-ivm",
   "src",
   "child.mts",
 );
@@ -1503,6 +1505,7 @@ async function main(): Promise<void> {
       namespace: RIVET_NAMESPACE,
       runnerName: RIVET_RUNNER_NAME,
       actorName: RIVET_ACTOR_NAME,
+      childRunner: CHILD_RUNNER_KIND,
       runtimeContractsSupported: RUNTIME_CONTRACTS_SUPPORTED,
       historyPath: HISTORY_PATH,
     },
