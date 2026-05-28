@@ -539,7 +539,7 @@ Platform Guarantee in the README:
 | G5 faithful-api-dispatch | `api.invoke.start`, `api.invoke.end`, wire records | every start has matching end; every wire record matches the recorded fingerprint |
 | G6 idempotent-player-input | `onPlayerMessage` | no `(playerId, seq)` appears twice per `game_id` |
 | G7 compute-quotas-honored | `pax_parent_compute_budget_consumed_ratio` time-series | no series ever exceeds 1.0 without a corresponding `budget.rejected` event |
-| G8 crash-blast-radius=1 | `child.crash`, `session.closed` | crash events only affect their own `game_id` |
+| G8 crash-blast-radius=1 | `child.exit`, `child.restart`, `child.fatal` | unexpected child exits restart only their own `game_id` |
 | G9 no-random-parent-crashes | `parent.crash` events | no `parent.crash` without preceding `actor.stop` |
 | G10 eviction-minimum-budget | `onSleep.fired`, `onSleep.completed` | `completed - fired ≥ documented_min(shape)` |
 | G11 c.state-durability | `state.write`, `child.restart`, `state.read` | same-shard restart preserves last write modulo throttle |

@@ -9,6 +9,8 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
 - IPC broker between child and the rest of the cluster
 - Storage tier dispatch (`c.state`, `c.blob`)
 - `onWake` hydration and `onSleep` dispatch with a minimum flush budget
+- Child crash recovery: unexpected exits record `child.exit`, emit
+  `child.restart`, and wake the same game with `cold-restart-after-crash`
 - Migration rollback safety: repeated `onWake` failures on a newly flipped
   bundle restore the previous bundle pointer while the rollback backup is live
 - Forwarding `c.api.invoke` calls to the API gateway with the context envelope

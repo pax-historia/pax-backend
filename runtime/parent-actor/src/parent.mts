@@ -66,6 +66,7 @@ import {
   type StorageReadResponsePayload,
   type StorageWriteResponse,
   type ShardRegistration,
+  type WakeReason,
   type WsSendResponse,
   envelope,
   generateRunId,
@@ -427,8 +428,13 @@ interface GameInstance {
   bundleName: string;
   bundleCompatTag: string;
   blobCompatTag?: string;
+  nextWakeReason?: WakeReason;
   readonly runId: string;
   child: ChildProcess | null;
+  intentionalChildStop?: {
+    readonly child: ChildProcess;
+    readonly reason: "sleepComplete" | "replacementRestart";
+  };
   readonly sessions: Map<string, SessionRecord>;
   readonly wsUsageSamples: UsageSample[];
   readonly apiInvokeSamples: UsageSample[];
@@ -643,17 +649,28 @@ function forkChild(inst: GameInstance): Promise<void> {
         clearTimeout(inst.sleepTimer);
         inst.sleepTimer = null;
       }
+      const wasCurrentChild = inst.child === child;
+      const intentionalStop =
+        inst.intentionalChildStop?.child === child
+          ? inst.intentionalChildStop.reason
+          : undefined;
+      if (intentionalStop) inst.intentionalChildStop = undefined;
       history("child.exit", {
         actorId: inst.actorId,
         gameId: inst.gameId,
         runId: inst.runId,
         code,
         signal,
+        intentional: intentionalStop !== undefined,
+        stopReason: intentionalStop,
       });
-      if (inst.child === child) {
+      if (wasCurrentChild) {
         inst.ready = false;
         inst.child = null;
         inst.bootstrapPromise = null;
+      }
+      if (wasCurrentChild && !intentionalStop) {
+        void restartChildAfterCrash(inst, code, signal);
       }
     });
 
@@ -700,7 +717,10 @@ async function sendWakeAfterHydration(
       readGameStorage(inst, "blob"),
     ]);
     const reason =
-      inst.blobCompatTag && inst.blobCompatTag !== inst.bundleCompatTag ? "upgrade" : "cold-start";
+      inst.nextWakeReason ??
+      (inst.blobCompatTag && inst.blobCompatTag !== inst.bundleCompatTag
+        ? "upgrade"
+        : "cold-start");
     sendTyped(child, "onWake", {
       reason,
       runId: inst.runId,
@@ -721,6 +741,7 @@ async function sendWakeAfterHydration(
       blobBytes: blob.bytes,
       blobCompatTag: inst.blobCompatTag,
     });
+    inst.nextWakeReason = undefined;
     resolveReady();
   } catch (err) {
     rejectReady(err instanceof Error ? err : new Error(String(err)));
@@ -1133,7 +1154,10 @@ async function restartChildWithBundle(
   inst.ready = false;
   inst.child = null;
   inst.bootstrapPromise = null;
-  if (previousChild && !previousChild.killed) previousChild.kill("SIGTERM");
+  if (previousChild) {
+    inst.intentionalChildStop = { child: previousChild, reason: "replacementRestart" };
+    if (!previousChild.killed) previousChild.kill("SIGTERM");
+  }
   history("bundle.rollback.restart", {
     actorId: inst.actorId,
     gameId: inst.gameId,
@@ -1144,6 +1168,36 @@ async function restartChildWithBundle(
     reason,
   });
   await forkChild(inst);
+}
+
+async function restartChildAfterCrash(
+  inst: GameInstance,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): Promise<void> {
+  inst.nextWakeReason = "cold-restart-after-crash";
+  history("child.restart", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    reason: inst.nextWakeReason,
+    code,
+    signal,
+    bundleName: inst.bundleName,
+    bundleCompatTag: inst.bundleCompatTag,
+  });
+  try {
+    await forkChild(inst);
+  } catch (err) {
+    history("child.restart.failed", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason: "cold-restart-after-crash",
+      bundleName: inst.bundleName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 async function readGameRecord(gameId: string): Promise<GameRecord | undefined> {
@@ -1201,7 +1255,10 @@ async function handleLifecycleSleepComplete(
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  inst.child?.kill();
+  if (inst.child) {
+    inst.intentionalChildStop = { child: inst.child, reason: "sleepComplete" };
+    inst.child.kill();
+  }
 }
 
 function sendOnSleep(

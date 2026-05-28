@@ -145,6 +145,12 @@ The runtime emits budget history and capacity warnings, exposes snapshots via
 `c.compute.budget()`, and enforces per-budget failure behavior described in
 [compute-budgets-catalog.md](compute-budgets-catalog.md).
 
+Unexpected child exits are recorded as `child.exit` with `intentional: false`,
+followed by `child.restart` scoped to the same actor/game. The restart sends
+the next `onWake` with `reason: "cold-restart-after-crash"` and rehydrates from
+the persisted state/blob tiers. Intentional stops after `onSleep` are recorded
+with `intentional: true` and do not restart the child.
+
 Handler budget failures are recorded as `child.handlerError` with
 `code: "handlerTimeout"`, `durationMs`, and `timeoutMs`, plus a paired
 `compute.budget.rejected` event for `cpu-ms-per-tick`.

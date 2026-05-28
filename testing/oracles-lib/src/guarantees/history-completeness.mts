@@ -24,6 +24,8 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "child.fatal": ["actorId", "gameId"],
   "child.handlerComplete": ["actorId", "gameId", "runId", "handler"],
   "child.handlerError": ["actorId", "gameId", "runId", "handler", "code"],
+  "child.restart": ["actorId", "gameId", "runId", "reason", "bundleName"],
+  "child.restart.failed": ["actorId", "gameId", "runId", "reason", "bundleName", "error"],
   "compute.budget.rejected": ["actorId", "gameId", "reason"],
   "bundle.flip.rejected": ["gameId", "oldBundleName", "newBundleName", "blobCompatTag"],
   "bundle.flip.succeeded": ["gameId", "oldBundleName", "newBundleName"],
