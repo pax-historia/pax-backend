@@ -81,6 +81,10 @@ async function runScaleRung(
   for (const nemesisId of rung.nemesisIds) {
     const caseStartedAtMs = Date.now();
     const caseId = safeCaseId(`${input.runtimeKind}-${scenarioId}-${rung.rungId}-${nemesisId}`);
+    const caseRunId = `scale-${caseId}-${caseStartedAtMs}`;
+    const workloadGameIdPrefix = safeCaseId(
+      `${scenarioId}-${rung.rungId}-${input.runtimeKind}-${nemesisId}-${caseStartedAtMs}`,
+    );
     const historyPath = join(rungOutputDir, `${caseId}.history.jsonl`);
     const resultPath = join(rungOutputDir, `${caseId}.result.json`);
     await writeFile(historyPath, "", "utf8");
@@ -90,12 +94,12 @@ async function runScaleRung(
         mode,
         backend,
         historyPath,
-        runId: `scale-${caseId}-${caseStartedAtMs}`,
+        runId: caseRunId,
         workerCount: rung.workerCount ?? input.workerCount,
         nemesisId,
         scenarioCatalogDir: input.scenarioCatalogDir ?? plan.scenarioCatalogDir,
         nemesisCatalogDir: input.nemesisCatalogDir ?? plan.nemesisCatalogDir,
-        workloadGameIdPrefix: safeCaseId(`${scenarioId}-${rung.rungId}-${input.runtimeKind}-${nemesisId}`),
+        workloadGameIdPrefix,
         workloadMaxGames: rung.concurrentGames,
         workloadDurationMs: rung.targetDurationMs,
         workloadSessionsPerGame: rung.sessionsPerGame,
