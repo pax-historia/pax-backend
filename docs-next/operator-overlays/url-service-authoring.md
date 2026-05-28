@@ -39,7 +39,7 @@ const ContextSchema = z.object({
   connectedSessions: z.array(z.object({
     sessionId: z.string(),
     playerId: z.string(),
-    connectedAt: z.string(),
+    connectedAt: z.number(),
   })),
   bundleName: z.string(),
   bundleCompatTag: z.string(),
@@ -132,9 +132,9 @@ A URL service can refuse calls from unknown bundles.
 
 ### "Is this a test call (replay mode)?"
 
-`X-Gateway-Mode: replay` header. In replay mode the substrate
-short-circuits the HTTP call entirely — your URL service never receives
-the call in replay. But the gateway records the live-mode call once;
+The URL service cannot observe replay mode directly. In replay mode the
+substrate short-circuits the HTTP call entirely, so your URL service
+never receives the call. The gateway records the live-mode call once;
 the response is what gets replayed. Don't side-effect on every call;
 make your work idempotent on `requestId`.
 

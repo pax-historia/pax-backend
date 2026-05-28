@@ -107,10 +107,11 @@ The fixture file format is one JSON object per line:
 
 ```jsonc
 {
+  "event": "api.invoke",
   "fingerprint": "...",
   "kind": "ai.chat.v1",
   "statusCode": 200,
-  "responseBody": { "result": ... },
+  "rawInbound": "{\"result\": ...}",
   "recordedAt": "..."
 }
 ```
@@ -135,8 +136,8 @@ event:
   "fingerprint": "...",
   "statusCode": 200,
   "durationMs": 142,
-  "raw_outbound": { ... },           // full canonical envelope
-  "raw_inbound": { ... }             // full URL service response body
+  "rawOutbound": "{ ... }",          // serialized full canonical envelope
+  "rawInbound": "{ ... }"            // serialized full URL service response body
 }
 ```
 
@@ -144,7 +145,7 @@ This event is large. To avoid bloating the in-process history ring
 buffer, the gateway:
 
 1. Writes a "thin" event to the in-process ring (no raw payloads).
-2. Writes the full event with `raw_outbound` / `raw_inbound` to a
+2. Writes the full event with `rawOutbound` / `rawInbound` to a
    separate sink (Tigris via Vector).
 3. The `GET /admin/games/:id/snapshot` endpoint reads from both
    sources (thin for cheap snapshot; full for full diagnostic).

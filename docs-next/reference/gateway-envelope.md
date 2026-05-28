@@ -49,7 +49,7 @@ interface GatewayHttpRequestBody {
 interface ConnectedSessionSnapshot {
   sessionId: string;
   playerId: string;
-  connectedAt: string;                       // ISO timestamp
+  connectedAt: number;                       // ms since epoch
 }
 ```
 
@@ -141,8 +141,8 @@ Every live-mode call generates an `api.invoke.wire` history event:
   "fingerprint": "<64 hex>",
   "statusCode": 200,
   "durationMs": 142,
-  "raw_outbound": { /* full envelope above */ },
-  "raw_inbound": { /* full response body */ }
+  "rawOutbound": "{ /* serialized full envelope above */ }",
+  "rawInbound": "{ /* serialized full response body */ }"
 }
 ```
 

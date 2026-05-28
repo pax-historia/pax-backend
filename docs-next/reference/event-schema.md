@@ -400,8 +400,8 @@ Wire-grain record (gateway-side; carries the full envelopes).
 | `fingerprint` | sha256 |
 | `statusCode` | |
 | `durationMs` | |
-| `raw_outbound` | full envelope sent to URL service |
-| `raw_inbound` | full response from URL service |
+| `rawOutbound` | serialized full envelope sent to URL service |
+| `rawInbound` | serialized full response from URL service |
 | `traceId?` | |
 
 ## Compute events

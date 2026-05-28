@@ -129,10 +129,10 @@ the scenario-runner replays canned responses.
 Place canned responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`.
 Use the shared fixture format in [`../README.md`](../README.md): each fixture
-record carries the request fingerprint the gateway computes
-(`sha256(serialize(outbound HTTP payload))`) and a serialized gateway
-`rawInbound` body. A small helper in the bundle test harness records live
-fixtures during development and freezes them for replay.
+record carries the request fingerprint the gateway computes from the stable
+`{ kind, args }` replay key and a serialized gateway `rawInbound` body. A
+small helper in the bundle test harness records live fixtures during
+development and freezes them for replay.
 
 The scenario-runner hard-fails with `replayCoverageGap` if the bundle
 issues a call with no matching fixture — missing coverage shows up as a

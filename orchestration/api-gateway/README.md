@@ -9,7 +9,7 @@ The substrate's only egress to operator-owned URL services. Implements
 4. Build the library-defined context envelope: `gameId`, `triggeringSessionId`,
    `triggeringJwtClaims`, full `connectedSessions` snapshot, `bundleName`,
    `bundleCompatTag`, `runId`, `traceId`, `idempotencyKey`.
-5. Fingerprint = `sha256(serialize(outbound))`.
+5. Fingerprint = `sha256(canonicalize({ kind, args }))`.
 6. Live mode: POST to URL with `X-Gateway-Envelope-Version: 2`, record both
    raw outbound + raw inbound at wire grain, return the creator-facing
    response plus the wire record to the parent.

@@ -96,7 +96,7 @@ traceparent: <W3C trace context>
     "triggeringSessionId": "..." | null,
     "triggeringJwtClaims": { ... } | null,
     "connectedSessions": [
-      { "sessionId": "...", "playerId": "...", "connectedAt": "..." },
+      { "sessionId": "...", "playerId": "...", "connectedAt": 1779980000000 },
       ...
     ],
     "bundleName": "...",
@@ -162,9 +162,9 @@ Every `c.api.invoke` round trip is recorded at the gateway:
 
 ```ts
 {
-  fingerprint: 'sha256:...',         // sha256(canonical serialize(request body))
-  rawOutbound: <full request body>,
-  rawInbound: <full response body>,
+  fingerprint: 'sha256:...',         // sha256(canonicalize({ kind, args }))
+  rawOutbound: <serialized full request body>,
+  rawInbound: <serialized full response body>,
   mode: 'live' | 'replay',
   statusCode: number,
   durationMs: number,
@@ -176,9 +176,11 @@ In **live mode**, the gateway dispatches the HTTP call and records the
 round trip.
 
 In **replay mode**, the gateway short-circuits the HTTP call: it looks up
-a recorded response by fingerprint and returns it. **If no recorded
-response matches, the gateway hard-fails with `replayCoverageGap`** —
-not a silent fall-through to live calls.
+a recorded response by fingerprint and returns it. The replay key is the
+stable `{ kind, args }` pair, so volatile context fields (`runId`,
+`traceId`, session ids, connection timestamps) do not make fixtures
+one-run-only. **If no recorded response matches, the gateway hard-fails
+with `replayCoverageGap`** — not a silent fall-through to live calls.
 
 The trust seam is the **HTTP egress from the gateway to the URL service**.
 Anything the URL service does internally (its own calls to vendors, its
@@ -226,7 +228,7 @@ sequenceDiagram
   GW->>GW: "check api-invocations-per-min (fail apiRateExceeded if over)"
   GW->>GW: "lookup URL for kind (fail kindUnknown if absent)"
   GW->>GW: "build context envelope"
-  GW->>GW: "fingerprint = sha256(serialize(outbound))"
+  GW->>GW: "fingerprint = sha256(canonicalize({ kind, args }))"
   alt replay mode
     GW->>GW: "lookup recorded response by fingerprint"
     GW->>GW: "fail replayCoverageGap if no match"
