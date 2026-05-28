@@ -24,7 +24,8 @@ Current source pass provides the first runner shell:
 - executes the first live workload phase set against a running local/live
   substrate: `seed-fixtures`, `register-api-kinds`, `open-sessions`,
   `expect-ws-refusals`, `send-json`, `send-host-events`, `flip-bundles`,
-  `wait`, `close-sessions`, `await-nemesis`, and `expect-history-events`
+  `sleep-wake`, `wait`, `close-sessions`, `await-nemesis`, and
+  `expect-history-events`
 - schedules nemesis profile actions alongside the live workload; the
   `shard-death-every-5m` profile currently maps `kill-shard` to the
   production admin drain endpoint (`POST /admin/shards/:id/drain`)
@@ -47,10 +48,9 @@ Current source pass provides the first runner shell:
 - emits a `result.json`-shaped object with oracle summaries, attribution
   placeholders, scenario metadata, nemesis metadata, and run metadata
 
-It does not yet execute the later stress-only phase families
-(`invoke-api`, `state-blob-churn`, `sleep-wake`), start the planned runtime
-environment, shrink fuzz failures, or spin driver machines. Those stay as
-later source passes.
+It does not yet execute the later stress-only phase families (`invoke-api`,
+`state-blob-churn`), start the planned runtime environment, shrink fuzz
+failures, or spin driver machines. Those stay as later source passes.
 
 ## Suite mode
 

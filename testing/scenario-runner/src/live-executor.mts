@@ -214,6 +214,9 @@ async function executePhase(
     case "await-nemesis":
       await ctx.nemesisRuntime.waitFor(phase.action, phase.minimumOccurrences, ctx.phaseTimeoutMs);
       return;
+    case "sleep-wake":
+      await sleepWake(ctx, phase.cycles, phase.idleMsBetweenCycles);
+      return;
     case "close-sessions":
       await closeAllSessions(ctx, phase.reason);
       return;
@@ -746,6 +749,40 @@ async function countHistoryEvents(
   url.searchParams.set("limit", "1000");
   const body = await requestJson<{ readonly events?: readonly unknown[] }>(url.toString());
   return Array.isArray(body.events) ? body.events.length : 0;
+}
+
+async function sleepWake(
+  ctx: LiveExecutorContext,
+  cycles: number,
+  idleMsBetweenCycles: number,
+): Promise<void> {
+  for (let cycle = 1; cycle <= cycles; cycle += 1) {
+    const sessionPlan = ctx.sessions.map((session) => ({
+      gameId: session.gameId,
+      playerId: session.playerId,
+    }));
+    if (sessionPlan.length === 0) {
+      throw new Error("sleep-wake requires at least one open session");
+    }
+    ctx.historyWriter.append("workload.sleep-wake.cycle.started", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      cycle,
+      sessions: sessionPlan.length,
+      idleMsBetweenCycles,
+    });
+    await closeAllSessions(ctx, `sleepWakeCycle${cycle}`);
+    await sleep(idleMsBetweenCycles);
+    for (const session of sessionPlan) {
+      ctx.sessions.push(await openOneSession(ctx, session.gameId, session.playerId));
+    }
+    ctx.historyWriter.append("workload.sleep-wake.cycle.completed", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      cycle,
+      sessions: ctx.sessions.length,
+    });
+  }
 }
 
 async function closeAllSessions(ctx: LiveExecutorContext, reason: string): Promise<void> {
