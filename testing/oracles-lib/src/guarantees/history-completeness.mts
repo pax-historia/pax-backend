@@ -20,6 +20,8 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "metrics.emit": ["actorId", "gameId", "runId"],
   "onPlayerMessage": ["actorId", "gameId", "sessionId", "playerId"],
   "onWake.sent": ["actorId", "gameId", "runId", "bundleCompatTag"],
+  "placement.accepted": ["gameId", "shardId", "runId", "bundleName"],
+  "placement.rejected": ["gameId", "error"],
   "player.deleted": ["playerId"],
   "players.allowed": ["actorId", "gameId", "requestId"],
   "players.connected": ["actorId", "gameId", "requestId"],
