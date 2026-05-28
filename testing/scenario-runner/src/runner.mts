@@ -11,6 +11,7 @@ import {
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
 import { buildScenarioResult } from "./result.mjs";
+import { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
 import type { ScenarioResult, ScenarioRunnerInput } from "./types.mjs";
 
 export function runReplayFromHistory(input: ScenarioRunnerInput): ScenarioResult {
@@ -39,6 +40,11 @@ export async function runReplayFromCatalog(
   const scenarioManifest = await loadScenarioManifest(input);
   const nemesisManifest = await loadNemesisManifest(input, scenarioManifest);
   const workloadPlan = await loadScenarioWorkloadPlan(input, scenarioManifest);
+  const runtimeEnvironment =
+    input.runtimeEnvironment ??
+    (workloadPlan
+      ? buildScenarioRuntimeEnvironment(input, scenarioManifest, workloadPlan)
+      : undefined);
   const oracleNames =
     input.oracleScope === "scenario" ? scenarioManifest.oracleNames : input.oracleNames;
   return runReplayFromHistory({
@@ -46,6 +52,7 @@ export async function runReplayFromCatalog(
     scenarioManifest,
     nemesisManifest,
     workloadPlan,
+    runtimeEnvironment,
     oracleNames,
     oracleScope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     samplingProfile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),

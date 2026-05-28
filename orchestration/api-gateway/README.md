@@ -38,5 +38,5 @@ Current source passes include:
 - Provider timeout handling via `PAX_API_PROVIDER_TIMEOUT_MS`.
 
 Still pending: richer deployment configuration, production scrape wiring, and
-driver orchestration that wires scenario `api-responses` fixtures into the
-gateway environment.
+live driver execution that starts the gateway with the scenario-runner's
+planned replay environment.

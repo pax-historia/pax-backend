@@ -55,6 +55,17 @@ export interface WorkloadFixture {
   readonly path: string;
 }
 
+export interface ResolvedWorkloadFixture extends WorkloadFixture {
+  readonly absolutePath: string;
+}
+
+export interface ScenarioRuntimeEnvironment {
+  readonly fixtureBaseDir: string;
+  readonly fixtures: readonly ResolvedWorkloadFixture[];
+  readonly env: Readonly<Record<string, string>>;
+  readonly apiReplayFixturesPath?: string;
+}
+
 export type ScenarioWorkloadPhase =
   | {
       readonly type: "seed-fixtures";
@@ -122,6 +133,8 @@ export interface ScenarioRunnerInput {
   readonly nemesisManifest?: NemesisManifest;
   readonly workloadPath?: string;
   readonly workloadPlan?: ScenarioWorkloadPlan;
+  readonly fixtureBaseDir?: string;
+  readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
   readonly metrics?: ScenarioMetrics;
   readonly attribution?: ScenarioAttribution;
   readonly oracleScope?: OracleScope;
@@ -178,6 +191,12 @@ export interface ScenarioResult {
     readonly max_games: number;
     readonly fixtures: readonly WorkloadFixture[];
     readonly phases: readonly ScenarioWorkloadPhase[];
+  };
+  readonly runtime_environment?: {
+    readonly fixture_base_dir: string;
+    readonly fixtures: readonly ResolvedWorkloadFixture[];
+    readonly env: Readonly<Record<string, string>>;
+    readonly api_replay_fixtures_path?: string;
   };
   readonly oracle_scope: OracleScope;
   readonly sampling_profile: SamplingProfile;

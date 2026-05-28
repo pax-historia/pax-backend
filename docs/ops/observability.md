@@ -609,9 +609,10 @@ everything else stays `ramp`.
 
 - **Live mode**: gateway writes every round-trip to per-game wire-record JSONL,
   alongside history events. Shipped to Tigris on rotation.
-- **Replay mode**: scenario-runner loads bundle's `fixtures/api-responses/`
-  into an in-memory lookup; gateway short-circuits HTTP dispatch and looks up
-  by fingerprint. `replayCoverageGap` is hard-fail (README G5 spec).
+- **Replay mode**: scenario-runner resolves the scenario's `api-responses`
+  fixture into `PAX_API_REPLAY_FIXTURES_PATH`; gateway loads those wire-record
+  fixtures, short-circuits HTTP dispatch, and looks up by fingerprint.
+  `replayCoverageGap` is hard-fail (README G5 spec).
 - **Cross-version replay**: re-run any historical session against a new
   substrate build; URL service responses frozen; runtime + creator code
   re-executes. Oracles re-run against the new history; differences flagged.

@@ -1,6 +1,7 @@
 export { parseCliArgs, runCli } from "./cli.mjs";
 export { summarizeHistoryAttribution } from "./attribution.mjs";
 export { buildScenarioResult, oracleResultKey } from "./result.mjs";
+export { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
 export {
   loadNemesisManifest,
   loadScenarioManifest,
@@ -14,6 +15,7 @@ export type {
   NemesisKind,
   NemesisManifest,
   OracleScope,
+  ResolvedWorkloadFixture,
   SamplingProfile,
   ScenarioBackend,
   ScenarioAttribution,
@@ -21,6 +23,7 @@ export type {
   ScenarioMetrics,
   ScenarioOracleSummary,
   ScenarioResult,
+  ScenarioRuntimeEnvironment,
   ScenarioRunnerInput,
   ScenarioRunMode,
   ScenarioWorkloadPhase,

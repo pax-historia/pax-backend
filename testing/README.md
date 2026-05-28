@@ -56,5 +56,6 @@ nemeses/<nemesis>/
 
 Smoke today ships `smoke-bot/`. `oracles-lib/` has a first-party oracle for
 each Strong Platform Guarantee, and `scenario-runner/` can replay history
-against the scenario/nemesis/workload catalogs. Live workload execution and
-fault injection still land in later passes.
+against the scenario/nemesis/workload catalogs while planning the gateway
+replay fixture environment. Live workload execution and fault injection still
+land in later passes.

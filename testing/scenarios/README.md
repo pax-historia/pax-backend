@@ -24,5 +24,7 @@ for the broader rules about the `testing/` zone (kind-folders,
 Current source pass adds the first scenario manifests, declarative client
 workload plans, default nemesis selection, oracle selections, and inline
 fixtures for the three planned first-party scenarios. `api-responses` fixtures
-are gateway wire-record JSON/JSONL files keyed by outbound fingerprint.
-Workload execution and bundle wiring still land in later passes.
+are gateway wire-record JSON/JSONL files keyed by outbound fingerprint; the
+scenario runner resolves their paths into `PAX_API_REPLAY_FIXTURES_PATH` for
+the gateway replay environment. Workload execution and bundle wiring still
+land in later passes.

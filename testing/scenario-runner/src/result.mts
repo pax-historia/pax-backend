@@ -59,6 +59,14 @@ export function buildScenarioResult(
           phases: input.workloadPlan.phases,
         }
       : undefined,
+    runtime_environment: input.runtimeEnvironment
+      ? {
+          fixture_base_dir: input.runtimeEnvironment.fixtureBaseDir,
+          fixtures: input.runtimeEnvironment.fixtures,
+          env: input.runtimeEnvironment.env,
+          api_replay_fixtures_path: input.runtimeEnvironment.apiReplayFixturesPath,
+        }
+      : undefined,
     oracle_scope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     sampling_profile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
     started_at: new Date(startedAtMs).toISOString(),
