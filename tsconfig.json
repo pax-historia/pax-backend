@@ -18,6 +18,7 @@
     { "path": "./examples/bundles/hello-blob-rw" },
     { "path": "./examples/bundles/hello-multifeature" },
     { "path": "./examples/bundles/hello-state-rw" },
-    { "path": "./examples/bundles/hello-ws-echo" }
+    { "path": "./examples/bundles/hello-ws-echo" },
+    { "path": "./examples/url-services/billing-mock.v1" }
   ]
 }

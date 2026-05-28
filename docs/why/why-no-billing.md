@@ -28,7 +28,7 @@ The clean separation:
   `args` and `result` body contents.
 
 The reference `billing-mock.v1` URL service in
-`orchestration/url-services/billing-mock.v1/` is a worked example of how an
+`examples/url-services/billing-mock.v1/` is a worked example of how an
 operator could implement balances/credits/refunds on top of this seam. It is
 **not** part of the substrate's contract; tests against it live with the
 service, not in the substrate's release gate.

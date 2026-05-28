@@ -22,22 +22,17 @@ code happens to consume it.
 | Path | What it is |
 |---|---|
 | `bundles/<name>/` | Creator-facing example bundles. One folder per bundle. Each is the *minimal* demonstration of one or two channels — not a real game. The README's "hello-world creator bundles" list lives here. |
-| `url-services/<service>/` | Operator-facing reference URL services. Future home of `billing-mock.v1` (a *reference* implementation that demonstrates one way to layer balance/credit/refund/spectator logic on top of session observability — explicitly NOT part of the substrate's contract). |
+| `url-services/<service>/` | Operator-facing reference URL services. Currently includes `billing-mock.v1`, a *reference* implementation that demonstrates one way to layer credit/refund/spectator policy on top of session observability — explicitly NOT part of the substrate's contract. |
 
 ## Bundles currently shipped
 
 | Bundle | What it demonstrates |
 |---|---|
 | `hello-ws-echo` | `onWake` (cold-start), `onPlayerConnect` (sessionId stability), `onPlayerMessage` (idempotency seq), `c.ws.send` (WS tunnel back), `c.log.emit` (history). Echoes every player message back. The smoke loop loads this. |
-
-Planned (from the plan's §"Agent kickoff" step 9):
-
-| Bundle | What it demonstrates |
-|---|---|
 | `hello-blob-rw` | `c.blob` durability |
 | `hello-state-rw` | `c.state` durability + `c.state.flush()` |
 | `hello-ai-call` | `c.api.invoke('mock-ai.v1', ...)` + context envelope + wire-grain recording |
-| `hello-multifeature` | All of the above slowly enough to be readable in a tail of the history |
+| `hello-multifeature` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable bundle |
 
 ## Sub-layout convention
 

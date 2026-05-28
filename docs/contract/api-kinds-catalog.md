@@ -21,7 +21,7 @@ operator registrations under `api_kinds:<kindName>` and exposes:
 
 | Kind | URL service | Purpose |
 |---|---|---|
-| `billing-mock.v1` | `billing-mock.v1/` | Worked example of operator-owned billing on top of session observability. **Not part of the substrate's contract.** |
+| `billing-mock.v1` | `examples/url-services/billing-mock.v1/` | Worked example of operator-owned billing on top of session observability. **Not part of the substrate's contract.** |
 
 ## Operator-owned kinds
 

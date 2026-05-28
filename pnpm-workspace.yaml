@@ -10,6 +10,7 @@ packages:
   - "sdk/runtime-sdk-test-harness"
   - "sdk/bundle-tools"
   - "examples/bundles/*"
+  - "examples/url-services/*"
   - "testing/oracles-lib"
   - "testing/scenario-runner"
   - "testing/smoke-bot"
