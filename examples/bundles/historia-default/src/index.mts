@@ -65,9 +65,11 @@ export default defineBundle({
       connectedPlayers: connectedPlayerCount(),
     });
     await c.ws.send(payload.playerId, {
-      type: "historia.ready",
+      type: "ready",
       bundle: "historia-default",
       sessionId: payload.sessionId,
+      connectedAt: payload.connectedAt,
+      topic: "historia.ready",
       compatTag: manifest.compatTagProduced,
       connectedPlayers: connectedPlayerCount(),
       snapshot: buildHydrationSnapshot(requireGameContext(c), payload.playerId),
