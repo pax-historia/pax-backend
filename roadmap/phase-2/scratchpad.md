@@ -238,3 +238,14 @@ observe without injecting a failure. Added a dedicated
 `compute-stress/clients/phase2-no-fault.mts` workload that opens 100
 `hello-multifeature` games for a 30-minute no-fault window, then waits for the
 sleep-grace path so shutdown/sleep events reach archived history.
+
+## 2026-05-28 06:18 PDT
+
+First no-fault attempt `phase2-no-fault-20260528131349` did not reach the
+medium target. It seeded fixtures and reached 27 placements, then Rivet guard
+started reporting websocket service timeouts and the runner failed waiting for
+the ready frame for game 27 with `1011 core.internal_error`. Shard logs also
+showed `onWake` exceeding the 1-second handler timeout at this load. The
+2GB/shared-2x shard profile is not enough for the 100-game topology proof, so
+the next attempt moves the shard machine to performance-4x/8GB and lengthens
+the actor-ready, route, and handler windows for the medium proof.
