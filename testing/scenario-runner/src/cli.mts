@@ -31,7 +31,11 @@ type ParsedCliOptions =
 
 const MODES = new Set<ScenarioRunMode>(["load", "property", "fuzz", "replay"]);
 const BACKENDS = new Set<ScenarioBackend>(["live", "mock-shard", "in-memory"]);
-const NEMESES = new Set<NemesisKind>(["no-faults", "shard-death-every-5m"]);
+const NEMESES = new Set<NemesisKind>([
+  "no-faults",
+  "shard-death-every-5m",
+  "api-kind-partition-burst",
+]);
 const SAMPLING_PROFILES = new Set<SamplingProfile>(["ramp", "cliff_hold", "replay"]);
 const RUNTIMES = new Set<ScenarioRuntimeKind>(["ivm", "noivm"]);
 

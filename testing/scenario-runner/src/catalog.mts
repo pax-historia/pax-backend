@@ -117,6 +117,7 @@ function validateScenarioManifest(value: unknown, path: string): ScenarioManifes
   requireOneOf(manifest.defaultNemesis, path, "defaultNemesis", [
     "no-faults",
     "shard-death-every-5m",
+    "api-kind-partition-burst",
   ]);
   if (!Array.isArray(manifest.oracleNames) || manifest.oracleNames.length === 0) {
     throw new Error(`${path} field oracleNames must be a non-empty array`);
@@ -133,6 +134,7 @@ function validateNemesisManifest(value: unknown, path: string): NemesisManifest 
   requireOneOf(manifest.nemesisId, path, "nemesisId", [
     "no-faults",
     "shard-death-every-5m",
+    "api-kind-partition-burst",
   ]);
   requireString(manifest.description, path, "description");
   if (!Array.isArray(manifest.actions) || manifest.actions.length === 0) {
@@ -143,12 +145,20 @@ function validateNemesisManifest(value: unknown, path: string): NemesisManifest 
       throw new Error(`${path} field actions[${index}] must be an object`);
     }
     if (action["type"] === "none") continue;
-    if (action["type"] !== "kill-shard") {
-      throw new Error(`${path} field actions[${index}].type is unsupported`);
+    if (action["type"] === "kill-shard") {
+      if (typeof action["everyMs"] !== "number" || !Number.isFinite(action["everyMs"])) {
+        throw new Error(`${path} field actions[${index}].everyMs must be finite`);
+      }
+      continue;
     }
-    if (typeof action["everyMs"] !== "number" || !Number.isFinite(action["everyMs"])) {
-      throw new Error(`${path} field actions[${index}].everyMs must be finite`);
+    if (action["type"] === "api-kind-partition") {
+      requireNonNegativeNumber(action["afterMs"], path, `actions[${index}].afterMs`);
+      requirePositiveNumber(action["durationMs"], path, `actions[${index}].durationMs`);
+      requireString(action["kindName"], path, `actions[${index}].kindName`);
+      requireString(action["partitionUrl"], path, `actions[${index}].partitionUrl`);
+      continue;
     }
+    throw new Error(`${path} field actions[${index}].type is unsupported`);
   }
   return manifest as NemesisManifest;
 }
@@ -328,7 +338,10 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requireNonNegativeNumber(value["idleMsBetweenCycles"], path, `${prefix}.idleMsBetweenCycles`);
       return normalized;
     case "await-nemesis":
-      requireOneOf(value["action"], path, `${prefix}.action`, ["kill-shard"]);
+      requireOneOf(value["action"], path, `${prefix}.action`, [
+        "kill-shard",
+        "api-kind-partition",
+      ]);
       requirePositiveNumber(value["minimumOccurrences"], path, `${prefix}.minimumOccurrences`);
       return normalized;
     case "expect-history-events":

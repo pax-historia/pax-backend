@@ -1,4 +1,7 @@
-export type NemesisKind = "no-faults" | "shard-death-every-5m";
+export type NemesisKind =
+  | "no-faults"
+  | "shard-death-every-5m"
+  | "api-kind-partition-burst";
 
 export interface NemesisManifest {
   readonly nemesisId: NemesisKind;
@@ -15,4 +18,11 @@ export type NemesisAction =
       readonly everyMs: number;
       readonly selection: "round-robin" | "least-recently-killed";
       readonly replacement: "let-orchestrator-replace";
+    }
+  | {
+      readonly type: "api-kind-partition";
+      readonly afterMs: number;
+      readonly durationMs: number;
+      readonly kindName: string;
+      readonly partitionUrl: string;
     };
