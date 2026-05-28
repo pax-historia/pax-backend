@@ -21,10 +21,14 @@ export const PLACEMENT_RECENT_WAKES_KEY_PREFIX = "placement_recent_wakes:" as co
 export const BUNDLE_KEY_PREFIX = "bundles:" as const;
 export const GAME_KEY_PREFIX = "games:" as const;
 export const ALLOWED_PLAYERS_KEY_PREFIX = "allowed_players:" as const;
+export const STATE_KEY_PREFIX = "state:" as const;
+export const BLOB_KEY_PREFIX = "blob:" as const;
 
 export const SHARD_REGISTRY_TTL_SECONDS = 45 as const;
 export const ACTIVE_GAME_TTL_SECONDS = 3600 as const;
 export const PLACEMENT_RECENT_WAKES_TTL_SECONDS = 45 as const;
+export const DEFAULT_STATE_BYTES_LIMIT = 131072 as const;
+export const DEFAULT_BLOB_BYTES_LIMIT = 10485760 as const;
 
 // ----- IPC envelope ------------------------------------------------------
 
@@ -218,6 +222,32 @@ export interface ComputeBudgetIpcResponsePayload {
   readonly budget: ComputeBudgetSnapshot;
 }
 
+export type StorageWriteResponse =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly error: "sizeExceeded" | "storageUnavailable";
+      readonly detail?: unknown;
+    };
+
+export interface StorageReadResponsePayload {
+  readonly found: boolean;
+  readonly value?: unknown;
+  readonly bytes: number;
+}
+
+export interface StorageWriteIpcPayload {
+  readonly value: unknown;
+}
+
+export interface StorageWriteResponsePayload {
+  readonly response: StorageWriteResponse;
+}
+
+export interface StorageFlushResponsePayload {
+  readonly response: StorageWriteResponse;
+}
+
 // ----- Discriminated union: parent → child --------------------------------
 
 export type ParentToChildEnvelope =
@@ -226,6 +256,11 @@ export type ParentToChildEnvelope =
   | IpcEnvelope<"players.allowed.response", PlayersAllowedIpcResponsePayload>
   | IpcEnvelope<"players.connected.response", PlayersConnectedIpcResponsePayload>
   | IpcEnvelope<"compute.budget.response", ComputeBudgetIpcResponsePayload>
+  | IpcEnvelope<"state.read.response", StorageReadResponsePayload>
+  | IpcEnvelope<"state.write.response", StorageWriteResponsePayload>
+  | IpcEnvelope<"state.flush.response", StorageFlushResponsePayload>
+  | IpcEnvelope<"blob.read.response", StorageReadResponsePayload>
+  | IpcEnvelope<"blob.write.response", StorageWriteResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
@@ -285,6 +320,11 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"players.allowed", Record<string, never>>
   | IpcEnvelope<"players.connected", Record<string, never>>
   | IpcEnvelope<"compute.budget", Record<string, never>>
+  | IpcEnvelope<"state.read", Record<string, never>>
+  | IpcEnvelope<"state.write", StorageWriteIpcPayload>
+  | IpcEnvelope<"state.flush", Record<string, never>>
+  | IpcEnvelope<"blob.read", Record<string, never>>
+  | IpcEnvelope<"blob.write", StorageWriteIpcPayload>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
@@ -300,6 +340,11 @@ export const PARENT_TO_CHILD = Object.freeze({
   playersAllowedResponse: "players.allowed.response",
   playersConnectedResponse: "players.connected.response",
   computeBudgetResponse: "compute.budget.response",
+  stateReadResponse: "state.read.response",
+  stateWriteResponse: "state.write.response",
+  stateFlushResponse: "state.flush.response",
+  blobReadResponse: "blob.read.response",
+  blobWriteResponse: "blob.write.response",
   onWake: "onWake",
   onSleep: "onSleep",
   onPlayerConnect: "onPlayerConnect",
@@ -314,6 +359,11 @@ export const CHILD_TO_PARENT = Object.freeze({
   playersAllowed: "players.allowed",
   playersConnected: "players.connected",
   computeBudget: "compute.budget",
+  stateRead: "state.read",
+  stateWrite: "state.write",
+  stateFlush: "state.flush",
+  blobRead: "blob.read",
+  blobWrite: "blob.write",
   wsSend: "ws.send",
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",

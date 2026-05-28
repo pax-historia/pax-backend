@@ -13,7 +13,8 @@
 //    session context.
 //
 // What this process does NOT do (deferred):
-//  - c.blob (Tigris) and c.state (RocksDB persistence beyond Rivet's own KV).
+//  - Native c.blob (Tigris) and c.state (RocksDB) adapters; this pass uses
+//    Redis-backed storage under the same IPC contract.
 //  - Compute-plane quota enforcement (we ship the per-handler timeout in the
 //    child via ivm; the rest is M2+).
 
@@ -36,12 +37,15 @@ import {
   type ApiInvokeError,
   type ApiInvokeIpcPayload,
   type ApiInvokeResponse,
+  BLOB_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
   CHILD_TO_PARENT,
   type ChildToParentEnvelope,
   type ComputeBudgetSnapshot,
   type ConnectedSessionSnapshot,
+  DEFAULT_BLOB_BYTES_LIMIT,
+  DEFAULT_STATE_BYTES_LIMIT,
   type DisconnectReason,
   GAME_KEY_PREFIX,
   type GameRecord,
@@ -49,6 +53,9 @@ import {
   RUNTIME_CONTRACT_VERSION,
   SHARD_REGISTRY_KEY_PREFIX,
   SHARD_REGISTRY_TTL_SECONDS,
+  STATE_KEY_PREFIX,
+  type StorageReadResponsePayload,
+  type StorageWriteResponse,
   type ShardRegistration,
   envelope,
   generateRunId,
@@ -96,10 +103,14 @@ const WS_MESSAGES_PER_SEC_LIMIT = Number.parseInt(
   process.env["PAX_WS_MESSAGES_PER_SEC_LIMIT"] ?? "50",
   10,
 );
-const STATE_BYTES_LIMIT =
-  Number.parseInt(process.env["PAX_STATE_BYTES_LIMIT"] ?? "131072", 10);
-const BLOB_BYTES_LIMIT =
-  Number.parseInt(process.env["PAX_BLOB_BYTES_LIMIT"] ?? "10485760", 10);
+const STATE_BYTES_LIMIT = Number.parseInt(
+  process.env["PAX_STATE_BYTES_LIMIT"] ?? String(DEFAULT_STATE_BYTES_LIMIT),
+  10,
+);
+const BLOB_BYTES_LIMIT = Number.parseInt(
+  process.env["PAX_BLOB_BYTES_LIMIT"] ?? String(DEFAULT_BLOB_BYTES_LIMIT),
+  10,
+);
 const API_INVOCATIONS_PER_MIN_LIMIT = Number.parseInt(
   process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
   10,
@@ -269,11 +280,14 @@ interface GameInstance {
   readonly gameId: string;
   readonly bundleName: string;
   readonly bundleCompatTag: string;
+  blobCompatTag?: string;
   readonly runId: string;
   child: ChildProcess | null;
   readonly sessions: Map<string, SessionRecord>;
   readonly wsUsageSamples: UsageSample[];
   readonly apiInvokeSamples: UsageSample[];
+  stateBytes: number;
+  blobBytes: number;
   ready: boolean;
   bootstrapPromise: Promise<void> | null;
 }
@@ -309,6 +323,7 @@ function ensureGame(
   actorId: string,
   gameId: string,
   bundleName: string,
+  blobCompatTag?: string,
 ): GameInstance {
   const existing = games.get(actorId);
   if (existing) return existing;
@@ -319,11 +334,14 @@ function ensureGame(
     gameId,
     bundleName,
     bundleCompatTag: bundle.manifest.compatTagProduced,
+    blobCompatTag,
     runId,
     child: null,
     sessions: new Map(),
     wsUsageSamples: [],
     apiInvokeSamples: [],
+    stateBytes: 0,
+    blobBytes: 0,
     ready: false,
     bootstrapPromise: null,
   };
@@ -387,19 +405,7 @@ function forkChild(inst: GameInstance): Promise<void> {
       if (!isChildEnvelope(raw) || raw.type !== CHILD_TO_PARENT.ready) return;
       child.off("message", readyHandler);
       inst.ready = true;
-      sendTyped(child, "onWake", {
-        reason: "cold-start",
-        runId: inst.runId,
-        bundleName: inst.bundleName,
-        bundleCompatTag: inst.bundleCompatTag,
-      });
-      history("onWake.sent", {
-        actorId: inst.actorId,
-        gameId: inst.gameId,
-        runId: inst.runId,
-        reason: "cold-start",
-      });
-      resolveReady();
+      void sendWakeAfterHydration(child, inst, resolveReady, rejectReady);
     };
     child.on("message", readyHandler);
 
@@ -413,6 +419,41 @@ function forkChild(inst: GameInstance): Promise<void> {
     });
   });
   return inst.bootstrapPromise;
+}
+
+async function sendWakeAfterHydration(
+  child: ChildProcess,
+  inst: GameInstance,
+  resolveReady: () => void,
+  rejectReady: (err: Error) => void,
+): Promise<void> {
+  try {
+    const [state, blob] = await Promise.all([
+      readGameStorage(inst, "state"),
+      readGameStorage(inst, "blob"),
+    ]);
+    sendTyped(child, "onWake", {
+      reason: "cold-start",
+      runId: inst.runId,
+      bundleName: inst.bundleName,
+      bundleCompatTag: inst.bundleCompatTag,
+      blobCompatTag: inst.blobCompatTag,
+      state: state.found ? state.value : undefined,
+      blob: blob.found ? blob.value : undefined,
+    });
+    history("onWake.sent", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason: "cold-start",
+      stateBytes: state.bytes,
+      blobBytes: blob.bytes,
+      blobCompatTag: inst.blobCompatTag,
+    });
+    resolveReady();
+  } catch (err) {
+    rejectReady(err instanceof Error ? err : new Error(String(err)));
+  }
 }
 
 function sendTyped<T extends ParentToChildEnvelope["type"]>(
@@ -451,6 +492,21 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       return;
     case CHILD_TO_PARENT.computeBudget:
       handleComputeBudget(inst, raw.requestId);
+      return;
+    case CHILD_TO_PARENT.stateRead:
+      void handleStorageRead(inst, raw.requestId, "state");
+      return;
+    case CHILD_TO_PARENT.stateWrite:
+      void handleStorageWrite(inst, raw.requestId, "state", raw.payload.value);
+      return;
+    case CHILD_TO_PARENT.stateFlush:
+      handleStateFlush(inst, raw.requestId);
+      return;
+    case CHILD_TO_PARENT.blobRead:
+      void handleStorageRead(inst, raw.requestId, "blob");
+      return;
+    case CHILD_TO_PARENT.blobWrite:
+      void handleStorageWrite(inst, raw.requestId, "blob", raw.payload.value);
       return;
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.payload);
@@ -594,6 +650,89 @@ function handleComputeBudget(
   });
   if (inst.child) {
     sendTyped(inst.child, "compute.budget.response", { budget }, requestId);
+  }
+}
+
+async function handleStorageRead(
+  inst: GameInstance,
+  requestId: string | undefined,
+  tier: "state" | "blob",
+): Promise<void> {
+  if (!requestId) {
+    history(`${tier}.read.rejected`, {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const response = await readGameStorage(inst, tier);
+  history(`${tier}.read`, {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    found: response.found,
+    bytes: response.bytes,
+  });
+  if (!inst.child) return;
+  if (tier === "state") {
+    sendTyped(inst.child, "state.read.response", response, requestId);
+  } else {
+    sendTyped(inst.child, "blob.read.response", response, requestId);
+  }
+}
+
+async function handleStorageWrite(
+  inst: GameInstance,
+  requestId: string | undefined,
+  tier: "state" | "blob",
+  value: unknown,
+): Promise<void> {
+  if (!requestId) {
+    history(`${tier}.write.rejected`, {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const response = await writeGameStorage(inst, tier, value);
+  history(`${tier}.write`, {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    ok: response.ok,
+    error: response.ok ? undefined : response.error,
+  });
+  if (!inst.child) return;
+  if (tier === "state") {
+    sendTyped(inst.child, "state.write.response", { response }, requestId);
+  } else {
+    sendTyped(inst.child, "blob.write.response", { response }, requestId);
+  }
+}
+
+function handleStateFlush(
+  inst: GameInstance,
+  requestId: string | undefined,
+): void {
+  if (!requestId) {
+    history("state.flush.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const response: StorageWriteResponse = { ok: true };
+  history("state.flush", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    ok: true,
+  });
+  if (inst.child) {
+    sendTyped(inst.child, "state.flush.response", { response }, requestId);
   }
 }
 
@@ -774,6 +913,74 @@ function connectedSessionSnapshot(inst: GameInstance): readonly ConnectedSession
   }));
 }
 
+async function readGameStorage(
+  inst: GameInstance,
+  tier: "state" | "blob",
+): Promise<StorageReadResponsePayload> {
+  const raw = await redis.get(storageKey(inst.gameId, tier));
+  if (raw === null) {
+    if (tier === "state") inst.stateBytes = 0;
+    else inst.blobBytes = 0;
+    return { found: false, bytes: 0 };
+  }
+  const bytes = Buffer.byteLength(raw, "utf8");
+  if (tier === "state") inst.stateBytes = bytes;
+  else inst.blobBytes = bytes;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return { found: false, bytes };
+  }
+  return parsed &&
+    typeof parsed === "object" &&
+    Object.prototype.hasOwnProperty.call(parsed, "value")
+    ? { found: true, value: (parsed as { value?: unknown }).value, bytes }
+    : { found: true, value: parsed, bytes };
+}
+
+async function writeGameStorage(
+  inst: GameInstance,
+  tier: "state" | "blob",
+  value: unknown,
+): Promise<StorageWriteResponse> {
+  let raw: string;
+  try {
+    raw = JSON.stringify({ value });
+  } catch (err) {
+    return {
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    };
+  }
+  const bytes = Buffer.byteLength(raw, "utf8");
+  const limit = tier === "state" ? STATE_BYTES_LIMIT : BLOB_BYTES_LIMIT;
+  if (bytes > limit) {
+    return {
+      ok: false,
+      error: "sizeExceeded",
+      detail: { bytes, limit },
+    };
+  }
+  try {
+    await redis.set(storageKey(inst.gameId, tier), raw);
+  } catch (err) {
+    return {
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    };
+  }
+  if (tier === "state") inst.stateBytes = bytes;
+  else inst.blobBytes = bytes;
+  return { ok: true };
+}
+
+function storageKey(gameId: string, tier: "state" | "blob"): string {
+  return `${tier === "state" ? STATE_KEY_PREFIX : BLOB_KEY_PREFIX}${gameId}`;
+}
+
 function recordWsUsage(inst: GameInstance, bytes: number): void {
   inst.wsUsageSamples.push({ at: Date.now(), amount: bytes });
   pruneUsageSamples(inst.wsUsageSamples, 1_000);
@@ -810,11 +1017,11 @@ function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
       windowMs: 1_000,
     },
     "state-bytes": {
-      currentUsage: 0,
+      currentUsage: inst.stateBytes,
       limit: STATE_BYTES_LIMIT,
     },
     "blob-bytes": {
-      currentUsage: 0,
+      currentUsage: inst.blobBytes,
       limit: BLOB_BYTES_LIMIT,
     },
     "api-invocations-per-min": {
@@ -1082,11 +1289,13 @@ const runner = new Runner({
   ): Promise<void> => {
     const gameId = actorConfig.key ?? actorId;
     let bundleName = "hello-ws-echo";
+    let blobCompatTag: string | undefined;
     try {
       const gameRaw = await redis.get(`${GAME_KEY_PREFIX}${gameId}`);
       if (gameRaw) {
         const game = JSON.parse(gameRaw) as GameRecord;
         if (typeof game.bundleName === "string") bundleName = game.bundleName;
+        if (typeof game.blobCompatTag === "string") blobCompatTag = game.blobCompatTag;
       } else {
         log.warn(
           { gameId },
@@ -1097,7 +1306,7 @@ const runner = new Runner({
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ gameId, err: msg }, "redis games lookup failed");
     }
-    const inst = ensureGame(actorId, gameId, bundleName);
+    const inst = ensureGame(actorId, gameId, bundleName, blobCompatTag);
     wakeMetrics.recentWakes += 1;
     log.info({ actorId, gameId, bundleName }, "actor start; forking child");
     await forkChild(inst);

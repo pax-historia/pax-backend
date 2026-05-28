@@ -18,6 +18,7 @@ import type {
   OnPlayerMessagePayload,
   OnSleepPayload,
   OnWakePayload,
+  StorageWriteResponse,
   WsTarget,
 } from "@pax-backend/ipc-protocol";
 
@@ -27,6 +28,7 @@ export type {
   ComputeBudgetSnapshot,
   ConnectedSessionSnapshot,
   MetricsEmitPayload,
+  StorageWriteResponse,
 } from "@pax-backend/ipc-protocol";
 
 // ----- The typed substrate context (`c`) ---------------------------------
@@ -72,9 +74,20 @@ export interface SubstrateContext {
     /** Read current compute-plane usage and configured limits. */
     budget(): Promise<ComputeBudgetSnapshot>;
   };
-  // Reserved (smoke does not exercise these; types pin the surface).
-  readonly state?: undefined;
-  readonly blob?: undefined;
+  readonly state: {
+    /** Read the small, fast per-game state tier. */
+    read(): Promise<unknown | undefined>;
+    /** Replace the small state tier value. Fails with sizeExceeded over 128 KB. */
+    write(value: unknown): Promise<StorageWriteResponse>;
+    /** Force-flush pending state writes. Redis-backed local mode is already immediate. */
+    flush(): Promise<StorageWriteResponse>;
+  };
+  readonly blob: {
+    /** Read the large durable blob tier. */
+    read(): Promise<unknown | undefined>;
+    /** Replace the blob tier value. */
+    write(value: unknown): Promise<StorageWriteResponse>;
+  };
 }
 
 // ----- Bundle handler signatures -----------------------------------------

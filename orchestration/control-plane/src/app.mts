@@ -4,7 +4,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Redis } from "ioredis";
 
-import type { BundleRecord, GameRecord } from "@pax-backend/ipc-protocol";
+import {
+  DEFAULT_BLOB_BYTES_LIMIT,
+  DEFAULT_STATE_BYTES_LIMIT,
+  type BundleRecord,
+  type GameRecord,
+} from "@pax-backend/ipc-protocol";
 
 import {
   connectedPlayersForGame,
@@ -17,6 +22,14 @@ import { ControlPlaneStore } from "./store.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
+const STATE_BYTES_LIMIT = Number.parseInt(
+  process.env["PAX_STATE_BYTES_LIMIT"] ?? String(DEFAULT_STATE_BYTES_LIMIT),
+  10,
+);
+const BLOB_BYTES_LIMIT = Number.parseInt(
+  process.env["PAX_BLOB_BYTES_LIMIT"] ?? String(DEFAULT_BLOB_BYTES_LIMIT),
+  10,
+);
 
 export interface ControlPlaneConfig {
   readonly bindHost: string;
@@ -180,6 +193,14 @@ async function handleGamesCollection(
   const bundleName = readString(body, "bundleName");
   const bundle = await store.getBundle(bundleName);
   if (!bundle) throw new HttpError(404, "bundleNotFound", { bundleName });
+  if (Object.prototype.hasOwnProperty.call(body, "initialBlobUrl")) {
+    throw new HttpError(400, "unsupportedField", {
+      field: "initialBlobUrl",
+      message: "inline initialBlob is supported; URL ingestion is not wired in this pass",
+    });
+  }
+  const initialState = readOptionalStoredValue(body, "initialState", STATE_BYTES_LIMIT);
+  const initialBlob = readOptionalStoredValue(body, "initialBlob", BLOB_BYTES_LIMIT);
   const game: GameRecord = {
     gameId,
     bundleName,
@@ -188,10 +209,19 @@ async function handleGamesCollection(
   };
   const created = await store.putGameWriteOnce(game);
   if (!created) throw new HttpError(409, "gameAlreadyExists", { gameId });
+  if (initialState) await store.putStorageRaw(gameId, "state", initialState.raw);
+  if (initialBlob) await store.putStorageRaw(gameId, "blob", initialBlob.raw);
   for (const playerId of readOptionalStringArray(body, "allowedPlayers")) {
     await store.addAllowedPlayer(gameId, playerId);
   }
-  writeJson(res, 201, { ok: true, game });
+  writeJson(res, 201, {
+    ok: true,
+    game,
+    storage: {
+      stateBytes: initialState?.bytes ?? 0,
+      blobBytes: initialBlob?.bytes ?? 0,
+    },
+  });
 }
 
 async function handleGameResource(
@@ -456,6 +486,29 @@ function readOptionalStringArray(
     throw new HttpError(400, "badRequest", { field, expected: "string array" });
   }
   return value;
+}
+
+function readOptionalStoredValue(
+  record: Readonly<Record<string, unknown>>,
+  field: "initialState" | "initialBlob",
+  limit: number,
+): { readonly raw: string; readonly bytes: number } | undefined {
+  if (!Object.prototype.hasOwnProperty.call(record, field)) return undefined;
+  let raw: string;
+  try {
+    raw = JSON.stringify({ value: record[field] });
+  } catch (err) {
+    throw new HttpError(400, "badRequest", {
+      field,
+      expected: "JSON-serializable value",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const bytes = Buffer.byteLength(raw, "utf8");
+  if (bytes > limit) {
+    throw new HttpError(413, "sizeExceeded", { field, bytes, limit });
+  }
+  return { raw, bytes };
 }
 
 function optionalInt(value: string | null): number | undefined {

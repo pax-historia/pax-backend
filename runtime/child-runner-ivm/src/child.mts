@@ -3,8 +3,8 @@
 // One node child_process per game. The bundle source is loaded into an
 // isolated-vm Isolate; substrate context (c.ws.send / c.log.emit /
 // c.metrics.emit / c.lifecycle.requestSleep / c.api.invoke / c.players.* /
-// c.compute.budget) is exposed as ivm bridges that post IPC envelopes back
-// to the parent via process.send().
+// c.compute.budget / c.state.* / c.blob.*) is exposed as ivm bridges that
+// post IPC envelopes back to the parent via process.send().
 //
 // Trust model (README §"Trust model"):
 //  - No outbound network (parent forks us with a stripped env).
@@ -73,6 +73,17 @@ interface PendingParentRequest {
 
 const pendingParentRequests = new Map<string, PendingParentRequest>();
 
+type ParentRequestType =
+  | "api.invoke"
+  | "players.allowed"
+  | "players.connected"
+  | "compute.budget"
+  | "state.read"
+  | "state.write"
+  | "state.flush"
+  | "blob.read"
+  | "blob.write";
+
 async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   isolate = new ivm.Isolate({ memoryLimit: cfg.memoryLimitMb });
   context = await isolate.createContext();
@@ -124,6 +135,21 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   const cComputeBudget = new ivm.Reference(() =>
     invokeParentFromBridge(CHILD_TO_PARENT.computeBudget, {}),
   );
+  const cStateRead = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.stateRead, {}),
+  );
+  const cStateWrite = new ivm.Reference((valueJson: string) =>
+    invokeStorageWriteFromBridge(CHILD_TO_PARENT.stateWrite, valueJson),
+  );
+  const cStateFlush = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.stateFlush, {}),
+  );
+  const cBlobRead = new ivm.Reference(() =>
+    invokeParentFromBridge(CHILD_TO_PARENT.blobRead, {}),
+  );
+  const cBlobWrite = new ivm.Reference((valueJson: string) =>
+    invokeStorageWriteFromBridge(CHILD_TO_PARENT.blobWrite, valueJson),
+  );
 
   await jail.set("__pax_c_ws_send", cWsSend);
   await jail.set("__pax_c_log_emit", cLogEmit);
@@ -133,6 +159,11 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   await jail.set("__pax_c_players_allowed", cPlayersAllowed);
   await jail.set("__pax_c_players_connected", cPlayersConnected);
   await jail.set("__pax_c_compute_budget", cComputeBudget);
+  await jail.set("__pax_c_state_read", cStateRead);
+  await jail.set("__pax_c_state_write", cStateWrite);
+  await jail.set("__pax_c_state_flush", cStateFlush);
+  await jail.set("__pax_c_blob_read", cBlobRead);
+  await jail.set("__pax_c_blob_write", cBlobWrite);
 
   // SDK-equivalent in the isolate. Bundles compiled via esbuild see
   // defineBundle bundled in directly; __pax_install is the only global the
@@ -141,6 +172,27 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
     `
     globalThis.__pax_bundle = null;
     globalThis.__pax_install = (bundle) => { globalThis.__pax_bundle = bundle; };
+    const __pax_encode_storage_write = (value) => {
+      try {
+        const valueJson = JSON.stringify(value);
+        if (typeof valueJson !== "string") {
+          return {
+            ok: false,
+            error: "storageUnavailable",
+            detail: { message: "storage values must be JSON-serializable" },
+          };
+        }
+        return { ok: true, valueJson };
+      } catch (err) {
+        return {
+          ok: false,
+          error: "storageUnavailable",
+          detail: {
+            message: err && typeof err.message === "string" ? err.message : String(err),
+          },
+        };
+      }
+    };
     globalThis.c = {
       ws: {
         send: (target, body) => __pax_c_ws_send.applySync(undefined, [JSON.stringify(target), JSON.stringify(body)]),
@@ -181,6 +233,36 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       compute: {
         budget: () => {
           const responseJson = __pax_c_compute_budget.applySyncPromise(undefined, []);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+      },
+      state: {
+        read: () => {
+          const responseJson = __pax_c_state_read.applySyncPromise(undefined, []);
+          const response = JSON.parse(responseJson);
+          return Promise.resolve(response.found ? response.value : undefined);
+        },
+        write: (value) => {
+          const encoded = __pax_encode_storage_write(value);
+          if (!encoded.ok) return Promise.resolve(encoded);
+          const responseJson = __pax_c_state_write.applySyncPromise(undefined, [encoded.valueJson]);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+        flush: () => {
+          const responseJson = __pax_c_state_flush.applySyncPromise(undefined, []);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+      },
+      blob: {
+        read: () => {
+          const responseJson = __pax_c_blob_read.applySyncPromise(undefined, []);
+          const response = JSON.parse(responseJson);
+          return Promise.resolve(response.found ? response.value : undefined);
+        },
+        write: (value) => {
+          const encoded = __pax_encode_storage_write(value);
+          if (!encoded.ok) return Promise.resolve(encoded);
+          const responseJson = __pax_c_blob_write.applySyncPromise(undefined, [encoded.valueJson]);
           return Promise.resolve(JSON.parse(responseJson));
         },
       },
@@ -266,7 +348,7 @@ function invokeApiFromBridge(
 }
 
 function invokeParentFromBridge(
-  type: "api.invoke" | "players.allowed" | "players.connected" | "compute.budget",
+  type: ParentRequestType,
   payload: Record<string, unknown>,
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -284,6 +366,17 @@ function invokeParentFromBridge(
     pendingParentRequests.set(requestId, { resolve, timeout });
     emit(envelope(type, payload, requestId) as ChildToParentEnvelope);
   });
+}
+
+function invokeStorageWriteFromBridge(
+  type: "state.write" | "blob.write",
+  valueJson: string,
+): Promise<string> {
+  try {
+    return invokeParentFromBridge(type, { value: JSON.parse(valueJson) as unknown });
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+  }
 }
 
 function completeParentRequest(
@@ -340,6 +433,21 @@ process.on("message", async (raw: unknown) => {
         return;
       case PARENT_TO_CHILD.computeBudgetResponse:
         completeParentRequest(raw.requestId, raw.payload.budget);
+        return;
+      case PARENT_TO_CHILD.stateReadResponse:
+        completeParentRequest(raw.requestId, raw.payload);
+        return;
+      case PARENT_TO_CHILD.stateWriteResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.stateFlushResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.blobReadResponse:
+        completeParentRequest(raw.requestId, raw.payload);
+        return;
+      case PARENT_TO_CHILD.blobWriteResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
         return;
       case PARENT_TO_CHILD.onWake:
         await invokeHandler("onWake", raw.payload);
