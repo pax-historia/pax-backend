@@ -4,9 +4,12 @@ import { dirname, join, relative, resolve } from "node:path";
 interface CliOptions {
   readonly soakDir: string;
   readonly outputPath: string;
+  readonly expectCaseIds: readonly string[];
   readonly expectCases?: number;
   readonly expectTargetGames?: number;
   readonly expectPlacementShards?: number;
+  readonly expectCompletedPhases: readonly string[];
+  readonly expectExitCode?: string;
   readonly requireResults: boolean;
 }
 
@@ -59,6 +62,7 @@ interface SoakSummary {
   readonly kind: "phase-5-soak-summary";
   readonly generated_at: string;
   readonly soak_dir: string;
+  readonly run_exit_code?: string;
   readonly cases: readonly CaseSummary[];
   readonly monitor?: MonitorSummary;
   readonly summary: {
@@ -80,6 +84,7 @@ const options = parseArgs(process.argv.slice(2));
 const soakDir = resolve(options.soakDir);
 const files = await listFiles(soakDir);
 const historyPaths = files.filter((path) => path.endsWith(".history.jsonl")).sort();
+const runExitCode = await readOptionalText(join(soakDir, "exit.code"));
 const monitor = await summarizeMonitor(
   soakDir,
   files.find((path) => path === join(soakDir, "monitor", "status.jsonl")),
@@ -98,12 +103,13 @@ const allShardIds = new Set<string>();
 for (const entry of cases) {
   for (const shardId of Object.keys(entry.placement_distribution)) allShardIds.add(shardId);
 }
-const gateFailures = gateFailuresFor(options, cases, allShardIds.size, monitor);
+const gateFailures = gateFailuresFor(options, cases, allShardIds.size, monitor, runExitCode);
 const summary: SoakSummary = {
   schema_version: 1,
   kind: "phase-5-soak-summary",
   generated_at: new Date().toISOString(),
   soak_dir: soakDir,
+  run_exit_code: runExitCode,
   cases,
   monitor,
   summary: {
@@ -272,14 +278,23 @@ function gateFailuresFor(
   cases: readonly CaseSummary[],
   observedPlacementShards: number,
   monitor: MonitorSummary | undefined,
+  runExitCode: string | undefined,
 ): readonly string[] {
   const failures: string[] = [];
   if (options.expectCases !== undefined && cases.length < options.expectCases) {
     failures.push(`expected at least ${options.expectCases} case(s), saw ${cases.length}`);
   }
+  if (options.expectCaseIds.length > 0) {
+    const seen = new Set(cases.map((entry) => entry.case_id));
+    const missing = options.expectCaseIds.filter((caseId) => !seen.has(caseId));
+    if (missing.length > 0) failures.push(`missing expected case(s): ${missing.join(", ")}`);
+  }
   if (options.requireResults) {
     const missing = cases.filter((entry) => !entry.result_path).map((entry) => entry.case_id);
     if (missing.length > 0) failures.push(`missing result files for ${missing.join(", ")}`);
+  }
+  if (options.expectExitCode !== undefined && runExitCode !== options.expectExitCode) {
+    failures.push(`expected exit.code ${options.expectExitCode}, saw ${runExitCode ?? "<missing>"}`);
   }
   if (options.expectTargetGames !== undefined) {
     for (const entry of cases) {
@@ -299,6 +314,13 @@ function gateFailuresFor(
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
     if (entry.result_status === "fail") failures.push(`${entry.case_id} has failing oracles`);
     if (entry.result_status === "error") failures.push(`${entry.case_id} errored`);
+    if (options.expectCompletedPhases.length > 0) {
+      const completed = new Set(entry.phases_completed.map(phaseName));
+      const missing = options.expectCompletedPhases.filter((phase) => !completed.has(phase));
+      if (missing.length > 0) {
+        failures.push(`${entry.case_id} missing completed phase(s): ${missing.join(", ")}`);
+      }
+    }
   }
   if (monitor && monitor.parse_errors.length > 0) {
     failures.push(`${monitor.path} has parse errors`);
@@ -320,6 +342,16 @@ async function listFiles(root: string): Promise<readonly string[]> {
   return files;
 }
 
+async function readOptionalText(path: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(path, "utf8");
+    return raw.trim();
+  } catch (err) {
+    if (isErrorWithCode(err) && err.code === "ENOENT") return undefined;
+    throw err;
+  }
+}
+
 function caseIdFromPath(path: string, suffix: string): string {
   const base = path.split(/[\\/]/).pop() ?? path;
   return base.endsWith(suffix) ? base.slice(0, -suffix.length) : base;
@@ -328,6 +360,11 @@ function caseIdFromPath(path: string, suffix: string): string {
 function phaseLabel(event: HistoryEvent): string {
   const index = typeof event.phaseIndex === "number" ? `${event.phaseIndex}:` : "";
   return `${index}${stringValue(event.phaseType) ?? "unknown"}`;
+}
+
+function phaseName(label: string): string {
+  const colon = label.indexOf(":");
+  return colon >= 0 ? label.slice(colon + 1) : label;
 }
 
 function parseArgs(argv: readonly string[]): CliOptions {
@@ -348,9 +385,12 @@ function parseArgs(argv: readonly string[]): CliOptions {
   return {
     soakDir,
     outputPath: stringOption(values, "output") ?? join(soakDir, "soak-summary.json"),
+    expectCaseIds: stringListOption(values, "expect-case-ids"),
     expectCases: positiveIntOption(values, "expect-cases"),
     expectTargetGames: positiveIntOption(values, "expect-target-games"),
     expectPlacementShards: positiveIntOption(values, "expect-placement-shards"),
+    expectCompletedPhases: stringListOption(values, "expect-completed-phases"),
+    expectExitCode: stringOption(values, "expect-exit-code"),
     requireResults: values.get("require-results") === true,
   };
 }
@@ -371,6 +411,15 @@ function positiveIntOption(
     throw new Error(`--${key} must be a positive integer`);
   }
   return parsed;
+}
+
+function stringListOption(values: ReadonlyMap<string, string | true>, key: string): readonly string[] {
+  const value = stringOption(values, key);
+  if (value === undefined) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -397,4 +446,8 @@ function sumNumeric(rows: readonly Record<string, unknown>[], key: string): numb
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isErrorWithCode(value: unknown): value is { readonly code: string } {
+  return isRecord(value) && typeof value["code"] === "string";
 }

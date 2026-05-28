@@ -188,3 +188,7 @@ Fifth detached monitor snapshot landed at `2026-05-28T23:27:23.444Z`. The active
 ## 2026-05-28 16:33 PDT
 
 Sixth detached monitor snapshot landed at `2026-05-28T23:32:23.565Z`, about 45 minutes into the no-faults hold. The runner wrapper, tsx process, and monitor process were alive; sampled metrics endpoints for control/router/gateway plus parent and engine on shards 1, 5, and 10 answered from the driver. The pulled local summary still showed one in-progress no-faults case, 1000 placements across all 10 shards, `gates_ok=true`, six clean monitor snapshots, no `exit.code`, and zero failures/session closes/session errors.
+
+## 2026-05-28 16:36 PDT
+
+Tightened the final soak audit gates in `scripts/fly/summarize-soak.mts`. It can now require exact case IDs, completed workload phases, and an expected runner `exit.code` in addition to result files, placement counts, shard coverage, and monitor parse health. Verified the default in-progress summary still passes for the active pulled soak, while the intended final gate command correctly fails today because only the no-faults case exists, result files are not written yet, `exit.code` is still absent, and `send-json`/`close-sessions`/`expect-history-events` are not complete.
