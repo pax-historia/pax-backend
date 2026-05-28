@@ -13,3 +13,9 @@ Format suggestion: a `## YYYY-MM-DD HH:MM` heading per entry, followed by prose 
 Started Phase 3 after re-reading the roadmap directive/exit signal, [`docs-next/proofs/historia-default.md`](../../docs-next/proofs/historia-default.md), and [`examples/bundles/historia-default/README.md`](../../examples/bundles/historia-default/README.md). The five URL service spec files already exist as schema-only docs, but the bundle directory is still README-only and the scenario/oracle suite has not been authored.
 
 Initial work split: audit the URL-service fixture contracts first, then land the bundle scaffold/build shape, then port core state/blob/migration code, modules/workflows, routing/hydration/policy gates, scenarios/oracles, and finally the local/Fly proof run. Keep Pax-historia-specific logic contained under `examples/bundles/historia-default/` and the schema-only URL-service examples; substrate zones stay generic.
+
+## 2026-05-28 08:47 PDT
+
+Finished the URL service spec audit. The five schema-only specs already covered the proof's required kinds and stayed outside substrate internals; the gaps were around fixture authoring rather than application schema. `examples/url-services/README.md` now lists the historia specs and states the replay fixture contract: fixtures are gateway `api.invoke` wire records with a `fingerprint`, `statusCode`, and serialized `rawInbound`, not plain URL-service result files. This matters because the replay store looks inside each record and hard-fails `replayCoverageGap` on missing fingerprints.
+
+Two smaller spec fixes landed with that audit: `participation.v1` now names the real scenario-runner phase as `send-host-events`, and `ai.chat.v1` represents streamed provider output as deterministic JSON `streamEvents` in proof fixtures instead of a live `ReadableStream`, since the gateway buffers URL-service HTTP responses as JSON.

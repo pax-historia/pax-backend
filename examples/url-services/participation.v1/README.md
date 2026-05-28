@@ -9,7 +9,7 @@
 
 URL service kind `participation.v1` is the **canonical store for per-game
 per-player participation state** (participant vs spectator + optional
-entity assignment). It is the trust-seam for the rule *spectators never
+entity assignment). It is the trust boundary for the rule *spectators never
 get billed for AI*: the AI URL service reads this store before billing,
 and the bundle cannot bypass the spectator block.
 
@@ -145,7 +145,8 @@ For reference; full walkthrough lives in
 
 Place canned `get` responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`,
-keyed by request fingerprint. Suggested coverage per scenario:
+using the shared fixture format in [`../README.md`](../README.md). Suggested
+coverage per scenario:
 
 - A `get` response showing `participant: true` for each participating
   player.
@@ -157,7 +158,7 @@ keyed by request fingerprint. Suggested coverage per scenario:
 
 For scenarios that simulate host-initiated promotion (e.g.,
 `role-claim-flow`), the scenario workload's `clients/workload.mts` phases
-include a `fire-host-event` step that POSTs directly to the substrate's
+include a `send-host-events` phase that POSTs directly to the substrate's
 host-event endpoint with
 `{ eventType: "participationChanged", payload: { ... } }` — no
 `participation.v1` call required from the scenario harness.

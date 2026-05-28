@@ -59,7 +59,11 @@ reads from there, not from args.
 type AiChatV1Result =
   | { ok: true;
       text?: string;
-      stream?: ReadableStream;
+      streamEvents?: Array<{
+        type: "delta" | "message" | "done";
+        text?: string;
+        data?: unknown;
+      }>;
       transactionUUID: string;
       cost?: number;
       inputTokens?: number;
@@ -78,6 +82,10 @@ type AiChatV1Result =
 `transactionUUID` is also surfaced as the `X-Transaction-UUID` response
 header, matching the existing paxhistoria pattern that ties LLM logs,
 Statsig events, and token-ledger rows together for tracing.
+
+The gateway buffers URL-service HTTP responses as JSON, so streamed
+provider output is represented in proof fixtures as deterministic
+`streamEvents` rather than a live `ReadableStream`.
 
 ## Trust gates (load-bearing — the proof depends on these)
 
@@ -102,7 +110,7 @@ For every `playerId` in `args.splitPlayerIDs`, the URL service MUST:
    with `INSUFFICIENT_TOKENS`. This is the gate that has to be tightened
    *before* creators can ship arbitrary workflows in `blob.workflows`.
 
-All three checks live in `ai.chat.v1`'s implementation, NOT in the
+These checks live in `ai.chat.v1`'s implementation, NOT in the
 substrate, per `docs-next/why/why-no-billing.md`.
 
 ## Provider routing, billing pipeline, telemetry
@@ -120,10 +128,11 @@ the scenario-runner replays canned responses.
 
 Place canned responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`.
-Each file is keyed by the request fingerprint the gateway computes
-(`sha256(serialize(outbound HTTP payload))`). A small helper in the bundle
-test harness records live fixtures during development and freezes them
-for replay.
+Use the shared fixture format in [`../README.md`](../README.md): each fixture
+record carries the request fingerprint the gateway computes
+(`sha256(serialize(outbound HTTP payload))`) and a serialized gateway
+`rawInbound` body. A small helper in the bundle test harness records live
+fixtures during development and freezes them for replay.
 
 The scenario-runner hard-fails with `replayCoverageGap` if the bundle
 issues a call with no matching fixture — missing coverage shows up as a

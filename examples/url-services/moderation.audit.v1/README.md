@@ -84,7 +84,8 @@ substrate's existing primitives cover them.
 
 Place canned responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`,
-keyed by request fingerprint. Suggested coverage:
+using the shared fixture format in [`../README.md`](../README.md). Suggested
+coverage:
 
 - A successful `recordVerdict` response.
 - A successful `recordBan` response.

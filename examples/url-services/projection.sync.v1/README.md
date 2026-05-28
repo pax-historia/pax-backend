@@ -87,6 +87,6 @@ None billing-shaped. The bundle MAY exaggerate (e.g., claim
 
 Place canned `{ ok: true }` responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`
-for every op the scenario triggers. These are mostly trivial — the
-bundle doesn't depend on the response content, just on the call having
-gone out.
+using the shared fixture format in [`../README.md`](../README.md) for every
+op the scenario triggers. These are mostly trivial — the bundle doesn't
+depend on the response content, just on the call having gone out.

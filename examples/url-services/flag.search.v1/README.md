@@ -79,7 +79,8 @@ fixtures supply realistic flag lists.
 
 Place canned responses in
 `examples/bundles/historia-default/scenarios/<scenario>/fixtures/api-responses/`,
-keyed by request fingerprint. Suggested coverage:
+using the shared fixture format in [`../README.md`](../README.md). Suggested
+coverage:
 
 - A typical "find a flag for this country" response with 1–2 results.
 - An empty-result response (for scenarios that test the bundle's
