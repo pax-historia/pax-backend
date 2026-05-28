@@ -12,3 +12,17 @@ Current source pass exposes the typed creator surface for lifecycle hooks,
 websocket send with typed quota/serialization responses, logs, metrics, URL-service calls,
 players, compute budgets, state/blob storage, and deterministic `c.rng()` /
 `c.now()` helpers.
+
+Storage surface, per [plan](../../README.md) §"Storage tiers":
+
+- **`c.state`** is the managed per-game state tier: whole-object
+  `read()` / `write(value)` / `flush()` against an in-process cache that
+  is asynchronously persisted to Tigris (canonical). 128 KB cap.
+- **`c.blob`** is the keyed per-game namespace:
+  `put(key, bytes)` / `get(key)` / `delete(key)` / `list(prefix?)`.
+  Async, durable on resolve. ≤ 1024 keys and ≤ 100 MB per game.
+
+Current source pass still exposes the older single-object `c.blob.read` /
+`c.blob.write` shape; the keyed `put/get/delete/list` surface is the
+target the SDK migrates to alongside the parent-actor's namespace
+dispatch.

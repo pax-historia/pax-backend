@@ -21,7 +21,12 @@ Shard registry + the admin REST surface from [plan](../../README.md)
   `compatTagProduced ∉ compatTagsAccepted`; refuses bundle delete while games
   still reference it)
 - Shard registry + drain (`GET /admin/shards`, `GET /admin/shards/:id`,
-  `POST /admin/shards/:id/drain`, `DELETE /admin/shards/:id/drain`)
+  `POST /admin/shards/:id/drain`, `DELETE /admin/shards/:id/drain`). Drain
+  ACKs only after every parent-actor on the shard has force-flushed each
+  running game's pending `c.state` writes to Tigris, so the redeploy
+  runbook can rely on zero state loss on planned moves (see
+  [README](../../../README.md) guarantee #11 and
+  [docs/ops/redeploy-runbook.md](../../docs/ops/redeploy-runbook.md)).
 - API kind registration (`POST /admin/api-kinds`, `GET /admin/api-kinds`,
   `GET /admin/api-kinds/:kindName`, `DELETE /admin/api-kinds/:kindName`)
 - `GET /admin/history` (cursor-paginated; batch + live-tail)

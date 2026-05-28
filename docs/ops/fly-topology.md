@@ -14,8 +14,8 @@ The current v1 footprint inside Fly org **`pax-backend`**:
 
 | Resource | Backing | Used for |
 |---|---|---|
-| Fly Volumes on `pax-backend-shards` | RocksDB per shard | `c.state` durability (shard-local) |
-| Tigris bucket `pax-backend-blobs` | S3-compatible object storage | `c.blob` durability (cross-shard) + bundle blob storage |
+| Fly Volumes on `pax-backend-shards` | RocksDB per shard | Rivet engine internals (pegboard scheduling, workflow rows). **Not in the `c.state` durability path** — see [README](../../README.md) §"Storage tiers". |
+| Tigris bucket `pax-backend-blobs` | S3-compatible object storage | Canonical store for `c.state` (one object per game) and `c.blob` (per-game keyed namespace at prefix `blob/<gameId>/`), plus bundle blob storage |
 | Upstash Redis `pax-backend-directory` | Managed Redis (via Fly) | active-game directory (shardId → games), capacity push from shards |
 | **(no Postgres)** | n/a | The substrate has no ledger; URL services bring their own storage if they need any. |
 

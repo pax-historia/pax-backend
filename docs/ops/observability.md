@@ -259,7 +259,7 @@ New Prometheus families (all `pax_parent_*`):
 | `broadcast_payload_bytes` | payload size distribution | BYTES |
 | `handler_duration_seconds{handler, result}` | `onPlayerMessage` / `onWake` / `onSleep` / `onPlayerConnect` / `onPlayerDisconnect` | FINE |
 | `event_loop_lag_seconds` | `perf_hooks.monitorEventLoopDelay` | FINE |
-| `compute_budget_consumed_ratio{budget}` | per the seven compute budgets | RATIO |
+| `compute_budget_consumed_ratio{budget}` | per the eight compute budgets | RATIO |
 | `compute_budget_warnings_total{budget}` | `onCapacityWarning` fires | counter |
 | `child_pending_commands` | gauge of in-flight IPC RPCs | — |
 | `child_lifecycle_total{reason, kind}` | crashes / restarts / OOMs / timeouts | counter |
@@ -455,7 +455,7 @@ transforms.
 - `mode` ∈ {`live`, `replay`}
 - `result` ∈ enumerated error class set
 - `direction` ∈ {`inbound`, `outbound`}
-- `budget` ∈ the seven compute budgets
+- `budget` ∈ the eight compute budgets
 
 **Forbidden as Prometheus labels** (unbounded):
 
@@ -542,8 +542,8 @@ Platform Guarantee in the README:
 | G8 crash-blast-radius=1 | `child.exit`, `child.restart`, `child.fatal` | unexpected child exits restart only their own `game_id` |
 | G9 no-random-parent-crashes | `parent.crash` events | no `parent.crash` without preceding `actor.stop` |
 | G10 eviction-minimum-budget | `onSleep.fired`, `onSleep.completed` | `completed - fired ≥ documented_min(shape)` |
-| G11 c.state-durability | `state.write`, `child.restart`, `state.read` | same-shard restart preserves last write modulo throttle |
-| G12 c.blob-survives-everything | `blob.write`, `actor.cross_shard_migrate`, `blob.read` | cross-shard preserves last write |
+| G11 c.state-durability | `state.write`, `state.flush.complete`, `child.restart`, `actor.cross_shard_migrate`, `state.read` | planned migration preserves last write; unplanned crash loses ≤ flush window |
+| G12 c.blob-survives-everything | `blob.put`, `blob.put.complete`, `blob.get`, `actor.cross_shard_migrate` | every key in the per-game namespace survives cross-shard migration |
 | G13 migration-rollback-safety | `bundle.flip`, `onWake.failed`, `bundle.rollback.thresholdReached`, `bundle.rollback` | N consecutive `onWake.failed` triggers `bundle.rollback` within deadline |
 | G14 history-completeness | all events | every channel call has a matching history event; `pax_seq` has no gaps |
 | G15 bundle-compat-safety | `bundle.flip.refused`, `cold_wake.refused` | no flip succeeds where `blob_tag ∉ accepted` |

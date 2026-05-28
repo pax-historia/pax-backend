@@ -10,8 +10,17 @@ dumb pipe; the child is the game** (see [plan](../../README.md)
   `c.rng()` / `c.now()`
 - Compute-plane quota enforcement (guarantee #7)
 - IPC broker between child and the rest of the cluster
-- Storage tier dispatch (`c.state`, `c.blob`)
-- `onWake` hydration and `onSleep` dispatch with a minimum flush budget
+- Storage tier dispatch (`c.state` whole-object reads/writes against an
+  in-process cache, throttled async flush to Tigris; `c.blob` keyed
+  namespace at the Tigris prefix `blob/<gameId>/` with substrate-enforced
+  per-game caps for both byte count and key count). Tigris is canonical
+  for both tiers; the shard's RocksDB is not in the `c.state` durability
+  path (see [README](../../README.md) §"Storage tiers" + guarantee #11).
+- Drain-flush handshake: on `POST /admin/shards/:id/drain`, the parent-actor
+  flushes every running game's pending `c.state` write to Tigris before
+  ACKing the drain — zero `c.state` loss on planned shard moves.
+- `onWake` hydration from Tigris and `onSleep` dispatch with a minimum
+  flush budget
 - Child crash recovery: unexpected exits record `child.exit`, emit
   `child.restart`, and wake the same game with `cold-restart-after-crash`
 - Migration rollback safety: repeated `onWake` failures on a newly flipped

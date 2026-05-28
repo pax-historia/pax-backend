@@ -61,8 +61,8 @@ creator-visible `c.rng()` / `c.now()` helpers in test mode.
 | `c.players.allowed()` | Reads the substrate-owned per-game whitelist. |
 | `c.players.connected()` | Reads the live connected-session snapshot. |
 | `c.compute.budget()` | Reads current compute-plane usage and configured limits. |
-| `c.state.read/write/flush()` | Small, fast per-game state tier. Same-shard durable modulo throttle. |
-| `c.blob.read/write()` | Large global durable blob tier. Survives shard loss and deploys. |
+| `c.state.read/write/flush()` | Managed per-game state tier. Whole-object read/write, 128 KB cap. Durable to Tigris within the configured flush window (default 1 s); `flush()` forces an immediate synchronous flush. Canonical store is object storage, not the shard. |
+| `c.blob.put/get/delete/list()` | Keyed per-game blob namespace. Async, ≤ 1024 keys and ≤ 100 MB per game, durable on resolve. Survives shard loss, cross-shard migration, and deploys. |
 
 ## External API channel
 
@@ -85,7 +85,7 @@ input, not a platform primitive. See [../why/why-no-billing.md](../why/why-no-bi
 
 ## Compute budgets
 
-The substrate enforces seven compute-plane budgets per game:
+The substrate enforces eight compute-plane budgets per game:
 
 - `cpu-ms-per-tick`
 - `memory-bytes`
@@ -93,6 +93,7 @@ The substrate enforces seven compute-plane budgets per game:
 - `ws-messages-per-sec`
 - `state-bytes`
 - `blob-bytes`
+- `blob-keys`
 - `api-invocations-per-min`
 
 Over-budget behavior is typed: a call is rejected, a handler timeout is

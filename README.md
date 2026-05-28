@@ -64,7 +64,7 @@ The interesting properties of this substrate (router throughput, ledger contenti
 
 Initial Fly resource shape inside the `pax-backend` Fly app:
 
-- **10 Rivet shard machines.** One Fly Volume per shard for RocksDB; 5–10 GB each is generous at 100 games × ~2 MB/game.
+- **10 Rivet shard machines.** One Fly Volume per shard for RocksDB; 5–10 GB each. Volume usage is bounded by Rivet engine working state (pegboard scheduling, workflow rows), not by lifetime game count — `c.state` and `c.blob` are canonical in Tigris, not on the volume. See §"Storage tiers".
 - **1 control+gateway machine.** Placement router, control plane, API gateway, and the reference URL services (`echo`, `delay`, `http.fetch`, `mock-ai.v1`) all co-located for v1. Split out when something gets hot, not before.
 - **Scenario-runner driver machines on demand.** Spin up however many we need for a load run, tear them down after.
 
@@ -129,7 +129,7 @@ Load-bearing invariant: **the child can only talk to the outside world through t
 
 | Hook | When | Payload |
 |---|---|---|
-| `onWake` | Child boots | `{ reason, state, blob, runId, bundleName, bundleCompatTag, blobCompatTag? }`. Reasons: `cold-start`, `reconnect`, `cold-restart-after-crash`, `cold-restart-after-eviction`, `cold-restart-after-shard-loss`, `upgrade`. `bundleName` is the substrate-unique identifier of the bundle that just loaded; `bundleCompatTag` equals this bundle's `manifest.compatTagProduced` (provided for convenience so migration code can compare without a manifest lookup); `blobCompatTag` is the tag the previous bundle stamped on the blob on its last successful sleep, undefined on `cold-start`. On `cold-restart-after-shard-loss`, `state` is `undefined`; creator must rehydrate from `blob`. On `upgrade` (bundle pointer was flipped while this game was asleep), `blobCompatTag` will typically differ from `bundleCompatTag`; the bundle's `onWake` decides how to migrate. See "Bundle compatibility" below for the model |
+| `onWake` | Child boots | `{ reason, state, blob, runId, bundleName, bundleCompatTag, blobCompatTag? }`. Reasons: `cold-start`, `reconnect`, `cold-restart-after-crash`, `cold-restart-after-eviction`, `cold-restart-from-storage`, `upgrade`. `bundleName` is the substrate-unique identifier of the bundle that just loaded; `bundleCompatTag` equals this bundle's `manifest.compatTagProduced` (provided for convenience so migration code can compare without a manifest lookup); `blobCompatTag` is the tag the previous bundle stamped on the blob on its last successful sleep, undefined on `cold-start`. `cold-restart-from-storage` covers both planned cross-shard migration and unplanned shard loss; `state` reflects the last durable flush — zero loss on planned transitions, at most the configured flush window of writes lost on unplanned crash. On `upgrade` (bundle pointer was flipped while this game was asleep), `blobCompatTag` will typically differ from `bundleCompatTag`; the bundle's `onWake` decides how to migrate. See "Bundle compatibility" below for the model |
 | `onSleep` | Imminent shutdown | `{ deadline, reason }`. Creator persists final `c.state` / `c.blob`; returning past `deadline` = killed and last checkpoint kept |
 | `onPlayerConnect` | Player WS opens after auth | `{ playerId, sessionId, jwtClaims, connectedAt }`. `sessionId` is the substrate-generated unique id for this connection (stable for its lifetime). `jwtClaims` is the verbatim claims object the operator signed into the JWT — opaque to the substrate; the creator can read whatever the operator put there |
 | `onPlayerDisconnect` | Player WS closes | `{ playerId, sessionId, reason: 'left' \| 'timedOut' \| 'removedFromAllowedPlayers' \| 'shardEvicted' \| 'gameDeleted' }` |
@@ -140,13 +140,49 @@ Deliberately not exposed: `onCreate` and `onMigrate` (folded into `onWake` reaso
 
 ### Storage tiers
 
-Carried forward from the prior plan, source-grounded against the Rivet `cef217f6` source. Two tiers, no magic third.
+Three nouns, one canonical store. The substrate's job here is to keep the
+author-facing surface small and predictable while pushing all the "where do
+the bytes live" complexity behind the scenes.
 
-- **JavaScript variables in the child** — volatile, ephemeral, naturally per-game because the child is per-game.
-- **`c.state`** — sync read/write, in-memory immediate, CBOR-serializable, **128 KB cap**, default 1-second persistence throttle (configurable per preset down to single-digit ms), force-flush via `await c.state.flush()`. **Shard-local on the v1 RocksDB backend.** Lost on cross-shard migration.
-- **`c.blob`** — async, multi-MB OK, Tigris-backed, tens-to-hundreds of ms RTT, **cross-shard durable**. Source of truth across shard death.
+- **JavaScript variables in the child** — volatile, ephemeral, lost on any
+  process restart. Use for sockets, timers, derived state, anything that
+  can be reconstructed.
+- **`c.state`** — managed per-game state tier. Whole-object read/write;
+  CBOR-serializable; **128 KB cap**. Durable to Tigris object storage within
+  a configurable flush window (default 1 s, tunable per preset down to
+  single-digit ms). `await c.state.flush()` forces an immediate durable
+  flush when the bundle needs the write durable before it returns. **One
+  state object per game**, identified by `gameId`.
+- **`c.blob`** — explicit object storage namespace per game. Keyed map of
+  `(key → bytes)`: `put(key, bytes)`, `get(key)`, `delete(key)`,
+  `list(prefix?)`. Async; durable on resolve. Tigris-backed at the prefix
+  `blob/<gameId>/`. Caps: **≤ 1024 keys, ≤ 100 MB total per game**. One
+  `blobCompatTag` per game, **namespace-level** — per-key versioning is the
+  bundle's problem within the namespace.
 
-UniversalDB backend pick: **`FileSystem` (RocksDB on a Fly Volume, one per shard)**, matching the pax-sharded-spike topology. Postgres UDB is the alternative but pax-spike-fly hit an N=20–25 chat ceiling on it without heavy patches.
+Tigris is the **canonical store** for both `c.state` and `c.blob`. The
+shard's local UDB (RocksDB on a Fly Volume) still exists for Rivet engine
+internals (pegboard scheduling, workflow state) but is not in the `c.state`
+durability path. This is what makes sleeping games shard-unbound, cross-shard
+migration identical to wake, and per-shard volume usage bounded by working
+set rather than lifetime traffic.
+
+The three-color rule for authors: **vars if it's reconstructable, state if
+it's small and read often, blob if it's big or you need synchronous-durable-
+on-write.** A storytelling bundle keeps the current paragraph in `c.state`
+(fast, capped) and checkpoints completed chapters into `c.blob` under keys
+like `chapter-12.json` (explicit, durable).
+
+The six nouns of a game (no seventh by design): one **identity** (`gameId`),
+one **bundle pointer**, one **state** object, one **blob namespace**, one
+**roster** (`allowedPlayers`), plus *ephemeral derived state* (sessions,
+recent history, recent `api.invoke` records). Anything that wants to be a
+seventh top-level noun is an alarm bell.
+
+UniversalDB backend pick: **`FileSystem` (RocksDB on a Fly Volume, one per
+shard)**, matching the pax-sharded-spike topology — used for Rivet's own
+internal state. Postgres UDB is the alternative but pax-spike-fly hit an
+N=20–25 chat ceiling on it without heavy patches.
 
 ### Communication channels (the "pipes")
 
@@ -157,8 +193,8 @@ Channel payload shapes are fixed by the bundle's `runtimeContractRequired` (see 
 | Channel | Purpose |
 |---|---|
 | `api.invoke` | Call an operator-defined external API; see "External API channel" section below |
-| `state.read` / `state.write` / `state.flush` | Small fast tier; 128 KB cap, sync, force-flush available |
-| `blob.read` / `blob.write` | Large slow tier; async, Tigris-backed |
+| `state.read` / `state.write` / `state.flush` | Managed per-game state tier; 128 KB cap; whole-object read/write; `flush` forces an immediate durable write. Tigris-canonical with a configurable flush window |
+| `blob.put` / `blob.get` / `blob.delete` / `blob.list` | Keyed per-game blob namespace; ≤ 1024 keys and ≤ 100 MB per game; async; Tigris-backed at prefix `blob/<gameId>/` |
 | `ws.send` | Send a WS message to one or more players; payload is an arbitrary JSON-safe object plus target `playerId` (or `'all'`) |
 | `players.allowed` | Read the set of players currently allowed to connect to this game (the substrate's per-game whitelist). Useful for "5 of 7 invited players are here" UX |
 | `players.connected` | Read the set of currently-connected players with their `sessionId`s and `connectedAt` timestamps |
@@ -192,7 +228,8 @@ The enumerated compute budgets:
 | `bandwidth-bytes-per-sec` | Sliding 1-second window | `ws.send` returns `bandwidthExceeded`; child stays alive |
 | `ws-messages-per-sec` | Sliding 1-second window | `ws.send` returns `rateExceeded`; child stays alive |
 | `state-bytes` | Total `c.state` size | `state.write` returns `sizeExceeded` |
-| `blob-bytes` | Total `c.blob` size | `blob.write` returns `sizeExceeded` |
+| `blob-bytes` | Sum of all keys in the `c.blob` namespace | `blob.put` returns `sizeExceeded` |
+| `blob-keys` | Distinct key count in the `c.blob` namespace | `blob.put` returns `keyCountExceeded` |
 | `api-invocations-per-min` | Sliding 1-minute window | `api.invoke` returns `apiRateExceeded`; URL service not contacted |
 
 Each budget has a per-game default; operators can override per-preset via the preset manifest. Defaults and current usage are readable via `c.compute.budget()`. When usage approaches limits, the substrate fires `onCapacityWarning({ budget, currentUsage, limit })` so creator code can shed load gracefully.
@@ -596,8 +633,8 @@ The platform commits to these. They are testable; the scenario-runner ships orac
 8. **Crash blast radius = 1 game.** A child crash, OOM, or CPU timeout affects only that game.
 9. **No random parent crashes.** Actor process death without `onSleep` is a platform bug and is alerted/post-mortemed. Creators don't need to defensively code around this.
 10. **Eviction has a minimum budget.** `onSleep` always gives the creator at least the documented per-shape minimum to flush.
-11. **`c.state` durability semantics are honored.** Same-shard sleep / crash / restart preserves `c.state` modulo the throttle window. Cross-shard migration explicitly resets it (with `cold-restart-after-shard-loss` reason).
-12. **`c.blob` survives everything.** Cross-shard, cross-deploy, cross-volume-loss. Object storage is the only true global tier.
+11. **`c.state` flush-window durability.** Tigris is the canonical store for `c.state`. On planned sleep / drain / cross-shard migration, the substrate flushes all pending writes before releasing the game — zero loss. On unplanned process or machine death, at most the configured flush window of writes is lost; recovery surfaces `cold-restart-from-storage`. Same-shard restart resumes from the same canonical object.
+12. **`c.blob` namespace survives everything.** Every `put` is durable on resolve. The per-game namespace at `blob/<gameId>/` survives cross-shard, cross-deploy, and cross-volume-loss. Substrate-side operations (snapshot, delete-game) treat the namespace as a unit; deletion clears all keys.
 13. **Migration rollback safety.** Buggy `onWake` on a new bundle version rolls back to the previous version after N consecutive failures; 7-day backup retention.
 14. **History is complete.** Every channel call, every lifecycle event, every session transition, every shard event, every `api.invoke` wire round trip is recorded to a structured history that tests and the platform can read.
 15. **Bundle compatibility safety.** The substrate refuses any bundle-pointer flip or cold wake where the game's `blobCompatTag` is not in the new bundle's `compatTagsAccepted`. Equivalently: no game ever wakes on a bundle whose `onWake` cannot read the blob it is being handed. The substrate has no opinion about what tags "mean" — it only enforces set membership. Flip refusals return `409 compatTagOutOfRange` with `{ blobCompatTag, bundleCompatTagsAccepted }` so operator tooling can plan a bridge.
@@ -671,8 +708,8 @@ The companion docs (planned: `metrics-catalog.md`, `attribution-playbook.md`, `t
 - The three-zone repo discipline (`runtime/` / `orchestration/` / `tooling/`) from [pax-sharded-spike/docs/ownership.md](/Users/eli/Documents/GitHub/pax-sharded-spike/docs/ownership.md).
 - The placement-only router from [pax-sharded-spike/orchestration/router-placement/](/Users/eli/Documents/GitHub/pax-sharded-spike/orchestration/router-placement/) ported verbatim.
 - The vendored Rivet at the `pax-rivet-refactor` pin.
-- The RocksDB-on-Fly-Volume-per-shard storage topology.
-- The Tigris-backed `c.blob` tier.
+- The RocksDB-on-Fly-Volume-per-shard topology for Rivet engine internals (pegboard, workflow state).
+- The Tigris-backed durable storage tier — now canonical for **both** `c.state` and `c.blob` (see §"Storage tiers"; the prior plan's "shard-local state lost on cross-shard migration" carveout is gone).
 - The sandboxing decision (isolated-vm-in-child).
 - The three independently-deployable surfaces (orchestration, shard image, creator bundle) with three different rollout cadences. **One fewer surface than the prior plan** because the frontend / client-bundle surface is no longer ours.
 
@@ -700,7 +737,16 @@ The substrate exists to be the trust seam for untrusted JavaScript and the faith
 
 ## Resolved
 
-### The big-picture scope decision (most recently resolved)
+### Storage tiers v2 (most recently resolved)
+
+- **Tigris is the canonical store for `c.state` and `c.blob`.** Shard-local RocksDB is reserved for Rivet engine internals (pegboard, workflows); it is **not** in the `c.state` durability path. The previous "shard-local state lost on cross-shard migration" carveout is gone. (See §"Storage tiers" + guarantee #11.)
+- **`c.state` flush-window durability.** Sync-feeling API (read returns the in-process cached value; write is non-blocking against the cache) with eventually-durable semantics: writes flush to Tigris within a configurable window (default 1 s, tunable per preset down to single-digit ms). `await c.state.flush()` forces a synchronous flush. Planned sleep / drain / cross-shard migration always flushes before releasing the game — **zero loss on planned transitions**. Unplanned process / machine death loses at most the flush window of writes.
+- **`c.blob` is a keyed per-game namespace.** API surface is `put(key, bytes)` / `get(key)` / `delete(key)` / `list(prefix?)`; Tigris prefix is `blob/<gameId>/`. Caps: **≤ 1024 keys, ≤ 100 MB per game**. One `blobCompatTag` per game (namespace-level), not per key. Substrate-side operations (snapshot, delete-game) treat the namespace as a unit; there is no per-key admin surface.
+- **Sleep is dormancy.** Once state is Tigris-canonical, a sleeping game holds no resources on any shard; the next wake is a placement decision on whichever shard has capacity, followed by one Tigris GET. No new lifecycle stage and no shard-pinning of inactive games. Per-shard volume use is bounded by working set, not by lifetime game count.
+- **Six nouns of a game, by design.** `gameId`, bundle pointer, state, blob namespace, roster, plus ephemeral derived state (sessions, history, recent `api.invoke` records). Anything that wants to be a seventh top-level noun is an alarm bell. The blob namespace's internal keying is the namespace's structure, the same way a database table has rows — we still talk about "the database" and "the game's blob" as singular nouns. The client bundle, marketing site, billing, etc. all live outside the substrate by deliberate scope discipline (see [docs/why/why-no-billing.md](docs/why/why-no-billing.md)).
+- **Wake reasons collapsed.** `cold-restart-after-shard-loss` is gone — its job is folded into the new `cold-restart-from-storage` reason, which covers both planned migration and unplanned machine death. Bundles get the last durable state in both cases; the substrate doesn't surface a needless distinction.
+
+### The big-picture scope decision
 
 - **Substrate scope discipline: compute-plane resources in, business-plane resources out.** The library enforces compute-plane budgets (CPU, RAM, bandwidth, message rate, state/blob bytes, api-invocations-per-min) because only the runtime can meter them. The library does NOT model AI tokens, image credits, gold, balances, debits, reservations, caps, refunds, or any other business-plane resource. Those all live in operator-owned URL services and host code, which use the substrate's session observability to make whatever billing decisions they want. (See "Why no billing primitives" subsection and the Compute-plane resources / External API channel sections.)
 - **No ledger in the substrate.** No `Balance`, no `Reservation`, no `DebitLogEntry`, no `reserveDebit`/`commitReservation`/`releaseReservation`/`applyExternalMutation`. No in-app Postgres. URL services that need to maintain balances bring their own storage.
@@ -912,8 +958,8 @@ The fourth surface (frontend / client bundles) is not our problem.
 7. Build the runtime with both `child-runner-ivm` and `child-runner-noivm` from day one; CI gates the no-ivm conformance run every release. Ensure every WS connection gets a unique, cluster-wide-unique `sessionId` and that this id flows through every channel (`onPlayerConnect`/`onPlayerDisconnect`/`onPlayerMessage`), every `api.invoke` context envelope, and every session history event.
 8. Build the scenario-runner with three first-party scenarios (`chat-steady-state`, `compute-stress` (the renamed `billing-fuzz` — now focused on compute-plane quotas like CPU/bandwidth/api-rate rather than balance debits), `shard-death-resilience`), two first-party nemeses (`no-faults`, `shard-death-every-5m`), and first-party oracles for every guarantee in §"Strong platform guarantees". Treat any substrate-side oracle violation in CI as a release blocker. Billing-shaped oracles (balance correctness, refund integrity, etc.) live in operator-side test suites that target the `billing-mock.v1` reference URL service — not in the substrate's release gate.
 9. Ship a small set of hello-world creator bundles in `examples/bundles/`, one per library feature. Each is the *minimal* demonstration of one or two channels working end-to-end — not a real game. At minimum:
-    - `hello-blob-rw` — reads `c.blob` on `onWake`, writes a small update to `c.blob` every ~30s, logs the read/write via `c.log`. Exercises blob durability.
-    - `hello-state-rw` — same shape but against `c.state`. Includes an explicit `c.state.flush()` call before a crash-test point.
+    - `hello-blob-rw` — exercises the keyed `c.blob` namespace: writes one key per chapter under `chapter-<n>.json`, reads them back on `onWake`, lists keys with `c.blob.list()`, deletes the oldest when over a per-bundle retention. Exercises namespace durability and cap-enforcement.
+    - `hello-state-rw` — reads/writes the small managed `c.state` tier and includes an explicit `await c.state.flush()` before a crash-test point. Exercises Tigris-canonical state and the flush-window guarantee.
     - `hello-ws-echo` — echoes every `onPlayerMessage` body back to the sending player via `c.ws.send`. Exercises the WS tunnel, idempotency keys, and sessionId stability.
     - `hello-ai-call` — once per minute, invokes `c.api.invoke('mock-ai.v1', { messages: [...] })` for each connected player. Exercises the API gateway, the context envelope (the URL service sees `connectedSessions`), the URL service round trip, and the wire-grain recording end-to-end. Whatever the URL service does with billing (if anything) is its own affair.
     - `hello-multifeature` — combines all of the above slowly enough to be readable in a tail of the history. The integration smoke for the substrate.

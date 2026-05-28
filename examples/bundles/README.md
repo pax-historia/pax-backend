@@ -7,8 +7,8 @@ for the broader rules about the `examples/` zone.
 | Bundle | What it exercises | Status |
 |---|---|---|
 | `hello-ws-echo/` | The WS tunnel, idempotency keys, `sessionId` stability. Echoes every `onPlayerMessage` body back via `c.ws.send`. The vertical smoke loads this. | shipped |
-| `hello-blob-rw/` | `c.blob` durability. Reads on `onWake`, writes compact message history, logs via `c.log.emit`. | source added (untested) |
-| `hello-state-rw/` | `c.state` durability with explicit `c.state.flush()` after each write. | source added (untested) |
+| `hello-blob-rw/` | The keyed `c.blob` namespace. Writes one key per chapter under `chapter-<n>.json`, reads them back on `onWake`, lists keys with `c.blob.list()`, deletes the oldest when over a per-bundle retention. Exercises namespace durability and the per-game key/byte caps. | source added (untested); current source uses the older single-blob shape and is being migrated to the keyed namespace |
+| `hello-state-rw/` | The managed `c.state` tier; reads/writes the whole object and includes an explicit `await c.state.flush()` before a crash-test point. Exercises Tigris-canonical state and the flush-window guarantee. | source added (untested) |
 | `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |
 | `hello-multifeature/` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable integration bundle. | source added (untested) |
 

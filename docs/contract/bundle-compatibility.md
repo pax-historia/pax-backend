@@ -3,11 +3,14 @@
 The substrate enforces exactly two compatibility relations and stays
 opinion-free about everything else:
 
-1. **Bundle ↔ blob** (data-shape). Each blob carries an opaque `compatTag`;
-   each bundle declares `compatTagProduced` and `compatTagsAccepted` in its
-   manifest. The substrate refuses any bundle-pointer flip or cold wake
-   where `blob.compatTag ∉ bundle.compatTagsAccepted`. **Set membership
-   only — no opinion about what tags "mean".**
+1. **Bundle ↔ blob** (data-shape). Each game carries a single opaque
+   `blobCompatTag` (namespace-level — one tag per game's blob namespace,
+   not per-key); each bundle declares `compatTagProduced` and
+   `compatTagsAccepted` in its manifest. The substrate refuses any
+   bundle-pointer flip or cold wake where `game.blobCompatTag ∉
+   bundle.compatTagsAccepted`. **Set membership only — no opinion about
+   what tags "mean".** Per-key versioning inside the blob namespace is the
+   bundle's problem, not the substrate's.
 2. **Bundle ↔ shard** (runtime contract). Each bundle declares
    `runtimeContractRequired: number`; each shard declares
    `runtimeContractsSupported: [min, max]`. The placement router refuses

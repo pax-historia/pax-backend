@@ -58,3 +58,18 @@ and ship together with a new shard image. Adding a new channel:
 4. Update the parent's dispatch + the child's handler set — the
    exhaustiveness check at the `default` branch of each `switch` will
    refuse to compile until both sides handle the new channel.
+
+## Pending storage-tier contract changes
+
+Per [plan README](../../README.md) §"Storage tiers" (storage tiers v2),
+the next contract bump replaces the single-object `c.blob` channels with
+a keyed-namespace surface:
+
+- `blob.read` / `blob.write` → `blob.put(key, bytes)`, `blob.get(key)`,
+  `blob.delete(key)`, `blob.list(prefix?)`
+- `state.read` / `state.write` / `state.flush` stay; their durability
+  semantics tighten (Tigris-canonical, flush-window guarantee)
+- Wake reasons collapse: `cold-restart-after-shard-loss` is removed in
+  favor of `cold-restart-from-storage`
+- `StorageWriteResponse` gains a `keyCountExceeded` error variant for the
+  1024-key-per-game cap

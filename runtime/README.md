@@ -54,5 +54,6 @@ parent-actor/src/
 
 Smoke today is intentionally lean: `parent-actor/src/parent.mts` is one
 file. The kind-folders appear as the substrate grows (M2 will add
-`api-gateway/` interactions and a budgets file; M3 adds the blob tier with
-its own ipc files).
+`api-gateway/` interactions and a budgets file; M3 adds the keyed `c.blob`
+namespace and the Tigris-canonical `c.state` pipeline, each with their own
+ipc files — see [README](../README.md) §"Storage tiers").

@@ -62,8 +62,10 @@ child on the previous bundle.
 | `OnCapacityWarningPayload` | `budget`, `currentUsage`, `limit`. |
 
 Wake reasons are `cold-start`, `reconnect`, `cold-restart-after-crash`,
-`cold-restart-after-eviction`, `cold-restart-after-shard-loss`, and
-`upgrade`.
+`cold-restart-after-eviction`, `cold-restart-from-storage`, and `upgrade`.
+`cold-restart-from-storage` covers both planned cross-shard migration and
+unplanned shard loss; `state` reflects the last durable flush in both
+cases.
 
 Disconnect reasons are `left`, `timedOut`, `removedFromAllowedPlayers`,
 `shardEvicted`, and `gameDeleted`.
@@ -82,7 +84,7 @@ The SDK type `SubstrateContext` is authoritative. The child runner injects:
 | Session views | `players.allowed()`, `players.connected()` |
 | Compute views | `compute.budget()` |
 | State tier | `state.read()`, `state.write(value)`, `state.flush()` |
-| Blob tier | `blob.read()`, `blob.write(value)` |
+| Blob tier | `blob.put(key, value)`, `blob.get(key)`, `blob.delete(key)`, `blob.list(prefix?)` |
 
 In scenario/test mode, the runner passes the scenario manifest seed through
 `PAX_TEST_SEED`. The parent uses a shard-namespaced derivation of that seed for
@@ -97,7 +99,32 @@ cannot be represented as JSON, and still emits `ws.send.rejected` history for
 that local rejection.
 
 Storage write responses are `{ ok: true }` or `{ ok: false, error:
-"sizeExceeded" | "storageUnavailable", detail? }`.
+"sizeExceeded" | "keyCountExceeded" | "storageUnavailable", detail? }`.
+`keyCountExceeded` fires when a `blob.put` would create the 1025th distinct
+key in a game's blob namespace.
+
+`c.state` is the **managed** per-game state tier: one CBOR-serializable
+value per game, ≤ 128 KB. Reads return the in-process cached value;
+writes update the cache and queue a durable flush. The substrate's canonical
+store is object storage (Tigris); a configurable flush window (default 1 s,
+tunable per preset down to single-digit ms) bounds how long a write may sit
+in the cache before being durable. `state.flush()` forces an immediate
+synchronous flush. The substrate flushes pending writes before honoring
+sleep, drain, or cross-shard migration — zero loss on planned transitions.
+Unplanned process or machine death loses at most the configured flush
+window of writes; the next wake surfaces `cold-restart-from-storage`.
+
+`c.blob` is the **raw keyed** per-game namespace at the Tigris prefix
+`blob/<gameId>/`. Each `put` is durable on resolve. Caps:
+
+| Cap | Value | Enforcement |
+|---|---|---|
+| Distinct keys per game | ≤ 1024 | `blob.put` returns `keyCountExceeded` |
+| Total bytes per game | ≤ 100 MB | `blob.put` returns `sizeExceeded` |
+
+One `blobCompatTag` per game, namespace-level. Substrate-side operations
+(snapshot, delete-game) treat the namespace as a unit; there is no per-key
+admin surface.
 
 Console proxy records use `log.emit` with `event: "console"`,
 `source: "console"`, a severity `level`, a string `message`, and normalized
@@ -145,6 +172,7 @@ The canonical budget names are:
 - `ws-messages-per-sec`
 - `state-bytes`
 - `blob-bytes`
+- `blob-keys`
 - `api-invocations-per-min`
 
 The runtime emits budget history and capacity warnings, exposes snapshots via
