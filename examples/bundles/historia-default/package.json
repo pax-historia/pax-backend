@@ -9,7 +9,6 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@pax-backend/runtime-sdk": "workspace:*",
-    "cborg": "^5.1.1"
+    "@pax-backend/runtime-sdk": "workspace:*"
   }
 }
