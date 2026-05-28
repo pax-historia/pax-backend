@@ -67,6 +67,7 @@ SHARED_SECRETS=(
   "BUCKET_NAME:$SHARDS_APP,$CONTROL_APP,$DRIVER_APP"
   "REDIS_URL:$SHARDS_APP,$CONTROL_APP"
   "PAX_JWT_SECRET:$SHARDS_APP,$CONTROL_APP"
+  "PAX_LOCAL_ENGINE_ADMIN_TOKEN:$SHARDS_APP,$CONTROL_APP"
   "FLY_API_TOKEN:$CONTROL_APP,$DRIVER_APP"
 )
 
@@ -386,6 +387,12 @@ if ! infi_has PAX_JWT_SECRET; then
 else
   skip "PAX_JWT_SECRET already in Infisical"
 fi
+if ! infi_has PAX_LOCAL_ENGINE_ADMIN_TOKEN; then
+  infi_set PAX_LOCAL_ENGINE_ADMIN_TOKEN "$(openssl rand -hex 64)"
+  ok "generated PAX_LOCAL_ENGINE_ADMIN_TOKEN -> Infisical"
+else
+  skip "PAX_LOCAL_ENGINE_ADMIN_TOKEN already in Infisical"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6/7: FLY_API_TOKEN — mint into Infisical on first run.
@@ -421,6 +428,9 @@ if infi_has REDIS_URL; then
 fi
 if infi_has PAX_JWT_SECRET; then
   sync_from_infi PAX_JWT_SECRET "$SHARDS_APP" "$CONTROL_APP"
+fi
+if infi_has PAX_LOCAL_ENGINE_ADMIN_TOKEN; then
+  sync_from_infi PAX_LOCAL_ENGINE_ADMIN_TOKEN "$SHARDS_APP" "$CONTROL_APP"
 fi
 if infi_has FLY_API_TOKEN; then
   sync_from_infi FLY_API_TOKEN "$CONTROL_APP" "$DRIVER_APP"

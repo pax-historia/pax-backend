@@ -49,3 +49,27 @@ Forward note for task 2: repository deploy descriptors are not complete yet.
 The only non-vendor Dockerfile found is `runtime/shard-image/Dockerfile`;
 control and driver deployment descriptors/images need to be created or wired
 before Fly deploys can happen.
+
+## 2026-05-28 04:08 PDT
+
+Started the deployable topology work. Added Fly configs for
+`pax-backend-shards`, `pax-backend-control`, and `pax-backend-driver`; added a
+control image that runs placement-router, control-plane, and api-gateway under
+one Fly machine; added a driver image with a health endpoint and command
+override support for scenario-runner runs.
+
+Adjusted the shard/control token path so Fly no longer relies on the local
+`dev` Rivet engine admin token: `scripts/bootstrap/spin-up.sh` now mints and
+syncs `PAX_LOCAL_ENGINE_ADMIN_TOKEN` to shards and control, and the shard
+entrypoint maps it to `RIVET_ADMIN_TOKEN` when no explicit engine token is
+present. Reran `spin-up.sh`; it created that secret in Infisical, synced it to
+both apps with digest `476bf2e3770469f6`, verified drift clean, and left all
+other secrets unchanged.
+
+Validation checkpoint before deploy:
+
+- `bash -n` passed for the new control/driver entrypoints, shard entrypoint,
+  and `scripts/bootstrap/spin-up.sh`.
+- `fly config validate` passed for all three Fly configs.
+- `docker buildx build --check` passed for the shard, control, and driver
+  Dockerfiles.

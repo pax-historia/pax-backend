@@ -1,0 +1,14 @@
+.cache
+.data
+.git
+.DS_Store
+artifacts
+node_modules
+var
+
+**/dist
+**/*.log
+**/*.tsbuildinfo
+**/node_modules
+
+vendor

@@ -1,0 +1,52 @@
+app = "pax-backend-shards"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "60s"
+
+[build]
+  dockerfile = "runtime/shard-image/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PAX_ENVIRONMENT = "production"
+  PAX_OBSERVABILITY = "on"
+  PAX_SHARD_ID = "shard-fly-iad-1"
+  PAX_SHARD_PUBLIC_URL = "https://pax-backend-shards.fly.dev"
+  RIVET_PUBLIC_URL = "https://pax-backend-shards.fly.dev"
+  RIVET_VALID_HOSTS = "pax-backend-shards.fly.dev,127.0.0.1,localhost"
+  RIVET_TOTAL_SLOTS = "1000"
+  PAX_API_GATEWAY_URL = "https://pax-backend-control.fly.dev/invoke"
+
+[mounts]
+  source = "pax_backend_rocks"
+  destination = "/data"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 6420
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 1200
+    soft_limit = 1000
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "30s"
+
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2

@@ -1,0 +1,71 @@
+app = "pax-backend-control"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "orchestration/control-image/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PAX_ENVIRONMENT = "production"
+  PAX_OBSERVABILITY = "on"
+  PAX_ROUTER_BIND = "0.0.0.0:9080"
+  PAX_CONTROL_BIND = "0.0.0.0:9070"
+  PAX_API_GATEWAY_BIND = "0.0.0.0:9081"
+  PAX_ROUTER_URL = "http://127.0.0.1:9080"
+  PAX_CONTROL_BASE_URL = "http://127.0.0.1:9070"
+  PAX_API_GATEWAY_BASE_URL = "https://pax-backend-control.fly.dev"
+  PAX_HISTORY_PATH = "/data/history/history.jsonl"
+  PAX_API_WIRE_RECORDS_PATH = "/data/api-invoke-records.jsonl"
+  RUST_LOG = "info"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 9080
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 1000
+    soft_limit = 800
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[checks.control_plane]
+  type = "http"
+  port = 9070
+  method = "GET"
+  path = "/health"
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "20s"
+
+[checks.api_gateway]
+  type = "http"
+  port = 9081
+  method = "GET"
+  path = "/health"
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "20s"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
