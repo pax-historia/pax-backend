@@ -8,6 +8,7 @@ import {
   persistWorkingState,
   type LoadedHistoriaState,
 } from "./core/persistence.mjs";
+import { dispatchPlayerMessage } from "./routing/websocket.mjs";
 
 interface SessionSummary {
   readonly playerId: string;
@@ -68,7 +69,18 @@ export default defineBundle({
 
   async onPlayerMessage(c, payload) {
     const ctx = requireGameContext(c);
-    const messageType = readMessageType(payload.body);
+    const body = isRecord(payload.body) ? payload.body : {};
+    const handled = await dispatchPlayerMessage({
+      c,
+      ctx,
+      playerId: payload.playerId,
+      sessionId: payload.sessionId,
+      seq: payload.seq,
+      body,
+    });
+    if (handled) return;
+
+    const messageType = readMessageType(body);
     c.log.emit({
       event: "historia-default.onPlayerMessage",
       playerId: payload.playerId,
