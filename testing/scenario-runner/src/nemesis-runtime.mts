@@ -20,10 +20,17 @@ interface KillShardRuntime {
   occurrences: number;
 }
 
+interface ReplacementReadyTimer {
+  readonly runtime: KillShardRuntime;
+  readonly shardId: string;
+  readonly occurrence: number;
+  readonly timer: NodeJS.Timeout;
+}
+
 export class NemesisRuntime {
   readonly #killShardRuntimes: KillShardRuntime[];
   readonly #killedAtByShard = new Map<string, number>();
-  readonly #replacementTimersByShard = new Map<string, NodeJS.Timeout>();
+  readonly #replacementTimersByShard = new Map<string, ReplacementReadyTimer>();
   readonly #replacementReadyDelayMs = positiveInt(
     process.env["PAX_NEMESIS_REPLACEMENT_READY_MS"],
     60_000,
@@ -56,10 +63,29 @@ export class NemesisRuntime {
     for (const runtime of this.#killShardRuntimes) {
       if (runtime.timer) clearTimeout(runtime.timer);
     }
-    for (const timer of this.#replacementTimersByShard.values()) {
-      clearTimeout(timer);
+    const pendingReplacements = Array.from(this.#replacementTimersByShard.values());
+    for (const replacement of pendingReplacements) {
+      clearTimeout(replacement.timer);
     }
     this.#replacementTimersByShard.clear();
+    await Promise.all(
+      pendingReplacements.map((replacement) =>
+        this.#markReplacementReady(
+          replacement.runtime,
+          replacement.shardId,
+          replacement.occurrence,
+          true,
+        ).catch((err: unknown) => {
+          this.historyWriter.append("nemesis.action.failed", {
+            nemesisId: this.manifest.nemesisId,
+            runId: this.runId ?? null,
+            actionType: replacement.runtime.action.type,
+            actionIndex: replacement.runtime.actionIndex,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      ),
+    );
   }
 
   throwIfFailed(): void {
@@ -132,9 +158,10 @@ export class NemesisRuntime {
   #scheduleReplacementReady(runtime: KillShardRuntime, shardId: string): void {
     const existing = this.#replacementTimersByShard.get(shardId);
     if (existing) return;
+    const occurrence = runtime.occurrences;
     const timer = setTimeout(() => {
       this.#replacementTimersByShard.delete(shardId);
-      void this.#markReplacementReady(runtime, shardId).catch((err: unknown) => {
+      void this.#markReplacementReady(runtime, shardId, occurrence).catch((err: unknown) => {
         this.#failure = err instanceof Error ? err : new Error(String(err));
         this.historyWriter.append("nemesis.action.failed", {
           nemesisId: this.manifest.nemesisId,
@@ -145,11 +172,21 @@ export class NemesisRuntime {
         });
       });
     }, this.#replacementReadyDelayMs);
-    this.#replacementTimersByShard.set(shardId, timer);
+    this.#replacementTimersByShard.set(shardId, {
+      runtime,
+      shardId,
+      occurrence,
+      timer,
+    });
   }
 
-  async #markReplacementReady(runtime: KillShardRuntime, shardId: string): Promise<void> {
-    if (this.#stopped) return;
+  async #markReplacementReady(
+    runtime: KillShardRuntime,
+    shardId: string,
+    occurrence: number,
+    force = false,
+  ): Promise<void> {
+    if (this.#stopped && !force) return;
     await requestJson(
       `${this.controlPlaneUrl}/admin/shards/${encodeURIComponent(shardId)}/drain`,
       { method: "DELETE" },
@@ -158,7 +195,7 @@ export class NemesisRuntime {
       nemesisId: this.manifest.nemesisId,
       runId: this.runId ?? null,
       actionIndex: runtime.actionIndex,
-      occurrence: runtime.occurrences,
+      occurrence,
       shardId,
       replacement: runtime.action.replacement,
       delayMs: this.#replacementReadyDelayMs,

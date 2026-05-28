@@ -270,3 +270,5 @@ waits `PAX_NEMESIS_REPLACEMENT_READY_MS` (default 60s), calls
 `DELETE /admin/shards/:id/drain`, and records
 `nemesis.kill-shard.replacement-ready`. A local HTTP smoke verified the runner
 issues both drain and un-drain calls and writes the nemesis history events.
+The runner also clears any pending replacement-ready timer during scenario
+shutdown so a late nemesis tick does not leave the shard stuck in `draining`.
