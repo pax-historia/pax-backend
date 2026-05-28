@@ -34,6 +34,6 @@ bundle-tools/src/
   cli.ts
 ```
 
-Current source passes ship `runtime-sdk/` plus the first
-`runtime-sdk-test-harness/` implementation. `bundle-tools/` remains a zone slot
-for a later pass.
+Current source passes ship `runtime-sdk/`, the first
+`runtime-sdk-test-harness/` implementation, and the initial `bundle-tools/`
+command modules.

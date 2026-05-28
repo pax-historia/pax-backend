@@ -7,6 +7,7 @@ packages:
   - "orchestration/api-gateway"
   - "sdk/runtime-sdk"
   - "sdk/runtime-sdk-test-harness"
+  - "sdk/bundle-tools"
   - "examples/bundles/*"
   - "testing/oracles-lib"
   - "testing/scenario-runner"

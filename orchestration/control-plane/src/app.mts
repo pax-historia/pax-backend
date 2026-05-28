@@ -214,6 +214,7 @@ async function handleBundle(
   const record: BundleRecord = {
     bundleName,
     manifest,
+    source: readOptionalString(body, "source"),
     publishedAt: Date.now(),
   };
   const created = await store.putBundleWriteOnce(record);

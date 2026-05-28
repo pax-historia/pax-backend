@@ -5,7 +5,7 @@ because it runs on the **creator's** machine (not on a deploy target, not
 on a driver). See [`../README.md`](../README.md) for the broader rules
 about the `sdk/` zone.
 
-## Commands (planned)
+## Commands
 
 | Command | What it does |
 |---|---|
@@ -21,6 +21,7 @@ src/
   cli.ts                   # entry point
 ```
 
-Stub. M4 lands the CLI; today bundles are built via
+Current source pass adds the package and command modules. The shell script at
 [`scripts/build/build-bundles.sh`](../../scripts/build/build-bundles.sh)
-directly.
+remains the local smoke path until this CLI is wired into CI and release
+publishing.

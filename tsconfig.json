@@ -4,6 +4,7 @@
     { "path": "./shared/ipc-protocol" },
     { "path": "./sdk/runtime-sdk" },
     { "path": "./sdk/runtime-sdk-test-harness" },
+    { "path": "./sdk/bundle-tools" },
     { "path": "./orchestration/control-plane" },
     { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },

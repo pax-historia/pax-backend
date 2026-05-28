@@ -419,6 +419,7 @@ export interface BundleManifest {
 export interface BundleRecord {
   readonly bundleName: string;
   readonly manifest: BundleManifest;
+  readonly source?: string;
   readonly publishedAt: number;
 }
 
