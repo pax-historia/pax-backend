@@ -196,3 +196,7 @@ Tightened the final soak audit gates in `scripts/fly/summarize-soak.mts`. It can
 ## 2026-05-28 16:38 PDT
 
 Seventh detached monitor snapshot landed at `2026-05-28T23:37:23.663Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. Pulled the remote soak directory and summarized it locally; the in-progress summary now has seven clean monitor snapshots and still reports `gates_ok=true` for the non-final default gates.
+
+## 2026-05-28 16:40 PDT
+
+Added `scripts/fly/verify-v1-soak.sh`, a small wrapper around `scripts/fly/summarize-soak.mts` with the Phase 5 exit-soak gates wired in: all three expected nemesis case IDs, 1000 placements per case, 10 placement shards, completed workload phases, `exit.code=0`, and required result files. Verification: `bash -n scripts/fly/verify-v1-soak.sh`, then ran it against the current pulled active soak and confirmed it fails for the right in-progress reasons: only no-faults exists, result files are not written yet, `exit.code` is absent, and the no-faults hold phases are still incomplete.
