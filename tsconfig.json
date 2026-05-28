@@ -3,9 +3,11 @@
   "references": [
     { "path": "./shared/ipc-protocol" },
     { "path": "./sdk/runtime-sdk" },
+    { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },
     { "path": "./runtime/parent-actor" },
     { "path": "./testing/smoke-bot" },
+    { "path": "./examples/bundles/hello-ai-call" },
     { "path": "./examples/bundles/hello-ws-echo" }
   ]
 }

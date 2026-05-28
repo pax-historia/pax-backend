@@ -5,9 +5,10 @@
 // runtimeContractRequired by the placement router (guarantee #16). Payload
 // shapes are fixed by this version; no in-band version field on payloads.
 //
-// For the smoke milestone we ship version 1 and only the channels the
-// hello-ws-echo bundle needs. The rest are listed in the README §
-// "Communication channels" and slot in as later steps fill them.
+// For the smoke milestone we ship version 1 and the first vertical channels:
+// websocket send, structured logs, voluntary sleep, and api.invoke. The rest
+// are listed in the README § "Communication channels" and slot in as later
+// steps fill them.
 
 export const IPC_VERSION = 1 as const;
 export const RUNTIME_CONTRACT_VERSION = 1 as const;
@@ -101,10 +102,95 @@ export interface OnCapacityWarningPayload {
   readonly limit: number;
 }
 
+// ----- External API channel + gateway envelope --------------------------
+
+export const GATEWAY_ENVELOPE_VERSION = 1 as const;
+
+export type ApiInvokeError =
+  | "kindUnknown"
+  | "providerError"
+  | "apiRateExceeded"
+  | "replayCoverageGap";
+
+export interface ApiInvokeRequest {
+  readonly kind: string;
+  readonly args: unknown;
+  readonly idempotencyKey?: string;
+}
+
+export type ApiInvokeResponse =
+  | { readonly ok: true; readonly result: unknown }
+  | {
+      readonly ok: false;
+      readonly error: ApiInvokeError;
+      readonly detail?: unknown;
+    };
+
+export interface ConnectedSessionSnapshot {
+  readonly sessionId: string;
+  readonly playerId: string;
+  readonly connectedAt: number;
+}
+
+export interface GatewayInvokeContext {
+  readonly gameId: string;
+  readonly triggeringSessionId: string | null;
+  readonly triggeringJwtClaims: Readonly<Record<string, unknown>> | null;
+  readonly connectedSessions: readonly ConnectedSessionSnapshot[];
+  readonly bundleName: string;
+  readonly bundleCompatTag: string;
+  readonly runId: string;
+  readonly idempotencyKey: string | null;
+}
+
+export interface GatewayHttpRequestBody {
+  readonly args: unknown;
+  readonly context: GatewayInvokeContext;
+}
+
+export type GatewayHttpResponseBody =
+  | { readonly result: unknown }
+  | { readonly error: string; readonly detail?: unknown };
+
+export interface ApiGatewayDispatchInput extends ApiInvokeRequest {
+  readonly gameId: string;
+  readonly triggeringSessionId: string | null;
+  readonly triggeringJwtClaims: Readonly<Record<string, unknown>> | null;
+  readonly connectedSessions: readonly ConnectedSessionSnapshot[];
+  readonly bundleName: string;
+  readonly bundleCompatTag: string;
+  readonly runId: string;
+  readonly replayMode?: boolean;
+}
+
+export interface ApiInvokeWireRecord {
+  readonly event: "api.invoke";
+  readonly requestId: string;
+  readonly fingerprint: string;
+  readonly mode: "live" | "replay";
+  readonly kind: string;
+  readonly gameId: string;
+  readonly runId: string;
+  readonly rawOutbound: string;
+  readonly rawInbound: string;
+  readonly statusCode: number;
+  readonly error?: ApiInvokeError;
+  readonly recordedAt: string;
+}
+
+export interface ApiInvokeIpcPayload extends ApiInvokeRequest {
+  readonly triggeringSessionId: string | null;
+}
+
+export interface ApiInvokeIpcResponsePayload {
+  readonly response: ApiInvokeResponse;
+}
+
 // ----- Discriminated union: parent → child --------------------------------
 
 export type ParentToChildEnvelope =
   | IpcEnvelope<"bootstrap", BootstrapPayload>
+  | IpcEnvelope<"api.invoke.response", ApiInvokeIpcResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
@@ -151,6 +237,7 @@ export interface ChildUnknownMessagePayload {
 
 export type ChildToParentEnvelope =
   | IpcEnvelope<"ready", { bundleName: string; bundleCompatTag: string; runId: string; gameId: string }>
+  | IpcEnvelope<"api.invoke", ApiInvokeIpcPayload>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
@@ -161,6 +248,7 @@ export type ChildToParentEnvelope =
 // Channel-name catalogs for places where a string is fine (e.g. logs).
 export const PARENT_TO_CHILD = Object.freeze({
   bootstrap: "bootstrap",
+  apiInvokeResponse: "api.invoke.response",
   onWake: "onWake",
   onSleep: "onSleep",
   onPlayerConnect: "onPlayerConnect",
@@ -171,6 +259,7 @@ export const PARENT_TO_CHILD = Object.freeze({
 
 export const CHILD_TO_PARENT = Object.freeze({
   ready: "ready",
+  apiInvoke: "api.invoke",
   wsSend: "ws.send",
   logEmit: "log.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",

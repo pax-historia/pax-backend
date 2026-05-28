@@ -31,6 +31,12 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/bundles/hello-ai-call:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
   examples/bundles/hello-ws-echo:
     dependencies:
       '@pax-backend/runtime-sdk':
@@ -78,6 +84,12 @@ importers:
       pino:
         specifier: ^9.9.5
         version: 9.14.0
+
+  orchestration/api-gateway:
+    dependencies:
+      '@pax-backend/ipc-protocol':
+        specifier: workspace:*
+        version: link:../../shared/ipc-protocol
 
   sdk/runtime-sdk:
     dependencies:

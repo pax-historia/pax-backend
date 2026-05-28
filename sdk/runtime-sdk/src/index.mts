@@ -7,6 +7,7 @@
 // the substrate's contract meet.
 
 import type {
+  ApiInvokeResponse,
   BundleManifest,
   OnCapacityWarningPayload,
   OnPlayerConnectPayload,
@@ -17,7 +18,7 @@ import type {
   WsTarget,
 } from "@pax-backend/ipc-protocol";
 
-export type { BundleManifest } from "@pax-backend/ipc-protocol";
+export type { ApiInvokeResponse, BundleManifest } from "@pax-backend/ipc-protocol";
 
 // ----- The typed substrate context (`c`) ---------------------------------
 
@@ -37,10 +38,20 @@ export interface SubstrateContext {
     /** Voluntary shutdown signal. The substrate may sleep this game soon. */
     requestSleep(): void;
   };
+  readonly api: {
+    /**
+     * Invoke an operator-registered URL service kind. Args and result are
+     * opaque to the substrate; URL services own application semantics.
+     */
+    invoke(
+      kind: string,
+      args: unknown,
+      options?: { readonly idempotencyKey?: string },
+    ): Promise<ApiInvokeResponse>;
+  };
   // Reserved (smoke does not exercise these; types pin the surface).
   readonly state?: undefined;
   readonly blob?: undefined;
-  readonly api?: undefined;
   readonly players?: undefined;
   readonly compute?: undefined;
 }

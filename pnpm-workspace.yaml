@@ -2,6 +2,7 @@ packages:
   - "shared/ipc-protocol"
   - "runtime/parent-actor"
   - "runtime/child-runner-ivm"
+  - "orchestration/api-gateway"
   - "sdk/runtime-sdk"
   - "examples/bundles/*"
   - "testing/smoke-bot"

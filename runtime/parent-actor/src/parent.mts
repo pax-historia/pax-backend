@@ -9,9 +9,10 @@
 //    entirely for the smoke milestone).
 //  - A per-shard history.jsonl writer that records every channel call,
 //    lifecycle transition, and session transition (guarantee #14).
+//  - Forwarding c.api.invoke calls to the API gateway with parent-owned
+//    session context.
 //
 // What this process does NOT do (deferred):
-//  - api.invoke / API gateway dispatch (no URL services in smoke).
 //  - c.blob (Tigris) and c.state (RocksDB persistence beyond Rivet's own KV).
 //  - Compute-plane quota enforcement (we ship the per-handler timeout in the
 //    child via ivm; the rest is M2+).
@@ -31,6 +32,10 @@ import pino, { type Logger } from "pino";
 import {
   ACTIVE_GAMES_KEY_PREFIX,
   ACTIVE_GAME_TTL_SECONDS,
+  type ApiGatewayDispatchInput,
+  type ApiInvokeError,
+  type ApiInvokeIpcPayload,
+  type ApiInvokeResponse,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
   CHILD_TO_PARENT,
@@ -68,6 +73,8 @@ const RIVET_TOTAL_SLOTS = Number.parseInt(
 
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
 const PAX_JWT_SECRET = process.env["PAX_JWT_SECRET"] ?? "local-dev-secret";
+const PAX_API_GATEWAY_URL =
+  process.env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke";
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
@@ -218,6 +225,7 @@ interface SessionRecord {
   readonly sessionId: string;
   readonly playerId: string;
   readonly connectedAt: number;
+  readonly jwtClaims: Readonly<Record<string, unknown>>;
   seq: number;
 }
 
@@ -363,8 +371,9 @@ function sendTyped<T extends ParentToChildEnvelope["type"]>(
   child: ChildProcess,
   type: T,
   payload: Extract<ParentToChildEnvelope, { type: T }>["payload"],
+  requestId?: string,
 ): void {
-  const env = envelope(type, payload);
+  const env = envelope(type, payload, requestId);
   child.send(env);
 }
 
@@ -383,6 +392,9 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
   switch (raw.type) {
     case CHILD_TO_PARENT.ready:
       return; // handled by the one-shot readyHandler in forkChild
+    case CHILD_TO_PARENT.apiInvoke:
+      void handleApiInvoke(inst, raw.requestId, raw.payload);
+      return;
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.payload);
       return;
@@ -432,6 +444,116 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       void _exhaustive;
     }
   }
+}
+
+async function handleApiInvoke(
+  inst: GameInstance,
+  requestId: string | undefined,
+  payload: ApiInvokeIpcPayload,
+): Promise<void> {
+  if (!requestId) {
+    history("api.invoke.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      kind: payload.kind,
+      reason: "missingRequestId",
+    });
+    return;
+  }
+  const triggeringSession =
+    payload.triggeringSessionId === null
+      ? undefined
+      : inst.sessions.get(payload.triggeringSessionId);
+  const input: ApiGatewayDispatchInput = {
+    kind: payload.kind,
+    args: payload.args,
+    idempotencyKey: payload.idempotencyKey,
+    gameId: inst.gameId,
+    triggeringSessionId: triggeringSession?.sessionId ?? null,
+    triggeringJwtClaims: triggeringSession?.jwtClaims ?? null,
+    connectedSessions: Array.from(inst.sessions.values()).map((session) => ({
+      sessionId: session.sessionId,
+      playerId: session.playerId,
+      connectedAt: session.connectedAt,
+    })),
+    bundleName: inst.bundleName,
+    bundleCompatTag: inst.bundleCompatTag,
+    runId: inst.runId,
+  };
+
+  history("api.invoke.request", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    kind: payload.kind,
+    triggeringSessionId: input.triggeringSessionId,
+    connectedSessionCount: input.connectedSessions.length,
+  });
+
+  const response = await dispatchApiInvoke(input);
+  history("api.invoke.response", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    requestId,
+    kind: payload.kind,
+    ok: response.ok,
+    error: response.ok ? undefined : response.error,
+  });
+  if (inst.child) {
+    sendTyped(inst.child, "api.invoke.response", { response }, requestId);
+  }
+}
+
+async function dispatchApiInvoke(
+  input: ApiGatewayDispatchInput,
+): Promise<ApiInvokeResponse> {
+  try {
+    const res = await fetch(PAX_API_GATEWAY_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const raw = await res.text();
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: "providerError",
+        detail: { statusCode: res.status, body: raw },
+      };
+    }
+    return parseApiInvokeResponse(raw);
+  } catch (err) {
+    return {
+      ok: false,
+      error: "providerError",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
+function parseApiInvokeResponse(raw: string): ApiInvokeResponse {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  if (parsed["ok"] === true) {
+    return { ok: true, result: parsed["result"] };
+  }
+  const error = parsed["error"];
+  if (parsed["ok"] === false && isApiInvokeError(error)) {
+    return { ok: false, error, detail: parsed["detail"] };
+  }
+  return {
+    ok: false,
+    error: "providerError",
+    detail: { message: "gateway returned malformed api.invoke response", raw },
+  };
+}
+
+function isApiInvokeError(value: unknown): value is ApiInvokeError {
+  return (
+    value === "kindUnknown" ||
+    value === "providerError" ||
+    value === "apiRateExceeded" ||
+    value === "replayCoverageGap"
+  );
 }
 
 function handleWsSend(
@@ -576,6 +698,7 @@ const runner = new Runner({
       sessionId,
       playerId,
       connectedAt,
+      jwtClaims: claims as unknown as Readonly<Record<string, unknown>>,
       seq: 0,
     };
     inst.sessions.set(sessionId, sess);

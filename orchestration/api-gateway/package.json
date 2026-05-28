@@ -1,0 +1,21 @@
+{
+  "name": "@pax-backend/api-gateway",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "exports": {
+    ".": {
+      "types": "./src/index.mts",
+      "import": "./src/index.mts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx src/app.mts",
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pax-backend/ipc-protocol": "workspace:*"
+  }
+}
