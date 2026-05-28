@@ -1,3 +1,4 @@
+import { appendFileSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -124,6 +125,11 @@ async function handleRequest(
       return;
     }
 
+    if (parts[0] === "admin" && parts[1] === "players" && parts.length === 3) {
+      await handlePlayerResource(req, res, store, config, parts[2] ?? "");
+      return;
+    }
+
     if (parts[0] === "admin" && parts[1] === "games" && parts.length === 2) {
       await handleGamesCollection(req, res, store);
       return;
@@ -184,6 +190,20 @@ async function handleBundle(
     const bundle = await store.getBundle(bundleName);
     if (!bundle) throw new HttpError(404, "bundleNotFound", { bundleName });
     writeJson(res, 200, { ok: true, bundle });
+    return;
+  }
+  if (req.method === "DELETE") {
+    const result = await store.deleteBundleIfUnused(bundleName);
+    if (result.status === "inUse") {
+      throw new HttpError(409, "bundleInUse", {
+        bundleName,
+        gameIds: result.gameIds,
+      });
+    }
+    writeJson(res, result.status === "deleted" ? 200 : 404, {
+      ok: result.status === "deleted",
+      status: result.status,
+    });
     return;
   }
   if (req.method !== "POST") {
@@ -286,6 +306,32 @@ async function handleApiKindResource(
     return;
   }
   throw new HttpError(405, "methodNotAllowed", { method: req.method });
+}
+
+async function handlePlayerResource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  config: ControlPlaneConfig,
+  playerId: string,
+): Promise<void> {
+  if (req.method !== "DELETE") {
+    throw new HttpError(405, "methodNotAllowed", { method: req.method });
+  }
+  if (playerId.length === 0) {
+    throw new HttpError(400, "badRequest", { field: "playerId" });
+  }
+  const removedFromGameIds = await store.removePlayerFromAllAllowedLists(playerId);
+  appendControlHistory(config, "player.deleted", {
+    playerId,
+    removedFromGameIds,
+    removedFromGameCount: removedFromGameIds.length,
+  });
+  writeJson(res, 200, {
+    ok: true,
+    playerId,
+    removedFromGameIds,
+  });
 }
 
 async function handleGameResource(
@@ -550,6 +596,18 @@ function writeJson(res: ServerResponse, statusCode: number, body: unknown): void
     "content-length": Buffer.byteLength(raw),
   });
   res.end(raw);
+}
+
+function appendControlHistory(
+  config: ControlPlaneConfig,
+  event: string,
+  fields: Readonly<Record<string, unknown>>,
+): void {
+  mkdirSync(dirname(config.historyPath), { recursive: true });
+  appendFileSync(
+    config.historyPath,
+    `${JSON.stringify({ ts: new Date().toISOString(), shardId: "control-plane", event, ...fields })}\n`,
+  );
 }
 
 function asRecord(raw: unknown, label: string): Record<string, unknown> {

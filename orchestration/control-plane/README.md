@@ -4,6 +4,7 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 §"Admin surface (REST)". In particular:
 
 - Game lifecycle (`POST /admin/games`, `GET/DELETE /admin/games/:id`)
+- Player deletion sugar (`DELETE /admin/players/:playerId`)
 - The flip gate (`POST /admin/games/:id/bundle`, guarantee #15) returning
   `409 compatTagOutOfRange` with `{ blobCompatTag, bundleCompatTagsAccepted }`
 - Compat-tag observability (`GET /admin/games/compat-tags`,
@@ -12,8 +13,9 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 - Allowed-players management
 - Session observability (`GET /admin/games/:id/sessions`,
   `GET /admin/sessions/:sessionId`)
-- Bundle upload (parses + validates `BundleManifest`; rejects if
-  `compatTagProduced ∉ compatTagsAccepted`)
+- Bundle upload/delete (parses + validates `BundleManifest`; rejects if
+  `compatTagProduced ∉ compatTagsAccepted`; refuses bundle delete while games
+  still reference it)
 - Shard registry + drain (`GET /admin/shards`, `GET /admin/shards/:id`,
   `POST /admin/shards/:id/drain`, `DELETE /admin/shards/:id/drain`)
 - API kind registration (`POST /admin/api-kinds`, `GET /admin/api-kinds`,

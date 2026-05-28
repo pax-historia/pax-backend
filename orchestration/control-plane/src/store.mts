@@ -32,6 +32,24 @@ export class ControlPlaneStore {
     return result === "OK";
   }
 
+  async deleteBundleIfUnused(
+    bundleName: string,
+  ): Promise<
+    | { readonly status: "deleted" }
+    | { readonly status: "missing" }
+    | { readonly status: "inUse"; readonly gameIds: readonly string[] }
+  > {
+    const referencingGameIds = (await this.listGames())
+      .filter((game) => game.bundleName === bundleName)
+      .map((game) => game.gameId)
+      .sort();
+    if (referencingGameIds.length > 0) {
+      return { status: "inUse", gameIds: referencingGameIds };
+    }
+    const deleted = await this.redis.del(`${BUNDLE_KEY_PREFIX}${bundleName}`);
+    return deleted > 0 ? { status: "deleted" } : { status: "missing" };
+  }
+
   async getGame(gameId: string): Promise<GameRecord | undefined> {
     return getJson<GameRecord>(this.redis, `${GAME_KEY_PREFIX}${gameId}`);
   }
@@ -77,6 +95,22 @@ export class ControlPlaneStore {
 
   async listAllowedPlayers(gameId: string): Promise<readonly string[]> {
     return (await this.redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`)).sort();
+  }
+
+  async removePlayerFromAllAllowedLists(playerId: string): Promise<readonly string[]> {
+    const keys = await scanKeys(this.redis, `${ALLOWED_PLAYERS_KEY_PREFIX}*`);
+    if (keys.length === 0) return [];
+    const tx = this.redis.multi();
+    for (const key of keys) tx.srem(key, playerId);
+    const results = await tx.exec();
+    if (!results) return [];
+    return keys
+      .filter((_key, index) => {
+        const result = results[index];
+        return Number(result?.[1] ?? 0) > 0;
+      })
+      .map((key) => key.slice(ALLOWED_PLAYERS_KEY_PREFIX.length))
+      .sort();
   }
 
   async listApiKinds(): Promise<readonly ApiKindRegistration[]> {
