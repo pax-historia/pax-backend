@@ -82,8 +82,10 @@ type ParentRequestType =
   | "state.read"
   | "state.write"
   | "state.flush"
-  | "blob.read"
-  | "blob.write"
+  | "blob.put"
+  | "blob.get"
+  | "blob.delete"
+  | "blob.list"
   | "ws.send";
 
 function hashSeed(input: string): number {
@@ -185,11 +187,20 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   const cStateFlush = new ivm.Reference(() =>
     invokeParentFromBridge(CHILD_TO_PARENT.stateFlush, {}),
   );
-  const cBlobRead = new ivm.Reference(() =>
-    invokeParentFromBridge(CHILD_TO_PARENT.blobRead, {}),
+  const cBlobPut = new ivm.Reference((key: string, bytesBase64: string) =>
+    invokeParentFromBridge(CHILD_TO_PARENT.blobPut, { key, bytesBase64 }),
   );
-  const cBlobWrite = new ivm.Reference((valueJson: string) =>
-    invokeStorageWriteFromBridge(CHILD_TO_PARENT.blobWrite, valueJson),
+  const cBlobGet = new ivm.Reference((key: string) =>
+    invokeParentFromBridge(CHILD_TO_PARENT.blobGet, { key }),
+  );
+  const cBlobDelete = new ivm.Reference((key: string) =>
+    invokeParentFromBridge(CHILD_TO_PARENT.blobDelete, { key }),
+  );
+  const cBlobList = new ivm.Reference((prefix: string | null) =>
+    invokeParentFromBridge(
+      CHILD_TO_PARENT.blobList,
+      prefix === null ? {} : { prefix },
+    ),
   );
 
   await jail.set("__pax_c_ws_send", cWsSend);
@@ -206,8 +217,10 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
   await jail.set("__pax_c_state_read", cStateRead);
   await jail.set("__pax_c_state_write", cStateWrite);
   await jail.set("__pax_c_state_flush", cStateFlush);
-  await jail.set("__pax_c_blob_read", cBlobRead);
-  await jail.set("__pax_c_blob_write", cBlobWrite);
+  await jail.set("__pax_c_blob_put", cBlobPut);
+  await jail.set("__pax_c_blob_get", cBlobGet);
+  await jail.set("__pax_c_blob_delete", cBlobDelete);
+  await jail.set("__pax_c_blob_list", cBlobList);
 
   // SDK-equivalent in the isolate. Bundles compiled via esbuild see
   // defineBundle bundled in directly; __pax_install is the only global the
@@ -237,6 +250,49 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
         };
       }
     };
+    const __pax_base64_chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const __pax_bytes_to_base64 = (bytes) => {
+      if (!(bytes instanceof Uint8Array)) {
+        throw new Error("c.blob.put bytes must be a Uint8Array");
+      }
+      let out = "";
+      for (let i = 0; i < bytes.length; i += 3) {
+        const a = bytes[i];
+        const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+        const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+        const triplet = (a << 16) | (b << 8) | c;
+        out += __pax_base64_chars[(triplet >> 18) & 63];
+        out += __pax_base64_chars[(triplet >> 12) & 63];
+        out += i + 1 < bytes.length ? __pax_base64_chars[(triplet >> 6) & 63] : "=";
+        out += i + 2 < bytes.length ? __pax_base64_chars[triplet & 63] : "=";
+      }
+      return out;
+    };
+    const __pax_base64_to_bytes = (base64) => {
+      const clean = String(base64).replace(/=+$/, "");
+      const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+      let buffer = 0;
+      let bits = 0;
+      let index = 0;
+      for (const ch of clean) {
+        const value = __pax_base64_chars.indexOf(ch);
+        if (value < 0) throw new Error("invalid base64 in blob.get response");
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          out[index] = (buffer >> bits) & 255;
+          index += 1;
+        }
+      }
+      return index === out.length ? out : out.slice(0, index);
+    };
+    const __pax_blob_storage_unavailable = (message) => ({
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message },
+    });
     const __pax_encode_json_arg = (field, value) => {
       try {
         const valueJson = JSON.stringify(value);
@@ -386,15 +442,40 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
         },
       },
       blob: {
-        read: () => {
-          const responseJson = __pax_c_blob_read.applySyncPromise(undefined, []);
-          const response = JSON.parse(responseJson);
-          return Promise.resolve(response.found ? response.value : undefined);
+        put: (key, bytes) => {
+          let bytesBase64;
+          try {
+            bytesBase64 = __pax_bytes_to_base64(bytes);
+          } catch (err) {
+            return Promise.resolve(
+              __pax_blob_storage_unavailable(
+                err && typeof err.message === "string" ? err.message : String(err),
+              ),
+            );
+          }
+          const responseJson = __pax_c_blob_put.applySyncPromise(undefined, [
+            String(key),
+            bytesBase64,
+          ]);
+          return Promise.resolve(JSON.parse(responseJson));
         },
-        write: (value) => {
-          const encoded = __pax_encode_storage_write(value);
-          if (!encoded.ok) return Promise.resolve(encoded);
-          const responseJson = __pax_c_blob_write.applySyncPromise(undefined, [encoded.valueJson]);
+        get: (key) => {
+          const responseJson = __pax_c_blob_get.applySyncPromise(undefined, [String(key)]);
+          const response = JSON.parse(responseJson);
+          return Promise.resolve(
+            response.found && typeof response.bytesBase64 === "string"
+              ? __pax_base64_to_bytes(response.bytesBase64)
+              : null,
+          );
+        },
+        delete: (key) => {
+          const responseJson = __pax_c_blob_delete.applySyncPromise(undefined, [String(key)]);
+          return Promise.resolve(JSON.parse(responseJson));
+        },
+        list: (prefix) => {
+          const responseJson = __pax_c_blob_list.applySyncPromise(undefined, [
+            typeof prefix === "string" ? prefix : null,
+          ]);
           return Promise.resolve(JSON.parse(responseJson));
         },
       },
@@ -435,7 +516,8 @@ type HandlerName =
   | "onPlayerConnect"
   | "onPlayerDisconnect"
   | "onPlayerMessage"
-  | "onCapacityWarning";
+  | "onCapacityWarning"
+  | "onHostEvent";
 
 async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<boolean> {
   if (!bundleExports || !context) return true;
@@ -548,7 +630,7 @@ function invokeParentFromBridge(
 }
 
 function invokeStorageWriteFromBridge(
-  type: "state.write" | "blob.write",
+  type: "state.write",
   valueJson: string,
 ): Promise<string> {
   try {
@@ -622,11 +704,17 @@ process.on("message", async (raw: unknown) => {
       case PARENT_TO_CHILD.stateFlushResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
         return;
-      case PARENT_TO_CHILD.blobReadResponse:
+      case PARENT_TO_CHILD.blobPutResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.blobGetResponse:
         completeParentRequest(raw.requestId, raw.payload);
         return;
-      case PARENT_TO_CHILD.blobWriteResponse:
-        completeParentRequest(raw.requestId, raw.payload.response);
+      case PARENT_TO_CHILD.blobDeleteResponse:
+        completeParentRequest(raw.requestId, raw.payload);
+        return;
+      case PARENT_TO_CHILD.blobListResponse:
+        completeParentRequest(raw.requestId, raw.payload.items);
         return;
       case PARENT_TO_CHILD.wsSendResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
@@ -653,6 +741,9 @@ process.on("message", async (raw: unknown) => {
         return;
       case PARENT_TO_CHILD.onCapacityWarning:
         await invokeHandler("onCapacityWarning", raw.payload);
+        return;
+      case PARENT_TO_CHILD.onHostEvent:
+        await invokeHandler("onHostEvent", raw.payload);
         return;
       default: {
         // Exhaustive check — TypeScript will catch a missed type at compile time.

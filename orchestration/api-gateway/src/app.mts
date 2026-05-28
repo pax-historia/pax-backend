@@ -3,11 +3,13 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type {
-  ApiGatewayDispatchInput,
-  ConnectedSessionSnapshot,
-  GatewayHttpRequestBody,
+import {
+  GATEWAY_ENVELOPE_VERSION,
+  type ApiGatewayDispatchInput,
+  type ConnectedSessionSnapshot,
+  type GatewayHttpRequestBody,
 } from "@pax-backend/ipc-protocol";
+import { startPaxNodeTelemetry } from "@pax-backend/node-telemetry";
 import {
   handleReferenceService,
   referenceServiceConfigFromEnv,
@@ -15,6 +17,8 @@ import {
   type ReferenceServiceConfig,
   type ReferenceServiceMetricsSnapshot,
 } from "@pax-backend/url-services";
+
+startPaxNodeTelemetry({ serviceName: "pax-api-gateway", paxZone: "orchestration" });
 
 import { budgetFromEnv } from "./budgets.mjs";
 import { ApiGateway, type ApiGatewayMetricsSnapshot } from "./dispatch.mjs";
@@ -164,6 +168,7 @@ async function handleRequest(
     }
 
     if (req.method === "POST" && url.pathname.startsWith("/_url-services/")) {
+      assertGatewayEnvelopeVersion(req);
       const result = await handleReferenceService(
         url.pathname,
         asGatewayHttpRequest(await readJson(req)),
@@ -183,6 +188,18 @@ async function handleRequest(
       ok: false,
       error: "internal",
       detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function assertGatewayEnvelopeVersion(req: IncomingMessage): void {
+  const expected = String(GATEWAY_ENVELOPE_VERSION);
+  const raw = req.headers["x-gateway-envelope-version"];
+  const received = Array.isArray(raw) ? raw[0] : raw;
+  if (received !== expected) {
+    throw new HttpError(400, "unsupportedGatewayEnvelopeVersion", {
+      expected,
+      received: received ?? null,
     });
   }
 }
@@ -293,7 +310,10 @@ function asGatewayHttpRequest(raw: unknown): GatewayHttpRequestBody {
   const body = asRecord(raw, "gateway HTTP body");
   return {
     args: body["args"],
-    context: asRecord(body["context"], "gateway HTTP context") as GatewayHttpRequestBody["context"],
+    context: asRecord(
+      body["context"],
+      "gateway HTTP context",
+    ) as unknown as GatewayHttpRequestBody["context"],
   };
 }
 

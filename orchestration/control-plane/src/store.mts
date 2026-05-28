@@ -11,12 +11,16 @@ import {
   type BundleRecord,
   GAME_KEY_PREFIX,
   type GameRecord,
+  HOST_EVENT_QUEUE_KEY_PREFIX,
+  type HostEventRecord,
   SHARD_DRAIN_KEY_PREFIX,
   SHARD_REGISTRY_KEY_PREFIX,
   SHARD_REGISTRY_TTL_SECONDS,
   type ShardRegistration,
   STATE_KEY_PREFIX,
 } from "@pax-backend/ipc-protocol";
+
+const SHARD_DRAIN_COMPLETED_KEY_PREFIX = "shard_drain_completed:";
 
 export class ControlPlaneStore {
   constructor(readonly redis: Redis) {}
@@ -181,11 +185,14 @@ export class ControlPlaneStore {
     if (!shard) return undefined;
     if (draining) {
       await this.redis.set(`${SHARD_DRAIN_KEY_PREFIX}${shardId}`, "true");
+      await this.redis.del(`${SHARD_DRAIN_COMPLETED_KEY_PREFIX}${shardId}`);
     } else {
       await this.redis.del(`${SHARD_DRAIN_KEY_PREFIX}${shardId}`);
+      await this.redis.del(`${SHARD_DRAIN_COMPLETED_KEY_PREFIX}${shardId}`);
     }
     const updated: ShardRegistration = {
       ...shard,
+      status: draining ? (shard.activeGames === 0 ? "drained" : "draining") : "healthy",
       acceptingWakes: !draining,
       lastSeenAt: Date.now(),
     };
@@ -196,6 +203,15 @@ export class ControlPlaneStore {
       SHARD_REGISTRY_TTL_SECONDS,
     );
     return updated;
+  }
+
+  async markShardDrainCompletedOnce(shardId: string): Promise<boolean> {
+    const result = await this.redis.set(
+      `${SHARD_DRAIN_COMPLETED_KEY_PREFIX}${shardId}`,
+      String(Date.now()),
+      "NX",
+    );
+    return result === "OK";
   }
 
   async putStorageRaw(
@@ -211,6 +227,15 @@ export class ControlPlaneStore {
     tier: "state" | "blob",
   ): Promise<string | undefined> {
     return (await this.redis.get(storageKey(gameId, tier))) ?? undefined;
+  }
+
+  async enqueueHostEvent(
+    record: HostEventRecord,
+    ttlSeconds: number,
+  ): Promise<void> {
+    const key = `${HOST_EVENT_QUEUE_KEY_PREFIX}${record.gameId}`;
+    await this.redis.rpush(key, JSON.stringify(record));
+    await this.redis.expire(key, ttlSeconds);
   }
 }
 

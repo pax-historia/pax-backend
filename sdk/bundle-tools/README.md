@@ -10,7 +10,7 @@ about the `sdk/` zone.
 | Command | What it does |
 |---|---|
 | `pax-bundle build <pkg>` | esbuild the bundle's `src/index.mts` to `dist/bundle.js` (IIFE with the `__pax_install` footer the runtime expects). Validates the manifest in-band via `defineBundle`. |
-| `pax-bundle publish <pkg>` | Uploads the compiled bundle to `POST /admin/bundles/:bundleName`. Stores under a creator-scoped, monotonic, immutable-by-storage-policy object name in `pax-backend-blobs` (e.g. `bundles/<creator-id>/v3`). |
+| `pax-bundle publish <pkg> --control-plane-url <url> --bundle-name <name>` | Uploads the compiled `dist/bundle.js` to `POST /admin/bundles/:bundleName` on a running control plane. |
 | `pax-bundle verify <pkg>` | Optional sha256 + signature check as defense-in-depth (off by default in v1; see [plan](../../README.md) §"Bundle integrity & verification"). |
 
 ## Sub-layout

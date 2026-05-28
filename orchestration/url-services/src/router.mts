@@ -1,4 +1,5 @@
 import type { ApiKindRegistration, GatewayHttpRequestBody } from "@pax-backend/ipc-protocol";
+import { withPaxSpan } from "@pax-backend/node-telemetry";
 
 import { delayService } from "./services/delay.mjs";
 import { echoService } from "./services/echo.mjs";
@@ -54,21 +55,34 @@ export async function handleReferenceService(
     };
   }
 
-  const metrics = metricsFor(service.kindName);
-  metrics.invocationsTotal += 1;
-  const startedAt = Date.now();
-  try {
-    const result = await service.handle(request, config);
-    if (result.statusCode >= 400) {
-      metrics.errorsTotal += 1;
-    }
-    return result;
-  } catch (err) {
-    metrics.errorsTotal += 1;
-    throw err;
-  } finally {
-    metrics.durationMsSum += Math.max(0, Date.now() - startedAt);
-  }
+  return withPaxSpan(
+    `urlsvc.${service.kindName}.invoke`,
+    {
+      kind: service.kindName,
+      game_id: request.context.gameId,
+      run_id: request.context.runId,
+      bundle_name: request.context.bundleName,
+      bundle_compat_tag: request.context.bundleCompatTag,
+    },
+    async (span) => {
+      const metrics = metricsFor(service.kindName);
+      metrics.invocationsTotal += 1;
+      const startedAt = Date.now();
+      try {
+        const result = await service.handle(request, config);
+        span.setAttribute("http.response.status_code", result.statusCode);
+        if (result.statusCode >= 400) {
+          metrics.errorsTotal += 1;
+        }
+        return result;
+      } catch (err) {
+        metrics.errorsTotal += 1;
+        throw err;
+      } finally {
+        metrics.durationMsSum += Math.max(0, Date.now() - startedAt);
+      }
+    },
+  );
 }
 
 export function referenceKindRegistrations(baseUrl: string): readonly ApiKindRegistration[] {

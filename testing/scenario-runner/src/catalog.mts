@@ -147,12 +147,90 @@ function validateScenarioWorkloadPlan(value: unknown, path: string): ScenarioWor
   if (!Array.isArray(plan.phases) || plan.phases.length === 0) {
     throw new Error(`${path} field phases must be a non-empty array`);
   }
+  const phases: unknown[] = [];
   for (const [index, phase] of plan.phases.entries()) {
-    if (!isRecord(phase) || typeof phase["type"] !== "string") {
-      throw new Error(`${path} field phases[${index}].type must be a string`);
-    }
+    phases.push(validateScenarioWorkloadPhase(phase, path, index));
   }
-  return plan as ScenarioWorkloadPlan;
+  return { ...plan, phases } as ScenarioWorkloadPlan;
+}
+
+function validateScenarioWorkloadPhase(value: unknown, path: string, index: number): unknown {
+  const prefix = `phases[${index}]`;
+  if (!isRecord(value)) {
+    throw new Error(`${path} field ${prefix} must be an object`);
+  }
+  const rawType = value["type"] ?? value["phase"];
+  if (typeof rawType !== "string") {
+    throw new Error(`${path} field ${prefix}.type must be a string`);
+  }
+  const normalized = Object.prototype.hasOwnProperty.call(value, "type")
+    ? value
+    : { ...value, type: rawType };
+  switch (rawType) {
+    case "seed-fixtures":
+      requireFixtureKindArray(value["fixtureKinds"], path, `${prefix}.fixtureKinds`);
+      return normalized;
+    case "register-api-kinds":
+      if (!Array.isArray(value["kinds"])) {
+        throw new Error(`${path} field ${prefix}.kinds must be an array`);
+      }
+      for (const [kindIndex, kind] of value["kinds"].entries()) {
+        if (!isRecord(kind)) {
+          throw new Error(`${path} field ${prefix}.kinds[${kindIndex}] must be an object`);
+        }
+        requireString(kind["kindName"], path, `${prefix}.kinds[${kindIndex}].kindName`);
+        requireString(kind["url"], path, `${prefix}.kinds[${kindIndex}].url`);
+      }
+      return normalized;
+    case "open-sessions":
+      requireOneOf(value["playerSource"], path, `${prefix}.playerSource`, [
+        "allowed-players",
+      ]);
+      requirePositiveNumber(value["sessionsPerGame"], path, `${prefix}.sessionsPerGame`);
+      requireNonNegativeNumber(value["rampMs"], path, `${prefix}.rampMs`);
+      return normalized;
+    case "send-json":
+      requireOneOf(value["channel"], path, `${prefix}.channel`, ["websocket"]);
+      requirePositiveNumber(value["messagesPerSession"], path, `${prefix}.messagesPerSession`);
+      requireNonNegativeNumber(value["intervalMs"], path, `${prefix}.intervalMs`);
+      if (!isRecord(value["body"])) {
+        throw new Error(`${path} field ${prefix}.body must be an object`);
+      }
+      return normalized;
+    case "invoke-api":
+      requireString(value["kind"], path, `${prefix}.kind`);
+      requirePositiveNumber(value["callsPerSession"], path, `${prefix}.callsPerSession`);
+      requireNonNegativeNumber(value["intervalMs"], path, `${prefix}.intervalMs`);
+      if (!isRecord(value["args"])) {
+        throw new Error(`${path} field ${prefix}.args must be an object`);
+      }
+      return normalized;
+    case "state-blob-churn":
+      requireNonNegativeNumber(value["stateWritesPerMinute"], path, `${prefix}.stateWritesPerMinute`);
+      requireNonNegativeNumber(value["blobWritesPerMinute"], path, `${prefix}.blobWritesPerMinute`);
+      requirePositiveNumber(value["bytesPerWrite"], path, `${prefix}.bytesPerWrite`);
+      return normalized;
+    case "sleep-wake":
+      requirePositiveNumber(value["cycles"], path, `${prefix}.cycles`);
+      requireNonNegativeNumber(value["idleMsBetweenCycles"], path, `${prefix}.idleMsBetweenCycles`);
+      return normalized;
+    case "await-nemesis":
+      requireOneOf(value["action"], path, `${prefix}.action`, ["kill-shard"]);
+      requirePositiveNumber(value["minimumOccurrences"], path, `${prefix}.minimumOccurrences`);
+      return normalized;
+    case "expect-history-events":
+      requireStringArray(value["events"], path, `${prefix}.events`);
+      requirePositiveNumber(value["minimumPerGame"], path, `${prefix}.minimumPerGame`);
+      return normalized;
+    case "wait":
+      requireNonNegativeNumber(value["durationMs"], path, `${prefix}.durationMs`);
+      return normalized;
+    case "close-sessions":
+      requireString(value["reason"], path, `${prefix}.reason`);
+      return normalized;
+    default:
+      throw new Error(`${path} field ${prefix}.type is unsupported: ${rawType}`);
+  }
 }
 
 function requireString(value: unknown, path: string, field: string): void {
@@ -164,6 +242,36 @@ function requireString(value: unknown, path: string, field: string): void {
 function requirePositiveNumber(value: unknown, path: string, field: string): void {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new Error(`${path} field ${field} must be a positive number`);
+  }
+}
+
+function requireNonNegativeNumber(value: unknown, path: string, field: string): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${path} field ${field} must be a non-negative number`);
+  }
+}
+
+function requireStringArray(value: unknown, path: string, field: string): void {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((entry) => typeof entry === "string" && entry.length > 0)
+  ) {
+    throw new Error(`${path} field ${field} must be a non-empty string array`);
+  }
+}
+
+function requireFixtureKindArray(value: unknown, path: string, field: string): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${path} field ${field} must be a non-empty fixture kind array`);
+  }
+  for (const [index, kind] of value.entries()) {
+    requireOneOf(kind, path, `${field}[${index}]`, [
+      "allowed-players",
+      "initial-state",
+      "initial-blob",
+      "api-responses",
+    ]);
   }
 }
 

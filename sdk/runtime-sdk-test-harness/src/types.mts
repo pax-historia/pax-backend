@@ -41,7 +41,7 @@ export interface HarnessOptions {
   readonly allowedPlayers?: readonly string[];
   readonly sessions?: readonly HarnessSession[];
   readonly state?: unknown;
-  readonly blob?: unknown;
+  readonly blobs?: Readonly<Record<string, Uint8Array>>;
   readonly apiFixtures?: readonly HarnessApiFixture[];
   readonly computeBudget?: ComputeBudgetSnapshot;
 }
@@ -55,7 +55,7 @@ export interface RuntimeSdkHarness {
   allowedPlayers(): readonly string[];
   connectedSessions(): readonly HarnessSession[];
   state(): unknown;
-  blob(): unknown;
+  blobs(): Readonly<Record<string, Uint8Array>>;
   connect(session: HarnessSession): Promise<void>;
   disconnect(sessionId: string, reason?: OnPlayerDisconnectPayload["reason"]): Promise<void>;
   wake(payload?: Partial<OnWakePayload>): Promise<void>;

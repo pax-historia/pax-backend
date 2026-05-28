@@ -1,16 +1,14 @@
+#!/usr/bin/env node
+
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-
-import { buildBundle } from "./commands/build.mjs";
-import { publishBundle } from "./commands/publish.mjs";
-import { verifyBundle } from "./commands/verify.mjs";
-import { extractManifestFromBundleSource } from "./manifest.mjs";
 
 export async function runCli(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;
   try {
     if (command === "build") {
+      const { buildBundle } = await import("./commands/build.mjs");
       const packageDir = requiredArg(rest, 0, "package directory");
       const result = await buildBundle({ packageDir });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -18,6 +16,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     }
 
     if (command === "verify") {
+      const { verifyBundle } = await import("./commands/verify.mjs");
       const path = requiredArg(rest, 0, "bundle path");
       const result = await verifyBundle(resolve(path));
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -25,6 +24,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     }
 
     if (command === "publish") {
+      const { publishBundle } = await import("./commands/publish.mjs");
+      const { extractManifestFromBundleSource } = await import("./manifest.mjs");
       const packageDir = requiredArg(rest, 0, "package directory");
       const controlPlaneUrl = requiredFlag(rest, "--control-plane-url");
       const bundleName = requiredFlag(rest, "--bundle-name");

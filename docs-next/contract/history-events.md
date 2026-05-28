@@ -57,7 +57,7 @@ Eight categories cover everything:
 
 | Category | Example events | What they record |
 |---|---|---|
-| **Lifecycle** | `onWake.sent`, `onWake.succeeded`, `onWake.failed`, `onSleep.sent`, `onSleep.completed`, `actor.start`, `actor.stop`, `child.exit`, `child.restart` | Process and bundle lifecycle |
+| **Lifecycle** | `onWake.sent`, `onWake.succeeded`, `onWake.failed`, `onSleep.sent`, `lifecycle.sleepComplete`, `actor.start`, `actor.stop`, `child.exit`, `child.restart` | Process and bundle lifecycle |
 | **Session** | `session.opened`, `session.closed`, `session.forceDisconnect`, `connection.refused` | WS session edges |
 | **Player I/O** | `onPlayerMessage`, `ws.send`, `ws.send.rejected` | Per-message I/O |
 | **Storage** | `state.read`, `state.write`, `state.flush`, `blob.put`, `blob.get`, `blob.delete`, `blob.list`, `*.rejected` variants | All `c.state` and `c.blob` operations |

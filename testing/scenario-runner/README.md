@@ -21,13 +21,23 @@ Current source pass provides the first runner shell:
 - resolves workload fixture paths and emits a runtime environment plan,
   including `PAX_TEST_SEED` from the scenario manifest and
   `PAX_API_REPLAY_FIXTURES_PATH` when an `api-responses` fixture is present
+- executes the first live workload phase set against a running local/live
+  substrate: `seed-fixtures`, `register-api-kinds`, `open-sessions`,
+  `send-json`, `wait`, `close-sessions`, `await-nemesis`, and
+  `expect-history-events`
+- schedules nemesis profile actions alongside the live workload; the
+  `shard-death-every-5m` profile currently maps `kill-shard` to the
+  production admin drain endpoint (`POST /admin/shards/:id/drain`)
 - summarizes `metrics.emit` and capacity warnings into a replay attribution sentence
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list
 - can override fixture resolution with `--fixture-base-dir`
+- can target non-default live endpoints with `--control-url`, `--router-url`,
+  and `--phase-timeout-ms`
 - emits a `result.json`-shaped object with oracle summaries, attribution
   placeholders, scenario metadata, nemesis metadata, and run metadata
 
-It does not yet execute the workload phases, inject nemesis actions, start the
-planned runtime environment, shrink fuzz failures, or spin driver machines.
-Those stay as later source passes.
+It does not yet execute the later stress-only phase families
+(`invoke-api`, `state-blob-churn`, `sleep-wake`), start the planned runtime
+environment, shrink fuzz failures, or spin driver machines. Those stay as
+later source passes.

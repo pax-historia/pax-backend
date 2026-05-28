@@ -103,14 +103,14 @@ A workload is a declarative list of phases:
 ```ts
 // clients/workload.mts
 export const workload = [
-  { phase: 'seed-fixtures' },
-  { phase: 'register-api-kinds', kinds: [{ kindName: 'mock-ai.v1', url: 'http://localhost:9081/_url-services/mock-ai-v1/invoke' }] },
-  { phase: 'open-sessions', count: 5, gameIds: ['game-1'] },
-  { phase: 'send-json', sessionPattern: 'all', body: { type: 'chat', content: 'hi' } },
-  { phase: 'expect-history-events', events: ['session.opened', 'onPlayerMessage', 'ws.send'] },
-  { phase: 'wait', durationMs: 1000 },
-  { phase: 'close-sessions', sessionPattern: 'all' },
-  { phase: 'expect-history-events', events: ['session.closed'] },
+  { type: 'seed-fixtures', fixtureKinds: ['allowed-players'] },
+  { type: 'register-api-kinds', kinds: [{ kindName: 'mock-ai.v1', url: 'http://localhost:9081/_url-services/mock-ai-v1/invoke' }] },
+  { type: 'open-sessions', playerSource: 'allowed-players', sessionsPerGame: 5, rampMs: 1000 },
+  { type: 'send-json', channel: 'websocket', messagesPerSession: 1, intervalMs: 0, body: { type: 'chat', content: 'hi' } },
+  { type: 'expect-history-events', events: ['session.opened', 'onPlayerMessage', 'ws.send'], minimumPerGame: 1 },
+  { type: 'wait', durationMs: 1000 },
+  { type: 'close-sessions', reason: 'scenarioComplete' },
+  { type: 'expect-history-events', events: ['session.closed'], minimumPerGame: 1 },
 ];
 ```
 
@@ -129,6 +129,11 @@ Orthogonal to the scenario. Two ship today:
 
 The nemesis runs as a separate process alongside the scenario; it talks
 to the substrate's admin API to enact faults.
+
+In the Phase 0 runner implementation, nemesis actions are scheduled inside
+the driver process and still use admin REST. `kill-shard` selects an eligible
+shard from `GET /admin/shards` and calls `POST /admin/shards/:id/drain`; the
+Fly/orchestrator replacement hook is layered on top in later phases.
 
 Adding a nemesis: drop a folder under `testing/nemeses/<name>/` with a
 `fault-profile.mts`. The executor calls into it on a timer.
@@ -149,7 +154,7 @@ platform guarantee:
 | 7 | `compute-plane-quotas.mts` | `compute.budget`, `compute.budget.rejected` |
 | 8 | `crash-blast-radius.mts` | `child.exit`, `child.restart`, `child.fatal` |
 | 9 | `no-random-parent-crashes.mts` | `parent.crash` (must never appear) |
-| 10 | `eviction-minimum-budget.mts` | `onSleep.sent` + `onSleep.completed` |
+| 10 | `eviction-minimum-budget.mts` | `onSleep.sent` + `lifecycle.sleepComplete` |
 | 11 | `state-durability.mts` | `state.write`, `state.flush`, `child.restart`, `onWake` |
 | 12 | `blob-durability.mts` | `blob.put`, `blob.get`, `onWake` |
 | 13 | `migration-rollback-safety.mts` | `bundle.flip.succeeded`, `onWake.failed`, `bundle.rollback.*` |

@@ -8,6 +8,7 @@
   "include": ["src/**/*.mts"],
   "references": [
     { "path": "../../shared/ipc-protocol" },
+    { "path": "../../shared/node-telemetry" },
     { "path": "../url-services" }
   ]
 }

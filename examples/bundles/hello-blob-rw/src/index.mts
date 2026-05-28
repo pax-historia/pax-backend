@@ -16,6 +16,7 @@ interface BlobValue {
 }
 
 let cachedBlob: BlobValue = emptyBlob();
+const BLOB_KEY = "current.json";
 
 export default defineBundle({
   manifest: {
@@ -25,18 +26,18 @@ export default defineBundle({
   },
 
   async onWake(c, payload) {
-    const stored = normalizeBlob((await c.blob.read()) ?? payload.blob);
+    const stored = normalizeBlob(decodeJson(await c.blob.get(BLOB_KEY)));
     const next = {
       ...stored,
       wakes: stored.wakes + 1,
     };
-    const write = await c.blob.write(next);
+    const write = await c.blob.put(BLOB_KEY, encodeJson(next));
     if (write.ok) cachedBlob = next;
 
     c.log.emit({
       event: "hello-blob-rw.onWake",
+      reason: payload.reason,
       blob: cachedBlob,
-      payloadHadBlob: payload.blob !== undefined,
       write,
     });
   },
@@ -51,7 +52,7 @@ export default defineBundle({
   },
 
   async onPlayerMessage(c, payload) {
-    const stored = normalizeBlob(await c.blob.read());
+    const stored = normalizeBlob(decodeJson(await c.blob.get(BLOB_KEY)));
     const message: BlobMessage = {
       playerId: payload.playerId,
       sessionId: payload.sessionId,
@@ -65,7 +66,7 @@ export default defineBundle({
       revisions: stored.revisions + 1,
       messages: [...stored.messages.slice(-9), message],
     };
-    const write = await c.blob.write(next);
+    const write = await c.blob.put(BLOB_KEY, encodeJson(next));
     if (write.ok) cachedBlob = next;
 
     c.log.emit({
@@ -102,6 +103,26 @@ function normalizeBlob(value: unknown): BlobValue {
     revisions: readNonNegativeInt(value["revisions"]),
     messages: normalizeMessages(value["messages"]),
   };
+}
+
+function encodeJson(value: unknown): Uint8Array {
+  const raw = JSON.stringify(value);
+  const bytes = new Uint8Array(raw.length);
+  for (let index = 0; index < raw.length; index += 1) {
+    bytes[index] = raw.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+function decodeJson(bytes: Uint8Array | null): unknown {
+  if (!bytes) return undefined;
+  let raw = "";
+  for (const byte of bytes) raw += String.fromCharCode(byte);
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeMessages(value: unknown): readonly BlobMessage[] {

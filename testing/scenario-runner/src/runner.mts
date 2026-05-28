@@ -10,6 +10,7 @@ import {
   loadScenarioManifest,
   loadScenarioWorkloadPlan,
 } from "./catalog.mjs";
+import { executeLiveWorkload } from "./live-executor.mjs";
 import { buildScenarioResult } from "./result.mjs";
 import { buildScenarioRuntimeEnvironment } from "./runtime-env.mjs";
 import type { ScenarioResult, ScenarioRunnerInput } from "./types.mjs";
@@ -47,7 +48,7 @@ export async function runReplayFromCatalog(
       : undefined);
   const oracleNames =
     input.oracleScope === "scenario" ? scenarioManifest.oracleNames : input.oracleNames;
-  return runReplayFromHistory({
+  const hydratedInput: ScenarioRunnerInput = {
     ...input,
     scenarioManifest,
     nemesisManifest,
@@ -56,5 +57,19 @@ export async function runReplayFromCatalog(
     oracleNames,
     oracleScope: input.oracleScope ?? (input.oracleNames ? "explicit" : "all"),
     samplingProfile: input.samplingProfile ?? (input.mode === "replay" ? "replay" : "ramp"),
+  };
+  if (input.mode !== "replay") {
+    if (!workloadPlan || !runtimeEnvironment) {
+      throw new Error(`${scenarioManifest.scenarioId} has no workload plan to execute`);
+    }
+    await executeLiveWorkload(
+      hydratedInput,
+      scenarioManifest,
+      workloadPlan,
+      runtimeEnvironment,
+    );
+  }
+  return runReplayFromHistory({
+    ...hydratedInput,
   });
 }

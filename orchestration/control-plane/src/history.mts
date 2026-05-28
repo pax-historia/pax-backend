@@ -166,7 +166,7 @@ function apiWireRecordsFromJsonl(
   recordsPath: string,
   gameId: string,
   limit: number,
-): readonly ApiInvokeWireRecord[] {
+): readonly ApiWireRecordView[] {
   if (limit <= 0 || !existsSync(recordsPath)) return [];
   const records: ApiInvokeWireRecord[] = [];
   for (const line of readFileSync(recordsPath, "utf8").split("\n")) {
@@ -187,7 +187,7 @@ function apiWireRecordsFromJsonl(
       continue;
     }
   }
-  return records.slice(-limit);
+  return records.slice(-limit).map((record) => ({ ...record }));
 }
 
 function readHistory(historyPath: string): readonly HistoryEvent[] {

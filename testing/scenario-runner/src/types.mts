@@ -66,10 +66,19 @@ export interface ScenarioRuntimeEnvironment {
   readonly apiReplayFixturesPath?: string;
 }
 
+export interface ApiKindWorkloadRegistration {
+  readonly kindName: string;
+  readonly url: string;
+}
+
 export type ScenarioWorkloadPhase =
   | {
       readonly type: "seed-fixtures";
       readonly fixtureKinds: readonly WorkloadFixtureKind[];
+    }
+  | {
+      readonly type: "register-api-kinds";
+      readonly kinds: readonly ApiKindWorkloadRegistration[];
     }
   | {
       readonly type: "open-sessions";
@@ -113,6 +122,10 @@ export type ScenarioWorkloadPhase =
       readonly minimumPerGame: number;
     }
   | {
+      readonly type: "wait";
+      readonly durationMs: number;
+    }
+  | {
       readonly type: "close-sessions";
       readonly reason: string;
     };
@@ -135,6 +148,9 @@ export interface ScenarioRunnerInput {
   readonly workloadPlan?: ScenarioWorkloadPlan;
   readonly fixtureBaseDir?: string;
   readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
+  readonly controlPlaneUrl?: string;
+  readonly routerUrl?: string;
+  readonly phaseTimeoutMs?: number;
   readonly metrics?: ScenarioMetrics;
   readonly attribution?: ScenarioAttribution;
   readonly oracleScope?: OracleScope;

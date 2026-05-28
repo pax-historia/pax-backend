@@ -129,6 +129,7 @@ interface BootstrapPayload {
 ```ts
 interface OnWakePayload {
   reason: WakeReason;
+  errorClass?: 'oom' | 'crash' | 'cpuTimeout' | 'unknown';
   runId: string | null;        // scenario-only; null in production
   bundleName: string;
   bundleCompatTag: string;

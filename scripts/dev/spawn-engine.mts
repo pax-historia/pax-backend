@@ -25,6 +25,14 @@ const DATA_DIR: string =
   process.env["PAX_ENGINE_DATA_DIR"] ?? join(REPO_ROOT, ".data");
 const RESET_DB: boolean = (process.env["RESET_DB"] ?? "true") !== "false";
 const ADMIN_TOKEN: string = process.env["RIVET_ADMIN_TOKEN"] ?? "dev";
+const OTEL_ENABLED: string =
+  process.env["RIVET_OTEL_ENABLED"] ?? (process.env["PAX_OBSERVABILITY"] === "off" ? "0" : "1");
+const OTEL_GRPC_ENDPOINT: string =
+  process.env["RIVET_OTEL_GRPC_ENDPOINT"] ??
+  process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] ??
+  process.env["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+  "http://127.0.0.1:4317";
+const OTEL_SAMPLER_RATIO: string = process.env["RIVET_OTEL_SAMPLER_RATIO"] ?? "1";
 
 interface EngineConfig {
   readonly auth: { readonly admin_token: string };
@@ -110,6 +118,10 @@ const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
         process.env["RUST_LOG"] ??
         "info,rivet_guard::routing::pegboard_gateway=info,pegboard_runner=info,pegboard_gateway=info,universalpubsub=info,gasoline=info",
       RUST_BACKTRACE: process.env["RUST_BACKTRACE"] ?? "1",
+      RUST_TRACE: process.env["RUST_TRACE"] ?? "info",
+      RIVET_OTEL_ENABLED: OTEL_ENABLED,
+      RIVET_OTEL_GRPC_ENDPOINT: OTEL_GRPC_ENDPOINT,
+      RIVET_OTEL_SAMPLER_RATIO: OTEL_SAMPLER_RATIO,
     },
     stdio: ["ignore", "pipe", "pipe"],
   },

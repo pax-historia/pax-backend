@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./src/index.mts",
   "bin": {
-    "pax-bundle": "./src/cli.mts"
+    "pax-bundle": "./dist/cli.mjs"
   },
   "scripts": {
     "build": "tsc -b",

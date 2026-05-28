@@ -34,8 +34,10 @@ type ParentRequestType =
   | "state.read"
   | "state.write"
   | "state.flush"
-  | "blob.read"
-  | "blob.write"
+  | "blob.put"
+  | "blob.get"
+  | "blob.delete"
+  | "blob.list"
   | "ws.send";
 
 interface PendingParentRequest {
@@ -183,19 +185,26 @@ function makeContext(): SubstrateContext {
         )) as StorageWriteResponse,
     },
     blob: {
-      read: async () => readStorage(CHILD_TO_PARENT.blobRead),
-      write: async (value) => writeStorage(CHILD_TO_PARENT.blobWrite, value),
+      put: async (key, bytes) => putBlob(key, bytes),
+      get: async (key) => getBlob(key),
+      delete: async (key) =>
+        (await invokeParent(CHILD_TO_PARENT.blobDelete, { key })) as { readonly ok: true },
+      list: async (prefix) =>
+        (await invokeParent(
+          CHILD_TO_PARENT.blobList,
+          prefix === undefined ? {} : { prefix },
+        )) as readonly { readonly key: string; readonly size: number }[],
     },
   };
 }
 
-async function readStorage(type: "state.read" | "blob.read"): Promise<unknown | undefined> {
+async function readStorage(type: "state.read"): Promise<unknown | undefined> {
   const response = (await invokeParent(type, {})) as StorageReadResponsePayload;
   return response.found ? response.value : undefined;
 }
 
 async function writeStorage(
-  type: "state.write" | "blob.write",
+  type: "state.write",
   value: unknown,
 ): Promise<StorageWriteResponse> {
   try {
@@ -207,6 +216,30 @@ async function writeStorage(
       detail: { message: err instanceof Error ? err.message : String(err) },
     };
   }
+}
+
+async function putBlob(key: string, bytes: Uint8Array): Promise<StorageWriteResponse> {
+  if (!(bytes instanceof Uint8Array)) {
+    return {
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message: "c.blob.put bytes must be a Uint8Array" },
+    };
+  }
+  return (await invokeParent(CHILD_TO_PARENT.blobPut, {
+    key,
+    bytesBase64: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
+  })) as StorageWriteResponse;
+}
+
+async function getBlob(key: string): Promise<Uint8Array | null> {
+  const response = (await invokeParent(CHILD_TO_PARENT.blobGet, { key })) as {
+    readonly found: boolean;
+    readonly bytesBase64?: string;
+  };
+  return response.found && response.bytesBase64
+    ? Buffer.from(response.bytesBase64, "base64")
+    : null;
 }
 
 function invokeParent(type: ParentRequestType, payload: Record<string, unknown>): Promise<unknown> {
@@ -292,7 +325,8 @@ type HandlerName =
   | "onPlayerConnect"
   | "onPlayerDisconnect"
   | "onPlayerMessage"
-  | "onCapacityWarning";
+  | "onCapacityWarning"
+  | "onHostEvent";
 
 async function invokeHandler(handlerName: HandlerName, payload: unknown): Promise<boolean> {
   const handler = bundleExports?.[handlerName];
@@ -388,11 +422,17 @@ process.on("message", async (raw: unknown) => {
       case PARENT_TO_CHILD.stateFlushResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
         return;
-      case PARENT_TO_CHILD.blobReadResponse:
+      case PARENT_TO_CHILD.blobPutResponse:
+        completeParentRequest(raw.requestId, raw.payload.response);
+        return;
+      case PARENT_TO_CHILD.blobGetResponse:
         completeParentRequest(raw.requestId, raw.payload);
         return;
-      case PARENT_TO_CHILD.blobWriteResponse:
-        completeParentRequest(raw.requestId, raw.payload.response);
+      case PARENT_TO_CHILD.blobDeleteResponse:
+        completeParentRequest(raw.requestId, raw.payload);
+        return;
+      case PARENT_TO_CHILD.blobListResponse:
+        completeParentRequest(raw.requestId, raw.payload.items);
         return;
       case PARENT_TO_CHILD.wsSendResponse:
         completeParentRequest(raw.requestId, raw.payload.response);
@@ -419,6 +459,9 @@ process.on("message", async (raw: unknown) => {
         return;
       case PARENT_TO_CHILD.onCapacityWarning:
         await invokeHandler("onCapacityWarning", raw.payload);
+        return;
+      case PARENT_TO_CHILD.onHostEvent:
+        await invokeHandler("onHostEvent", raw.payload);
         return;
       default: {
         const _exhaustive: never = raw;

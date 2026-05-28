@@ -45,7 +45,7 @@ export default {
     },
     {
       type: "expect-history-events",
-      events: ["blob.write", "blob.read", "lifecycle.sleepComplete"],
+      events: ["blob.put", "blob.get", "lifecycle.sleepComplete"],
       minimumPerGame: 1,
     },
   ],

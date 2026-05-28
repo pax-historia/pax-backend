@@ -13,23 +13,34 @@
 //    session context.
 //
 // What this process does NOT do (deferred):
-//  - Native c.blob (Tigris) and c.state (RocksDB) adapters; this pass uses
-//    Redis-backed storage under the same IPC contract.
+//  - Native keyed c.blob (Tigris) adapter; this pass keeps the legacy
+//    single-object blob IPC path until the wider blob contract migration.
 //  - Full CPU/RAM kill enforcement. This pass exposes budget snapshots and
 //    enforces storage/API/WS usage under the same compute-plane contract.
 
 import { type ChildProcess, fork } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { Runner } from "@rivetkit/engine-runner";
+import { decode as cborDecode, encode as cborEncode } from "cborg";
 import { Redis } from "ioredis";
 import jwt from "jsonwebtoken";
 import pino, { type Logger } from "pino";
 
+import { startPaxNodeTelemetry } from "@pax-backend/node-telemetry";
 import {
   ACTIVE_GAMES_KEY_PREFIX,
   ACTIVE_GAME_TTL_SECONDS,
@@ -40,7 +51,6 @@ import {
   type ApiInvokeIpcPayload,
   type ApiInvokeResponse,
   type ApiInvokeWireRecord,
-  BLOB_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   type BundleRecord,
   type ChildHandlerCompletePayload,
@@ -52,26 +62,31 @@ import {
   type ComputeBudgetUsage,
   type ConnectedSessionSnapshot,
   DEFAULT_BLOB_BYTES_LIMIT,
+  DEFAULT_BLOB_KEYS_LIMIT,
   DEFAULT_STATE_BYTES_LIMIT,
   type DisconnectReason,
   GAME_KEY_PREFIX,
   type GameRecord,
+  HOST_EVENT_QUEUE_KEY_PREFIX,
+  type HostEventRecord,
   type OnSleepPayload,
   type ParentToChildEnvelope,
   RUNTIME_CONTRACT_VERSION,
   SHARD_DRAIN_KEY_PREFIX,
   SHARD_REGISTRY_KEY_PREFIX,
   SHARD_REGISTRY_TTL_SECONDS,
-  STATE_KEY_PREFIX,
   type StorageReadResponsePayload,
   type StorageWriteResponse,
   type ShardRegistration,
+  type WakeErrorClass,
   type WakeReason,
   type WsSendResponse,
   createDefaultIdGenerator,
   createDeterministicIdGenerator,
   envelope,
 } from "@pax-backend/ipc-protocol";
+
+startPaxNodeTelemetry({ serviceName: "pax-parent-actor", paxZone: "runtime" });
 
 // --- Config -------------------------------------------------------------
 
@@ -100,6 +115,16 @@ const PAX_JWT_SECRET = process.env["PAX_JWT_SECRET"] ?? "local-dev-secret";
 const PAX_API_GATEWAY_URL =
   process.env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke";
 const PAX_TEST_SEED = process.env["PAX_TEST_SEED"];
+const STATE_FLUSH_WINDOW_MS = parseNonNegativeInteger(
+  process.env["PAX_STATE_FLUSH_WINDOW_MS"] ?? "1000",
+  1_000,
+);
+const TIGRIS_BUCKET =
+  process.env["BUCKET_NAME"] ?? process.env["PAX_TIGRIS_BUCKET"] ?? "";
+const TIGRIS_REGION = process.env["AWS_REGION"] ?? "auto";
+const TIGRIS_ENDPOINT = process.env["AWS_ENDPOINT_URL_S3"];
+const LOCAL_TIGRIS_DIR =
+  process.env["PAX_LOCAL_TIGRIS_DIR"] ?? join(REPO_ROOT, "var", "tigris-local");
 const ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS = Number.parseInt(
   process.env["PAX_ALLOWED_PLAYERS_ENFORCE_INTERVAL_MS"] ?? "5000",
   10,
@@ -132,6 +157,10 @@ const BLOB_BYTES_LIMIT = parsePositiveInteger(
   process.env["PAX_BLOB_BYTES_LIMIT"] ?? String(DEFAULT_BLOB_BYTES_LIMIT),
   DEFAULT_BLOB_BYTES_LIMIT,
 );
+const BLOB_KEYS_LIMIT = parsePositiveInteger(
+  process.env["PAX_BLOB_KEYS_LIMIT"] ?? String(DEFAULT_BLOB_KEYS_LIMIT),
+  DEFAULT_BLOB_KEYS_LIMIT,
+);
 const API_INVOCATIONS_PER_MIN_LIMIT = parsePositiveInteger(
   process.env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60",
   60,
@@ -147,14 +176,28 @@ const SLEEP_MINIMUM_BUDGET_MS = Number.parseInt(
   process.env["PAX_SLEEP_MINIMUM_BUDGET_MS"] ?? "5000",
   10,
 );
+const SLEEP_GRACE_MS = parseNonNegativeInteger(
+  process.env["PAX_SLEEP_GRACE_MS"] ?? "60000",
+  60_000,
+);
 const WAKE_ROLLBACK_FAILURE_THRESHOLD = parsePositiveInteger(
   process.env["PAX_WAKE_ROLLBACK_FAILURE_THRESHOLD"] ?? "3",
   3,
+);
+const HOST_EVENT_DRAIN_INTERVAL_MS = parsePositiveInteger(
+  process.env["PAX_HOST_EVENT_DRAIN_INTERVAL_MS"] ?? "1000",
+  1_000,
 );
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
 const BUNDLE_DIR = join(REPO_ROOT, "examples", "bundles");
+const BUNDLE_CACHE_DIR =
+  process.env["PAX_BUNDLE_CACHE_DIR"] ?? join(REPO_ROOT, "var", "bundle-cache");
+const BUNDLE_CACHE_MAX_BYTES = parsePositiveInteger(
+  process.env["PAX_BUNDLE_CACHE_MAX_BYTES"] ?? "536870912",
+  536_870_912,
+);
 const CHILD_RUNNER_KIND =
   process.env["PAX_CHILD_RUNNER_KIND"] === "noivm" ? "noivm" : "ivm";
 const CHILD_RUNNER_ENTRY = join(
@@ -212,6 +255,196 @@ const idGenerator =
   PAX_TEST_SEED && PAX_TEST_SEED.length > 0
     ? createDeterministicIdGenerator(`${PAX_TEST_SEED}:${SHARD_ID}`)
     : createDefaultIdGenerator();
+
+// --- Tigris object store -------------------------------------------------
+
+interface ObjectStore {
+  readonly kind: "tigris-s3" | "local-dev";
+  get(key: string): Promise<Uint8Array | null>;
+  put(key: string, bytes: Uint8Array): Promise<void>;
+  delete(key: string): Promise<void>;
+  list(prefix: string): Promise<readonly ObjectStoreEntry[]>;
+}
+
+interface ObjectStoreEntry {
+  readonly key: string;
+  readonly size: number;
+}
+
+class S3ObjectStore implements ObjectStore {
+  readonly kind = "tigris-s3" as const;
+  private readonly client: S3Client;
+
+  constructor(
+    private readonly bucket: string,
+    region: string,
+    endpoint: string | undefined,
+  ) {
+    this.client = new S3Client({
+      region,
+      endpoint,
+      forcePathStyle: endpoint !== undefined,
+    });
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!result.Body) return new Uint8Array();
+      return responseBodyToBytes(result.Body);
+    } catch (err) {
+      if (isObjectNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async put(key: string, bytes: Uint8Array): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+        ContentType: "application/cbor",
+      }),
+    );
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async list(prefix: string): Promise<readonly ObjectStoreEntry[]> {
+    const entries: ObjectStoreEntry[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const result = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const object of result.Contents ?? []) {
+        if (!object.Key) continue;
+        entries.push({ key: object.Key, size: object.Size ?? 0 });
+      }
+      continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return entries;
+  }
+}
+
+class LocalObjectStore implements ObjectStore {
+  readonly kind = "local-dev" as const;
+  private readonly root: string;
+
+  constructor(root: string) {
+    this.root = resolve(root);
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    const path = localObjectPath(this.root, key);
+    try {
+      return await readFile(path);
+    } catch (err) {
+      if (isErrnoException(err) && err.code === "ENOENT") return null;
+      throw err;
+    }
+  }
+
+  async put(key: string, bytes: Uint8Array): Promise<void> {
+    const path = localObjectPath(this.root, key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(localObjectPath(this.root, key), { force: true });
+  }
+
+  async list(prefix: string): Promise<readonly ObjectStoreEntry[]> {
+    try {
+      const info = await stat(this.root);
+      if (!info.isDirectory()) return [];
+    } catch (err) {
+      if (isErrnoException(err) && err.code === "ENOENT") return [];
+      throw err;
+    }
+    const entries = await listLocalObjects(this.root, this.root);
+    return entries.filter((entry) => entry.key.startsWith(prefix));
+  }
+}
+
+const objectStore: ObjectStore =
+  TIGRIS_BUCKET.length > 0
+    ? new S3ObjectStore(TIGRIS_BUCKET, TIGRIS_REGION, TIGRIS_ENDPOINT)
+    : new LocalObjectStore(LOCAL_TIGRIS_DIR);
+
+log.info(
+  {
+    objectStore: objectStore.kind,
+    bucket: TIGRIS_BUCKET || undefined,
+    localDir: objectStore.kind === "local-dev" ? LOCAL_TIGRIS_DIR : undefined,
+  },
+  "parent object store configured",
+);
+
+async function responseBodyToBytes(body: unknown): Promise<Uint8Array> {
+  if (body && typeof body === "object" && "transformToByteArray" in body) {
+    const transformed = await (
+      body as { transformToByteArray: () => Promise<Uint8Array> }
+    ).transformToByteArray();
+    return transformed;
+  }
+  if (body instanceof Uint8Array) return body;
+  if (typeof body === "string") return Buffer.from(body, "utf8");
+  if (body && typeof body === "object" && Symbol.asyncIterator in body) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as AsyncIterable<Uint8Array | string>) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+  throw new Error("Tigris object body is not readable");
+}
+
+function isObjectNotFound(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const candidate = err as { readonly name?: unknown; readonly $metadata?: unknown };
+  const statusCode = isRecord(candidate.$metadata)
+    ? candidate.$metadata["httpStatusCode"]
+    : undefined;
+  return candidate.name === "NoSuchKey" || statusCode === 404;
+}
+
+function localObjectPath(root: string, key: string): string {
+  const path = resolve(root, ...key.split("/").filter((part) => part.length > 0));
+  if (path !== root && !path.startsWith(`${root}${sep}`)) {
+    throw new Error(`object key escapes local object store root: ${key}`);
+  }
+  return path;
+}
+
+async function listLocalObjects(root: string, path: string): Promise<readonly ObjectStoreEntry[]> {
+  const entries: ObjectStoreEntry[] = [];
+  const children = await readdir(path, { withFileTypes: true });
+  for (const child of children) {
+    const childPath = join(path, child.name);
+    if (child.isDirectory()) {
+      entries.push(...(await listLocalObjects(root, childPath)));
+    } else if (child.isFile()) {
+      const info = await stat(childPath);
+      entries.push({ key: childPath.slice(root.length + 1).split(sep).join("/"), size: info.size });
+    }
+  }
+  return entries;
+}
+
+function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
+}
 
 // --- Parent metrics -----------------------------------------------------
 
@@ -303,12 +536,29 @@ const wakeMetrics = {
 
 let activeGameCount = 0;
 
+function recomputeActiveGameCount(): void {
+  activeGameCount = Array.from(games.values()).filter((inst) => inst.active).length;
+}
+
+function markGameActive(inst: GameInstance): void {
+  if (!inst.active) {
+    inst.active = true;
+    recomputeActiveGameCount();
+  }
+}
+
 async function registerShard(): Promise<void> {
   const drainRequested =
     (await redis.get(`${SHARD_DRAIN_KEY_PREFIX}${SHARD_ID}`)) === "true";
+  const status: ShardRegistration["status"] = drainRequested
+    ? activeGameCount === 0
+      ? "drained"
+      : "draining"
+    : "healthy";
   const payload: ShardRegistration = {
     shardId: SHARD_ID,
     url: SHARD_PUBLIC_URL,
+    status,
     healthy: true,
     acceptingWakes: !drainRequested,
     runtimeContractsSupported: RUNTIME_CONTRACTS_SUPPORTED,
@@ -342,7 +592,8 @@ interface LoadedBundle {
   readonly name: string;
   readonly source: string;
   readonly manifest: BundleRecord["manifest"];
-  readonly origin: "directory" | "local-example";
+  readonly origin: "directory" | "object-store" | "local-example";
+  readonly contentSha256?: string;
 }
 
 const bundleCache = new Map<string, LoadedBundle>();
@@ -359,7 +610,13 @@ async function loadBundle(bundleName: string): Promise<LoadedBundle> {
         source: bundle.source,
         manifest: bundle.manifest,
         origin: "directory",
+        contentSha256: sha256String(bundle.source),
       };
+      bundleCache.set(bundleName, record);
+      return record;
+    }
+    if (bundle.sourceObjectKey || bundle.tigrisPath) {
+      const record = await loadObjectBackedBundle(bundle);
       bundleCache.set(bundleName, record);
       return record;
     }
@@ -368,13 +625,130 @@ async function loadBundle(bundleName: string): Promise<LoadedBundle> {
   return loadLocalExampleBundle(bundleName);
 }
 
+async function loadObjectBackedBundle(bundle: BundleRecord): Promise<LoadedBundle> {
+  const sourceObjectKey = bundle.sourceObjectKey ?? `${bundle.tigrisPath ?? ""}source.js`;
+  if (!sourceObjectKey || sourceObjectKey === "source.js") {
+    throw new Error(`bundle ${bundle.bundleName} is missing source object metadata`);
+  }
+  const expectedSha = bundle.contentSha256;
+  const cached = await readCachedBundleSource(bundle.bundleName, expectedSha);
+  if (cached) {
+    return {
+      name: bundle.bundleName,
+      source: cached,
+      manifest: bundle.manifest,
+      origin: "object-store",
+      contentSha256: expectedSha,
+    };
+  }
+  const bytes = await objectStore.get(sourceObjectKey);
+  if (bytes === null) {
+    throw new Error(`bundle source object not found: ${sourceObjectKey}`);
+  }
+  const source = Buffer.from(bytes).toString("utf8");
+  const actualSha = sha256String(source);
+  if (expectedSha && actualSha !== expectedSha) {
+    throw new Error(
+      `bundle ${bundle.bundleName} sha256 mismatch: expected ${expectedSha}, got ${actualSha}`,
+    );
+  }
+  await writeCachedBundleSource(bundle.bundleName, source);
+  return {
+    name: bundle.bundleName,
+    source,
+    manifest: bundle.manifest,
+    origin: "object-store",
+    contentSha256: actualSha,
+  };
+}
+
+async function readCachedBundleSource(
+  bundleName: string,
+  expectedSha: string | undefined,
+): Promise<string | undefined> {
+  try {
+    const path = bundleCacheSourcePath(bundleName);
+    const source = await readFile(path, "utf8");
+    if (!expectedSha || sha256String(source) === expectedSha) {
+      const now = new Date();
+      await utimes(path, now, now);
+      return source;
+    }
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return undefined;
+    throw err;
+  }
+  return undefined;
+}
+
+async function writeCachedBundleSource(bundleName: string, source: string): Promise<void> {
+  const path = bundleCacheSourcePath(bundleName);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, source, "utf8");
+  await pruneBundleCache();
+}
+
+function bundleCacheSourcePath(bundleName: string): string {
+  return localObjectPath(BUNDLE_CACHE_DIR, `${bundleName}/source.js`);
+}
+
+interface CacheFileEntry {
+  readonly path: string;
+  readonly size: number;
+  readonly mtimeMs: number;
+}
+
+async function pruneBundleCache(): Promise<void> {
+  const files = await listCacheFiles(resolve(BUNDLE_CACHE_DIR));
+  let total = files.reduce((sum, file) => sum + file.size, 0);
+  if (total <= BUNDLE_CACHE_MAX_BYTES) return;
+  for (const file of Array.from(files).sort(
+    (a: CacheFileEntry, b: CacheFileEntry) => a.mtimeMs - b.mtimeMs,
+  )) {
+    if (total <= BUNDLE_CACHE_MAX_BYTES) return;
+    await rm(file.path, { force: true });
+    total -= file.size;
+  }
+}
+
+async function listCacheFiles(root: string): Promise<readonly CacheFileEntry[]> {
+  try {
+    const info = await stat(root);
+    if (!info.isDirectory()) return [];
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return [];
+    throw err;
+  }
+  const entries: CacheFileEntry[] = [];
+  for (const child of await readdir(root, { withFileTypes: true })) {
+    const childPath = join(root, child.name);
+    if (child.isDirectory()) {
+      entries.push(...(await listCacheFiles(childPath)));
+    } else if (child.isFile()) {
+      const info = await stat(childPath);
+      entries.push({ path: childPath, size: info.size, mtimeMs: info.mtimeMs });
+    }
+  }
+  return entries;
+}
+
 function loadLocalExampleBundle(bundleName: string): LoadedBundle {
   const compiledPath = join(BUNDLE_DIR, bundleName, "dist", "bundle.js");
   const source = readFileSync(compiledPath, "utf8");
   const manifest = extractManifestFromSource(source);
-  const record: LoadedBundle = { name: bundleName, source, manifest, origin: "local-example" };
+  const record: LoadedBundle = {
+    name: bundleName,
+    source,
+    manifest,
+    origin: "local-example",
+    contentSha256: sha256String(source),
+  };
   bundleCache.set(bundleName, record);
   return record;
+}
+
+function sha256String(source: string): string {
+  return `sha256:${createHash("sha256").update(source).digest("hex")}`;
 }
 
 function extractManifestFromSource(source: string): BundleRecord["manifest"] {
@@ -434,22 +808,40 @@ interface GameInstance {
   bundleCompatTag: string;
   blobCompatTag?: string;
   nextWakeReason?: WakeReason;
+  nextWakeErrorClass?: WakeErrorClass;
   readonly runId: string;
+  active: boolean;
   child: ChildProcess | null;
   intentionalChildStop?: {
     readonly child: ChildProcess;
-    readonly reason: "sleepComplete" | "replacementRestart";
+    readonly reason: "sleepComplete" | "sleepDeadline" | "replacementRestart";
   };
   readonly sessions: Map<string, SessionRecord>;
   readonly wsUsageSamples: UsageSample[];
   readonly apiInvokeSamples: UsageSample[];
   readonly capacityWarningSentAt: Map<ComputeBudgetName, number>;
   stateBytes: number;
+  stateLoaded: boolean;
+  stateFound: boolean;
+  stateValue?: unknown;
+  stateDirty: boolean;
+  stateRevision: number;
+  stateDurableRevision: number;
+  stateFlushTimer: NodeJS.Timeout | null;
+  stateFlushPromise: Promise<StateFlushOutcome> | null;
   blobBytes: number;
+  blobKeys: number;
   lastHandlerDurationMs: number;
   ready: boolean;
   bootstrapPromise: Promise<void> | null;
+  sleepGraceTimer: NodeJS.Timeout | null;
   sleepTimer: NodeJS.Timeout | null;
+}
+
+interface StateFlushOutcome {
+  readonly response: StorageWriteResponse;
+  readonly byteSize: number;
+  readonly flushed: boolean;
 }
 
 // Minimal WebSocket-ish surface the engine-runner hands us. The vendored
@@ -586,7 +978,10 @@ function ensureGame(
   blobCompatTag?: string,
 ): GameInstance {
   const existing = games.get(actorId);
-  if (existing) return existing;
+  if (existing) {
+    markGameActive(existing);
+    return existing;
+  }
   const runId = idGenerator.generateRunId();
   const inst: GameInstance = {
     actorId,
@@ -596,20 +991,30 @@ function ensureGame(
     bundleCompatTag: bundle.manifest.compatTagProduced,
     blobCompatTag,
     runId,
+    active: true,
     child: null,
     sessions: new Map(),
     wsUsageSamples: [],
     apiInvokeSamples: [],
     capacityWarningSentAt: new Map(),
     stateBytes: 0,
+    stateLoaded: false,
+    stateFound: false,
+    stateDirty: false,
+    stateRevision: 0,
+    stateDurableRevision: 0,
+    stateFlushTimer: null,
+    stateFlushPromise: null,
     blobBytes: 0,
+    blobKeys: 0,
     lastHandlerDurationMs: 0,
     ready: false,
     bootstrapPromise: null,
+    sleepGraceTimer: null,
     sleepTimer: null,
   };
   games.set(actorId, inst);
-  activeGameCount = games.size;
+  recomputeActiveGameCount();
   history("game.created", {
     actorId,
     gameId,
@@ -618,6 +1023,102 @@ function ensureGame(
     runId,
   });
   return inst;
+}
+
+function cancelSleepGrace(inst: GameInstance, cause: string): void {
+  if (!inst.sleepGraceTimer) return;
+  clearTimeout(inst.sleepGraceTimer);
+  inst.sleepGraceTimer = null;
+  history("lifecycle.sleepGrace.cancelled", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    cause,
+  });
+}
+
+function scheduleIdleSleepGrace(inst: GameInstance): void {
+  if (inst.sessions.size > 0 || inst.sleepGraceTimer || inst.sleepTimer) return;
+  const deadline = Date.now() + SLEEP_GRACE_MS;
+  history("lifecycle.sleepGrace.started", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    delayMs: SLEEP_GRACE_MS,
+    deadline,
+  });
+
+  const expire = (): void => {
+    inst.sleepGraceTimer = null;
+    if (inst.sessions.size > 0 || inst.sleepTimer) return;
+    history("lifecycle.sleepGrace.expired", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      deadline,
+    });
+    sendOnSleep(inst, "idle");
+  };
+
+  if (SLEEP_GRACE_MS === 0) {
+    expire();
+    return;
+  }
+
+  inst.sleepGraceTimer = setTimeout(expire, SLEEP_GRACE_MS);
+  inst.sleepGraceTimer.unref();
+}
+
+async function writeActiveGameDirectory(inst: GameInstance): Promise<void> {
+  try {
+    await redis.set(
+      `${ACTIVE_GAMES_KEY_PREFIX}${inst.gameId}`,
+      JSON.stringify({
+        gameId: inst.gameId,
+        shardId: SHARD_ID,
+        actorId: inst.actorId,
+        placedAt: Date.now(),
+        refreshedAt: Date.now(),
+        generation: 1,
+      }),
+      "EX",
+      ACTIVE_GAME_TTL_SECONDS,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn({ gameId: inst.gameId, err: msg }, "active_games set failed");
+  }
+}
+
+async function releaseActiveGame(
+  inst: GameInstance,
+  reason: OnSleepPayload["reason"],
+): Promise<void> {
+  cancelSleepGrace(inst, "release");
+  if (inst.stateFlushTimer) {
+    clearTimeout(inst.stateFlushTimer);
+    inst.stateFlushTimer = null;
+  }
+  inst.active = false;
+  inst.nextWakeReason = "cold-restart-from-storage";
+  inst.stateLoaded = false;
+  inst.stateFound = false;
+  inst.stateValue = undefined;
+  inst.stateDirty = false;
+  inst.stateFlushTimer = null;
+  recomputeActiveGameCount();
+  try {
+    await redis.del(`${ACTIVE_GAMES_KEY_PREFIX}${inst.gameId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn({ gameId: inst.gameId, err: msg }, "active_games delete failed");
+  }
+  history("game.released", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    reason,
+  });
 }
 
 function forkChild(inst: GameInstance): Promise<void> {
@@ -718,37 +1219,41 @@ async function sendWakeAfterHydration(
   rejectReady: (err: Error) => void,
 ): Promise<void> {
   try {
-    const [state, blob] = await Promise.all([
-      readGameStorage(inst, "state"),
-      readGameStorage(inst, "blob"),
-    ]);
+    const state = await readGameStorage(inst, "state");
+    await refreshBlobUsage(inst);
     const reason =
       inst.nextWakeReason ??
       (inst.blobCompatTag && inst.blobCompatTag !== inst.bundleCompatTag
         ? "upgrade"
         : "cold-start");
+    const errorClass =
+      reason === "cold-restart-after-crash" ? inst.nextWakeErrorClass : undefined;
     sendTyped(child, "onWake", {
       reason,
+      errorClass,
       runId: inst.runId,
       bundleName: inst.bundleName,
       bundleCompatTag: inst.bundleCompatTag,
       blobCompatTag: inst.blobCompatTag,
       state: state.found ? state.value : undefined,
-      blob: blob.found ? blob.value : undefined,
     });
     history("onWake.sent", {
       actorId: inst.actorId,
       gameId: inst.gameId,
       runId: inst.runId,
       reason,
+      errorClass,
       bundleName: inst.bundleName,
       bundleCompatTag: inst.bundleCompatTag,
       stateBytes: state.bytes,
-      blobBytes: blob.bytes,
+      blobBytes: inst.blobBytes,
+      blobKeys: inst.blobKeys,
       blobCompatTag: inst.blobCompatTag,
     });
     inst.nextWakeReason = undefined;
+    inst.nextWakeErrorClass = undefined;
     resolveReady();
+    void drainHostEvents(inst);
   } catch (err) {
     rejectReady(err instanceof Error ? err : new Error(String(err)));
   }
@@ -798,13 +1303,19 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       void handleStorageWrite(inst, raw.requestId, "state", raw.payload.value);
       return;
     case CHILD_TO_PARENT.stateFlush:
-      handleStateFlush(inst, raw.requestId);
+      void handleStateFlush(inst, raw.requestId);
       return;
-    case CHILD_TO_PARENT.blobRead:
-      void handleStorageRead(inst, raw.requestId, "blob");
+    case CHILD_TO_PARENT.blobPut:
+      void handleBlobPut(inst, raw.requestId, raw.payload);
       return;
-    case CHILD_TO_PARENT.blobWrite:
-      void handleStorageWrite(inst, raw.requestId, "blob", raw.payload.value);
+    case CHILD_TO_PARENT.blobGet:
+      void handleBlobGet(inst, raw.requestId, raw.payload);
+      return;
+    case CHILD_TO_PARENT.blobDelete:
+      void handleBlobDelete(inst, raw.requestId, raw.payload);
+      return;
+    case CHILD_TO_PARENT.blobList:
+      void handleBlobList(inst, raw.requestId, raw.payload);
       return;
     case CHILD_TO_PARENT.wsSend:
       handleWsSend(inst, raw.requestId, raw.payload);
@@ -869,6 +1380,77 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
       void _exhaustive;
     }
   }
+}
+
+async function drainHostEvents(inst: GameInstance): Promise<void> {
+  if (!inst.child) return;
+  const key = `${HOST_EVENT_QUEUE_KEY_PREFIX}${inst.gameId}`;
+  for (let drained = 0; drained < 100; drained += 1) {
+    const raw = await redis.lpop(key);
+    if (!raw) return;
+    let record: HostEventRecord;
+    try {
+      record = JSON.parse(raw) as HostEventRecord;
+    } catch (err) {
+      history("onHostEvent.dropped", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        reason: "badQueueRecord",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    if (record.expiresAt <= Date.now()) {
+      history("onHostEvent.dropped", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        eventId: record.eventId,
+        eventType: record.eventType,
+        reason: "expired",
+      });
+      continue;
+    }
+    deliverHostEvent(inst, record);
+  }
+}
+
+function deliverHostEvent(inst: GameInstance, record: HostEventRecord): void {
+  if (!inst.child) return;
+  const deliveryAttempts = record.deliveryAttempts + 1;
+  sendTyped(inst.child, "onHostEvent", {
+    eventId: record.eventId,
+    eventType: record.eventType,
+    payload: record.payload,
+    receivedAt: record.receivedAt,
+    deliveryAttempts,
+  });
+  history("onHostEvent.delivered", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    eventId: record.eventId,
+    eventType: record.eventType,
+    payload: record.payload,
+    wakeOnDelivery: record.wakeOnDelivery,
+    receivedAt: record.receivedAt,
+    deliveryAttempts,
+  });
+}
+
+function startHostEventDrainLoop(): void {
+  const timer = setInterval(() => {
+    for (const inst of games.values()) {
+      void drainHostEvents(inst).catch((err: unknown) => {
+        history("onHostEvent.drainError", {
+          actorId: inst.actorId,
+          gameId: inst.gameId,
+          runId: inst.runId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+  }, HOST_EVENT_DRAIN_INTERVAL_MS);
+  timer.unref();
 }
 
 async function handlePlayersAllowed(
@@ -1182,11 +1764,13 @@ async function restartChildAfterCrash(
   signal: NodeJS.Signals | null,
 ): Promise<void> {
   inst.nextWakeReason = "cold-restart-after-crash";
+  inst.nextWakeErrorClass = classifyChildExit(code, signal);
   history("child.restart", {
     actorId: inst.actorId,
     gameId: inst.gameId,
     runId: inst.runId,
     reason: inst.nextWakeReason,
+    errorClass: inst.nextWakeErrorClass,
     code,
     signal,
     bundleName: inst.bundleName,
@@ -1204,6 +1788,15 @@ async function restartChildAfterCrash(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+function classifyChildExit(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): WakeErrorClass {
+  if (signal === "SIGKILL") return "oom";
+  if (signal || code === null) return "unknown";
+  return code === 0 ? "unknown" : "crash";
 }
 
 async function readGameRecord(gameId: string): Promise<GameRecord | undefined> {
@@ -1232,8 +1825,29 @@ async function handleLifecycleSleepComplete(
     clearTimeout(inst.sleepTimer);
     inst.sleepTimer = null;
   }
-  inst.blobCompatTag = inst.bundleCompatTag;
   try {
+    const flush = await flushStateCache(inst);
+    history("state.flush.plannedTransition", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      reason: payload.reason,
+      ok: flush.response.ok,
+      byteSize: flush.byteSize,
+      error: flush.response.ok ? undefined : flush.response.error,
+    });
+    if (!flush.response.ok) {
+      history("lifecycle.sleepComplete.error", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        reason: payload.reason,
+        error: flush.response.error,
+        detail: flush.response.detail,
+      });
+      return;
+    }
+    inst.blobCompatTag = inst.bundleCompatTag;
     const raw = await redis.get(`${GAME_KEY_PREFIX}${inst.gameId}`);
     if (raw) {
       const game = JSON.parse(raw) as GameRecord;
@@ -1252,6 +1866,7 @@ async function handleLifecycleSleepComplete(
       bundleName: inst.bundleName,
       blobCompatTag: inst.bundleCompatTag,
     });
+    await releaseActiveGame(inst, payload.reason);
   } catch (err) {
     history("lifecycle.sleepComplete.error", {
       actorId: inst.actorId,
@@ -1271,6 +1886,7 @@ function sendOnSleep(
   inst: GameInstance,
   reason: OnSleepPayload["reason"],
 ): void {
+  cancelSleepGrace(inst, "onSleep");
   if (!inst.child) {
     history("onSleep.skipped", {
       actorId: inst.actorId,
@@ -1279,6 +1895,9 @@ function sendOnSleep(
       reason,
       cause: "childMissing",
     });
+    if (reason === "idle") {
+      void releaseActiveGame(inst, reason);
+    }
     return;
   }
   if (inst.sleepTimer) {
@@ -1306,22 +1925,57 @@ function sendOnSleep(
     budgetMs,
   });
   inst.sleepTimer = setTimeout(() => {
-    history("onSleep.deadline", {
+    void handleOnSleepDeadline(inst, reason, deadline);
+  }, budgetMs);
+  inst.sleepTimer.unref();
+}
+
+async function handleOnSleepDeadline(
+  inst: GameInstance,
+  reason: OnSleepPayload["reason"],
+  deadline: number,
+): Promise<void> {
+  inst.sleepTimer = null;
+  history("onSleep.deadline", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    reason,
+    deadline,
+  });
+  const flush = await flushStateCache(inst);
+  history("state.flush.plannedTransition", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    reason: `${reason}:deadline`,
+    ok: flush.response.ok,
+    byteSize: flush.byteSize,
+    error: flush.response.ok ? undefined : flush.response.error,
+  });
+  if (!flush.response.ok) {
+    history("onSleep.deadline.storageUnavailable", {
       actorId: inst.actorId,
       gameId: inst.gameId,
       runId: inst.runId,
       reason,
       deadline,
+      error: flush.response.error,
+      detail: flush.response.detail,
     });
-    inst.child?.kill();
-  }, budgetMs);
-  inst.sleepTimer.unref();
+    return;
+  }
+  await releaseActiveGame(inst, reason);
+  if (inst.child) {
+    inst.intentionalChildStop = { child: inst.child, reason: "sleepDeadline" };
+    inst.child.kill();
+  }
 }
 
 async function handleStorageRead(
   inst: GameInstance,
   requestId: string | undefined,
-  tier: "state" | "blob",
+  tier: "state",
 ): Promise<void> {
   if (!requestId) {
     history(`${tier}.read.rejected`, {
@@ -1340,17 +1994,13 @@ async function handleStorageRead(
     bytes: response.bytes,
   });
   if (!inst.child) return;
-  if (tier === "state") {
-    sendTyped(inst.child, "state.read.response", response, requestId);
-  } else {
-    sendTyped(inst.child, "blob.read.response", response, requestId);
-  }
+  sendTyped(inst.child, "state.read.response", response, requestId);
 }
 
 async function handleStorageWrite(
   inst: GameInstance,
   requestId: string | undefined,
-  tier: "state" | "blob",
+  tier: "state",
   value: unknown,
 ): Promise<void> {
   if (!requestId) {
@@ -1370,17 +2020,277 @@ async function handleStorageWrite(
     error: response.ok ? undefined : response.error,
   });
   if (!inst.child) return;
-  if (tier === "state") {
-    sendTyped(inst.child, "state.write.response", { response }, requestId);
-  } else {
-    sendTyped(inst.child, "blob.write.response", { response }, requestId);
+  sendTyped(inst.child, "state.write.response", { response }, requestId);
+}
+
+async function handleBlobPut(
+  inst: GameInstance,
+  requestId: string | undefined,
+  payload: Extract<ChildToParentEnvelope, { type: "blob.put" }>["payload"],
+): Promise<void> {
+  if (!requestId) {
+    history("blob.put.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      key: payload.key,
+      error: "missingRequestId",
+    });
+    return;
+  }
+  const keyCheck = validateBlobKey(payload.key);
+  if (!keyCheck.ok) {
+    const response: StorageWriteResponse = {
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message: keyCheck.message },
+    };
+    history("blob.put.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: payload.key,
+      error: response.error,
+      detail: response.detail,
+    });
+    if (inst.child) sendTyped(inst.child, "blob.put.response", { response }, requestId);
+    return;
+  }
+  const bytes = decodeBase64(payload.bytesBase64);
+  const budget = await prospectiveBlobBudget(inst, keyCheck.key, bytes.byteLength);
+  if (!budget.ok) {
+    const response: StorageWriteResponse = {
+      ok: false,
+      error: budget.error,
+      detail: budget.detail,
+    };
+    history("blob.put.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: keyCheck.key,
+      error: response.error,
+      detail: response.detail,
+    });
+    if (inst.child) sendTyped(inst.child, "blob.put.response", { response }, requestId);
+    maybeSendCapacityWarnings(inst);
+    return;
+  }
+  let response: StorageWriteResponse = { ok: true };
+  try {
+    await objectStore.put(blobObjectKey(inst.gameId, keyCheck.key), bytes);
+    inst.blobBytes = budget.totalBytes;
+    inst.blobKeys = budget.totalKeys;
+    history("blob.put", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      requestId,
+      key: keyCheck.key,
+      byteSize: bytes.byteLength,
+      blobBytes: inst.blobBytes,
+      blobKeys: inst.blobKeys,
+      ok: true,
+    });
+  } catch (err) {
+    response = {
+      ok: false,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    };
+    history("blob.put.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: keyCheck.key,
+      error: response.error,
+      detail: response.detail,
+    });
+  }
+  maybeSendCapacityWarnings(inst);
+  if (inst.child) sendTyped(inst.child, "blob.put.response", { response }, requestId);
+}
+
+async function handleBlobGet(
+  inst: GameInstance,
+  requestId: string | undefined,
+  payload: Extract<ChildToParentEnvelope, { type: "blob.get" }>["payload"],
+): Promise<void> {
+  if (!requestId) {
+    history("blob.get.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      key: payload.key,
+      error: "missingRequestId",
+    });
+    return;
+  }
+  const keyCheck = validateBlobKey(payload.key);
+  if (!keyCheck.ok) {
+    history("blob.get.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: payload.key,
+      error: "storageUnavailable",
+      detail: { message: keyCheck.message },
+    });
+    if (inst.child) {
+      sendTyped(inst.child, "blob.get.response", { found: false, bytes: 0 }, requestId);
+    }
+    return;
+  }
+  try {
+    const bytes = await objectStore.get(blobObjectKey(inst.gameId, keyCheck.key));
+    const response =
+      bytes === null
+        ? { found: false as const, bytes: 0 }
+        : {
+            found: true as const,
+            bytesBase64: Buffer.from(bytes).toString("base64"),
+            bytes: bytes.byteLength,
+          };
+    history("blob.get", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      requestId,
+      key: keyCheck.key,
+      found: response.found,
+      byteSize: response.bytes,
+    });
+    if (inst.child) sendTyped(inst.child, "blob.get.response", response, requestId);
+  } catch (err) {
+    history("blob.get.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: keyCheck.key,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    });
+    if (inst.child) {
+      sendTyped(inst.child, "blob.get.response", { found: false, bytes: 0 }, requestId);
+    }
   }
 }
 
-function handleStateFlush(
+async function handleBlobDelete(
   inst: GameInstance,
   requestId: string | undefined,
-): void {
+  payload: Extract<ChildToParentEnvelope, { type: "blob.delete" }>["payload"],
+): Promise<void> {
+  if (!requestId) {
+    history("blob.delete.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      key: payload.key,
+      error: "missingRequestId",
+    });
+    return;
+  }
+  const keyCheck = validateBlobKey(payload.key);
+  if (!keyCheck.ok) {
+    history("blob.delete.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: payload.key,
+      error: "storageUnavailable",
+      detail: { message: keyCheck.message },
+    });
+    if (inst.child) sendTyped(inst.child, "blob.delete.response", { ok: true }, requestId);
+    return;
+  }
+  try {
+    await objectStore.delete(blobObjectKey(inst.gameId, keyCheck.key));
+    await refreshBlobUsage(inst);
+    history("blob.delete", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      requestId,
+      key: keyCheck.key,
+      blobBytes: inst.blobBytes,
+      blobKeys: inst.blobKeys,
+    });
+  } catch (err) {
+    history("blob.delete.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      key: keyCheck.key,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+  maybeSendCapacityWarnings(inst);
+  if (inst.child) sendTyped(inst.child, "blob.delete.response", { ok: true }, requestId);
+}
+
+async function handleBlobList(
+  inst: GameInstance,
+  requestId: string | undefined,
+  payload: Extract<ChildToParentEnvelope, { type: "blob.list" }>["payload"],
+): Promise<void> {
+  if (!requestId) {
+    history("blob.list.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      prefix: payload.prefix,
+      error: "missingRequestId",
+    });
+    return;
+  }
+  const prefixCheck = validateBlobPrefix(payload.prefix ?? "");
+  if (!prefixCheck.ok) {
+    history("blob.list.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      prefix: payload.prefix,
+      error: "storageUnavailable",
+      detail: { message: prefixCheck.message },
+    });
+    if (inst.child) sendTyped(inst.child, "blob.list.response", { items: [] }, requestId);
+    return;
+  }
+  try {
+    const namespacePrefix = blobObjectPrefix(inst.gameId);
+    const entries = await objectStore.list(`${namespacePrefix}${prefixCheck.prefix}`);
+    const items = entries.map((entry) => ({
+      key: entry.key.slice(namespacePrefix.length),
+      size: entry.size,
+    }));
+    if (prefixCheck.prefix.length === 0) {
+      inst.blobBytes = items.reduce((sum, item) => sum + item.size, 0);
+      inst.blobKeys = items.length;
+    }
+    history("blob.list", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      runId: inst.runId,
+      requestId,
+      prefix: payload.prefix,
+      keyCount: items.length,
+    });
+    if (inst.child) sendTyped(inst.child, "blob.list.response", { items }, requestId);
+  } catch (err) {
+    history("blob.list.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      requestId,
+      prefix: payload.prefix,
+      error: "storageUnavailable",
+      detail: { message: err instanceof Error ? err.message : String(err) },
+    });
+    if (inst.child) sendTyped(inst.child, "blob.list.response", { items: [] }, requestId);
+  }
+}
+
+async function handleStateFlush(
+  inst: GameInstance,
+  requestId: string | undefined,
+): Promise<void> {
   if (!requestId) {
     history("state.flush.rejected", {
       actorId: inst.actorId,
@@ -1389,12 +2299,16 @@ function handleStateFlush(
     });
     return;
   }
-  const response: StorageWriteResponse = { ok: true };
+  const flush = await flushStateCache(inst);
+  const response = flush.response;
   history("state.flush", {
     actorId: inst.actorId,
     gameId: inst.gameId,
     requestId,
-    ok: true,
+    ok: response.ok,
+    byteSize: flush.byteSize,
+    flushed: flush.flushed,
+    error: response.ok ? undefined : response.error,
   });
   if (inst.child) {
     sendTyped(inst.child, "state.flush.response", { response }, requestId);
@@ -1648,71 +2562,293 @@ function connectedSessionSnapshot(inst: GameInstance): readonly ConnectedSession
 
 async function readGameStorage(
   inst: GameInstance,
-  tier: "state" | "blob",
+  tier: "state",
 ): Promise<StorageReadResponsePayload> {
-  const raw = await redis.get(storageKey(inst.gameId, tier));
-  if (raw === null) {
-    if (tier === "state") inst.stateBytes = 0;
-    else inst.blobBytes = 0;
-    return { found: false, bytes: 0 };
-  }
-  const bytes = Buffer.byteLength(raw, "utf8");
-  if (tier === "state") inst.stateBytes = bytes;
-  else inst.blobBytes = bytes;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch {
-    return { found: false, bytes };
-  }
-  return parsed &&
-    typeof parsed === "object" &&
-    Object.prototype.hasOwnProperty.call(parsed, "value")
-    ? { found: true, value: (parsed as { value?: unknown }).value, bytes }
-    : { found: true, value: parsed, bytes };
+  void tier;
+  return readGameState(inst);
 }
 
 async function writeGameStorage(
   inst: GameInstance,
-  tier: "state" | "blob",
+  tier: "state",
   value: unknown,
 ): Promise<StorageWriteResponse> {
-  let raw: string;
-  try {
-    raw = JSON.stringify({ value });
-  } catch (err) {
-    return {
-      ok: false,
-      error: "storageUnavailable",
-      detail: { message: err instanceof Error ? err.message : String(err) },
-    };
+  void tier;
+  return writeGameState(inst, value);
+}
+
+async function readGameState(inst: GameInstance): Promise<StorageReadResponsePayload> {
+  if (!inst.stateLoaded) {
+    try {
+      const bytes = await objectStore.get(stateObjectKey(inst.gameId));
+      if (bytes === null) {
+        inst.stateLoaded = true;
+        inst.stateFound = false;
+        inst.stateValue = undefined;
+        inst.stateBytes = 0;
+      } else {
+        inst.stateLoaded = true;
+        inst.stateFound = true;
+        inst.stateValue = cborDecode(bytes);
+        inst.stateBytes = bytes.byteLength;
+      }
+      inst.stateDirty = false;
+      inst.stateRevision = 0;
+      inst.stateDurableRevision = 0;
+    } catch (err) {
+      history("state.read.error", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        objectKey: stateObjectKey(inst.gameId),
+        objectStore: objectStore.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { found: false, bytes: 0 };
+    }
   }
-  const bytes = Buffer.byteLength(raw, "utf8");
-  const limit = tier === "state" ? STATE_BYTES_LIMIT : BLOB_BYTES_LIMIT;
-  if (bytes > limit) {
+  return inst.stateFound
+    ? { found: true, value: inst.stateValue, bytes: inst.stateBytes }
+    : { found: false, bytes: 0 };
+}
+
+function writeGameState(inst: GameInstance, value: unknown): StorageWriteResponse {
+  const encoded = encodeGameState(value);
+  if (!encoded.ok) return encoded.response;
+  if (encoded.bytes.byteLength > STATE_BYTES_LIMIT) {
     return {
       ok: false,
       error: "sizeExceeded",
-      detail: { bytes, limit },
+      detail: { bytes: encoded.bytes.byteLength, limit: STATE_BYTES_LIMIT },
     };
   }
-  try {
-    await redis.set(storageKey(inst.gameId, tier), raw);
-  } catch (err) {
-    return {
-      ok: false,
-      error: "storageUnavailable",
-      detail: { message: err instanceof Error ? err.message : String(err) },
-    };
-  }
-  if (tier === "state") inst.stateBytes = bytes;
-  else inst.blobBytes = bytes;
+  inst.stateLoaded = true;
+  inst.stateFound = true;
+  inst.stateValue = value;
+  inst.stateBytes = encoded.bytes.byteLength;
+  inst.stateDirty = true;
+  inst.stateRevision += 1;
+  scheduleStateFlush(inst);
   maybeSendCapacityWarnings(inst);
   return { ok: true };
 }
 
-function storageKey(gameId: string, tier: "state" | "blob"): string {
-  return `${tier === "state" ? STATE_KEY_PREFIX : BLOB_KEY_PREFIX}${gameId}`;
+function scheduleStateFlush(inst: GameInstance): void {
+  if (STATE_FLUSH_WINDOW_MS === 0) {
+    void flushStateCacheAndRecord(inst, "state.flush.scheduled");
+    return;
+  }
+  if (inst.stateFlushTimer) return;
+  inst.stateFlushTimer = setTimeout(() => {
+    inst.stateFlushTimer = null;
+    void flushStateCacheAndRecord(inst, "state.flush.scheduled");
+  }, STATE_FLUSH_WINDOW_MS);
+  inst.stateFlushTimer.unref();
+}
+
+async function flushStateCacheAndRecord(
+  inst: GameInstance,
+  event: "state.flush.scheduled",
+): Promise<void> {
+  const flush = await flushStateCache(inst);
+  history(event, {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    ok: flush.response.ok,
+    byteSize: flush.byteSize,
+    flushed: flush.flushed,
+    objectStore: objectStore.kind,
+    error: flush.response.ok ? undefined : flush.response.error,
+  });
+}
+
+function flushStateCache(inst: GameInstance): Promise<StateFlushOutcome> {
+  if (inst.stateFlushTimer) {
+    clearTimeout(inst.stateFlushTimer);
+    inst.stateFlushTimer = null;
+  }
+  if (inst.stateFlushPromise) return inst.stateFlushPromise;
+  inst.stateFlushPromise = flushStateCacheInner(inst).finally(() => {
+    inst.stateFlushPromise = null;
+  });
+  return inst.stateFlushPromise;
+}
+
+async function flushStateCacheInner(inst: GameInstance): Promise<StateFlushOutcome> {
+  let flushed = false;
+  try {
+    while (inst.stateDirty) {
+      const revision = inst.stateRevision;
+      const encoded = encodeGameState(inst.stateValue);
+      if (!encoded.ok) return { response: encoded.response, byteSize: inst.stateBytes, flushed };
+      if (encoded.bytes.byteLength > STATE_BYTES_LIMIT) {
+        return {
+          response: {
+            ok: false,
+            error: "sizeExceeded",
+            detail: { bytes: encoded.bytes.byteLength, limit: STATE_BYTES_LIMIT },
+          },
+          byteSize: encoded.bytes.byteLength,
+          flushed,
+        };
+      }
+      await objectStore.put(stateObjectKey(inst.gameId), encoded.bytes);
+      flushed = true;
+      inst.stateBytes = encoded.bytes.byteLength;
+      if (inst.stateRevision === revision) {
+        inst.stateDirty = false;
+        inst.stateDurableRevision = revision;
+      }
+    }
+    return { response: { ok: true }, byteSize: inst.stateBytes, flushed };
+  } catch (err) {
+    history("storage.unavailable", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      tier: "state",
+      objectKey: stateObjectKey(inst.gameId),
+      objectStore: objectStore.kind,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      response: {
+        ok: false,
+        error: "storageUnavailable",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      },
+      byteSize: inst.stateBytes,
+      flushed,
+    };
+  }
+}
+
+type EncodeStateResult =
+  | { readonly ok: true; readonly bytes: Uint8Array }
+  | { readonly ok: false; readonly response: StorageWriteResponse };
+
+function encodeGameState(value: unknown): EncodeStateResult {
+  try {
+    return { ok: true, bytes: cborEncode(value) };
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        ok: false,
+        error: "storageUnavailable",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      },
+    };
+  }
+}
+
+function stateObjectKey(gameId: string): string {
+  return `state/${gameId}.cbor`;
+}
+
+type BlobKeyCheck =
+  | { readonly ok: true; readonly key: string }
+  | { readonly ok: false; readonly message: string };
+
+type BlobPrefixCheck =
+  | { readonly ok: true; readonly prefix: string }
+  | { readonly ok: false; readonly message: string };
+
+type BlobBudgetCheck =
+  | { readonly ok: true; readonly totalBytes: number; readonly totalKeys: number }
+  | {
+      readonly ok: false;
+      readonly error: "sizeExceeded" | "keyCountExceeded";
+      readonly detail: Readonly<Record<string, unknown>>;
+    };
+
+function validateBlobKey(key: string): BlobKeyCheck {
+  if (typeof key !== "string" || key.length === 0) {
+    return { ok: false, message: "blob key must be a non-empty string" };
+  }
+  const bytes = Buffer.byteLength(key, "utf8");
+  if (bytes > 256) {
+    return { ok: false, message: "blob key must be at most 256 UTF-8 bytes" };
+  }
+  const parts = key.split("/");
+  if (
+    key.startsWith("/") ||
+    key.endsWith("/") ||
+    parts.some((part) => part.length === 0 || part === "." || part === "..")
+  ) {
+    return { ok: false, message: "blob key must be namespace-relative" };
+  }
+  return { ok: true, key };
+}
+
+function validateBlobPrefix(prefix: string): BlobPrefixCheck {
+  if (prefix.length === 0) return { ok: true, prefix };
+  const bytes = Buffer.byteLength(prefix, "utf8");
+  if (bytes > 256) {
+    return { ok: false, message: "blob prefix must be at most 256 UTF-8 bytes" };
+  }
+  if (prefix.startsWith("/") || prefix.split("/").some((part) => part === "." || part === "..")) {
+    return { ok: false, message: "blob prefix must be namespace-relative" };
+  }
+  return { ok: true, prefix };
+}
+
+function decodeBase64(raw: string): Uint8Array {
+  return Buffer.from(raw, "base64");
+}
+
+async function prospectiveBlobBudget(
+  inst: GameInstance,
+  key: string,
+  newSize: number,
+): Promise<BlobBudgetCheck> {
+  const entries = await objectStore.list(blobObjectPrefix(inst.gameId));
+  const namespacePrefix = blobObjectPrefix(inst.gameId);
+  const existing = entries.find((entry) => entry.key === `${namespacePrefix}${key}`);
+  const currentBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+  const currentKeys = entries.length;
+  const totalBytes = currentBytes - (existing?.size ?? 0) + newSize;
+  const totalKeys = existing ? currentKeys : currentKeys + 1;
+  if (totalBytes > BLOB_BYTES_LIMIT) {
+    inst.blobBytes = currentBytes;
+    inst.blobKeys = currentKeys;
+    return {
+      ok: false,
+      error: "sizeExceeded",
+      detail: {
+        currentUsage: currentBytes,
+        attemptedBytes: newSize,
+        limit: BLOB_BYTES_LIMIT,
+      },
+    };
+  }
+  if (totalKeys > BLOB_KEYS_LIMIT) {
+    inst.blobBytes = currentBytes;
+    inst.blobKeys = currentKeys;
+    return {
+      ok: false,
+      error: "keyCountExceeded",
+      detail: {
+        currentUsage: currentKeys,
+        attemptedKeys: existing ? 0 : 1,
+        limit: BLOB_KEYS_LIMIT,
+      },
+    };
+  }
+  return { ok: true, totalBytes, totalKeys };
+}
+
+async function refreshBlobUsage(inst: GameInstance): Promise<void> {
+  const entries = await objectStore.list(blobObjectPrefix(inst.gameId));
+  inst.blobBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+  inst.blobKeys = entries.length;
+}
+
+function blobObjectPrefix(gameId: string): string {
+  return `blob/${gameId}/`;
+}
+
+function blobObjectKey(gameId: string, key: string): string {
+  return `${blobObjectPrefix(gameId)}${key}`;
 }
 
 function recordWsUsage(inst: GameInstance, bytes: number): void {
@@ -1792,6 +2928,10 @@ function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
     "blob-bytes": {
       currentUsage: inst.blobBytes,
       limit: BLOB_BYTES_LIMIT,
+    },
+    "blob-keys": {
+      currentUsage: inst.blobKeys,
+      limit: BLOB_KEYS_LIMIT,
     },
     "api-invocations-per-min": {
       currentUsage: apiInvocations,
@@ -2058,6 +3198,9 @@ const runner = new Runner({
       return;
     }
     await forkChild(inst);
+    markGameActive(inst);
+    cancelSleepGrace(inst, "sessionOpened");
+    void writeActiveGameDirectory(inst);
 
     const sessionId = idGenerator.generateSessionId();
     const connectedAt = Date.now();
@@ -2145,6 +3288,9 @@ const runner = new Runner({
             reason: disconnectReason,
           });
         }
+        if (inst.sessions.size === 0) {
+          scheduleIdleSleepGrace(inst);
+        }
       },
     );
   },
@@ -2183,6 +3329,7 @@ const runner = new Runner({
       bundleOrigin: bundle.origin,
       bundleCompatTag: bundle.manifest.compatTagProduced,
       runtimeContractRequired: bundle.manifest.runtimeContractRequired,
+      contentSha256: bundle.contentSha256,
     });
     if (!bundleAcceptsBlobCompatTag(bundle.manifest, blobCompatTag)) {
       history("bundle.coldWake.rejected", {
@@ -2210,24 +3357,7 @@ const runner = new Runner({
     wakeMetrics.recentWakes += 1;
     log.info({ actorId, gameId, bundleName }, "actor start; forking child");
     await forkChild(inst);
-    try {
-      await redis.set(
-        `${ACTIVE_GAMES_KEY_PREFIX}${gameId}`,
-        JSON.stringify({
-          gameId,
-          shardId: SHARD_ID,
-          actorId,
-          placedAt: Date.now(),
-          refreshedAt: Date.now(),
-          generation: 1,
-        }),
-        "EX",
-        ACTIVE_GAME_TTL_SECONDS,
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.warn({ gameId, err: msg }, "active_games set failed");
-    }
+    await writeActiveGameDirectory(inst);
   },
 
   onActorStop: async (actorId: string, _generation: number): Promise<void> => {
@@ -2236,8 +3366,16 @@ const runner = new Runner({
     log.info({ actorId, gameId: inst.gameId }, "actor stop");
     history("actor.stop", { actorId, gameId: inst.gameId });
     sendOnSleep(inst, "shutdown");
+    inst.active = false;
+    recomputeActiveGameCount();
+    try {
+      await redis.del(`${ACTIVE_GAMES_KEY_PREFIX}${inst.gameId}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn({ gameId: inst.gameId, err: msg }, "active_games delete failed");
+    }
     games.delete(actorId);
-    activeGameCount = games.size;
+    recomputeActiveGameCount();
   },
 });
 
@@ -2339,6 +3477,7 @@ async function main(): Promise<void> {
   );
 
   startMetricsServer(PARENT_METRICS_BIND);
+  startHostEventDrainLoop();
 
   await ensureNamespaceAndRunner();
   await runner.start();

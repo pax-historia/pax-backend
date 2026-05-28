@@ -33,7 +33,11 @@ export function assertBundleManifest(value: unknown): BundleManifest {
   if (!compatTagsAccepted.includes(compatTagProduced)) {
     throw new Error("compatTagProduced must appear in compatTagsAccepted");
   }
-  if (!Number.isInteger(runtimeContractRequired) || runtimeContractRequired < 1) {
+  if (
+    typeof runtimeContractRequired !== "number" ||
+    !Number.isInteger(runtimeContractRequired) ||
+    runtimeContractRequired < 1
+  ) {
     throw new Error("manifest.runtimeContractRequired must be a positive integer");
   }
   return {

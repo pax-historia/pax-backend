@@ -1,0 +1,173 @@
+# Vector sidecar config for local development.
+#
+# This config is intentionally sink-light: it scrapes the local substrate
+# endpoints, applies the same metric cardinality firewall as production,
+# exposes post-firewall metrics on :9598, and writes enriched history/logs to
+# local JSONL outputs. It does not require BetterStack or Tigris credentials.
+
+data_dir = "${VECTOR_DATA_DIR:-/tmp}"
+
+[api]
+enabled = true
+address = "${VECTOR_API_ADDRESS:-127.0.0.1:8686}"
+
+[sources.stdin_logs]
+type = "stdin"
+
+[sources.history_jsonl]
+type = "file"
+include = ["${PAX_HISTORY_PATH:-var/history.jsonl}"]
+read_from = "beginning"
+
+[sources.otlp]
+type = "opentelemetry"
+
+  [sources.otlp.grpc]
+  address = "${PAX_VECTOR_OTLP_GRPC_ADDRESS:-127.0.0.1:4317}"
+
+  [sources.otlp.http]
+  address = "${PAX_VECTOR_OTLP_HTTP_ADDRESS:-127.0.0.1:4318}"
+  headers = []
+
+[sources.parent_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_PARENT_METRICS_URL:-http://127.0.0.1:7700/metrics}"]
+scrape_interval_secs = 5
+
+[sources.gateway_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_GATEWAY_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
+scrape_interval_secs = 5
+
+[sources.control_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_CONTROL_METRICS_URL:-http://127.0.0.1:7900/metrics}"]
+scrape_interval_secs = 5
+
+[sources.router_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_ROUTER_METRICS_URL:-http://127.0.0.1:9080/metrics}"]
+scrape_interval_secs = 5
+
+[sources.url_service_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_URL_SERVICE_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
+scrape_interval_secs = 5
+
+[sources.rivet_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_RIVET_METRICS_URL:-http://127.0.0.1:6430/metrics}"]
+scrape_interval_secs = 5
+
+[sources.vector_internal_metrics]
+type = "internal_metrics"
+scrape_interval_secs = 10
+
+[transforms.stdout_enrich]
+type = "remap"
+inputs = ["stdin_logs"]
+drop_on_error = false
+source = '''
+parsed, err = parse_json(.message)
+if err == null && is_object(parsed) {
+  . = merge(., object!(parsed))
+}
+
+.service = "${PAX_SERVICE_NAME:-pax-backend-local}"
+.pax_zone = "${PAX_ZONE:-local}"
+.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+.run_id = "${PAX_RUN_ID:-}"
+
+if .run_id == "" { del(.run_id) }
+if !exists(.event) { .event = "log.line" }
+'''
+
+[transforms.history_enrich]
+type = "remap"
+inputs = ["history_jsonl"]
+drop_on_error = false
+source = '''
+parsed, err = parse_json(.message)
+if err == null && is_object(parsed) {
+  . = merge(., object!(parsed))
+}
+
+.service = "pax-history-local"
+.pax_zone = "${PAX_ZONE:-local}"
+.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+.run_id = "${PAX_RUN_ID:-}"
+
+if .run_id == "" { del(.run_id) }
+if !exists(.event) { .event = "history.line" }
+'''
+
+[transforms.metric_cardinality_firewall]
+type = "remap"
+inputs = [
+  "parent_metrics",
+  "gateway_metrics",
+  "control_metrics",
+  "router_metrics",
+  "url_service_metrics",
+  "rivet_metrics",
+  "vector_internal_metrics",
+  "otlp.metrics",
+]
+drop_on_error = false
+source = '''
+if !exists(.tags) {
+  .tags = {}
+}
+
+.tags.pax_zone = "${PAX_ZONE:-local}"
+.tags.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+
+run_id = "${PAX_RUN_ID:-}"
+if run_id != "" {
+  .tags.run_id = run_id
+}
+
+del(.tags.game_id)
+del(.tags.session_id)
+del(.tags.player_id)
+del(.tags.actor_id)
+del(.tags.actor_id_gen)
+del(.tags.trace_id)
+del(.tags.request_id)
+del(.tags.bundle_name)
+del(.tags.database_id)
+'''
+
+[transforms.metric_tag_limit]
+type = "tag_cardinality_limit"
+inputs = ["metric_cardinality_firewall"]
+mode = "exact"
+value_limit = 512
+limit_exceeded_action = "drop_tag"
+
+  [transforms.metric_tag_limit.internal_metrics]
+  include_extended_tags = false
+
+[sinks.local_metrics]
+type = "prometheus_exporter"
+inputs = ["metric_tag_limit"]
+address = "${PAX_VECTOR_PROMETHEUS_EXPORTER_ADDRESS:-127.0.0.1:9598}"
+flush_period_secs = 15
+
+[sinks.logs_console]
+type = "console"
+inputs = ["stdout_enrich", "history_enrich", "otlp.logs", "otlp.traces"]
+target = "stdout"
+
+  [sinks.logs_console.encoding]
+  codec = "json"
+
+[sinks.history_archive_local]
+type = "file"
+inputs = ["history_enrich"]
+path = "${PAX_VECTOR_HISTORY_ARCHIVE_PATH:-var/vector-history-%Y-%m-%d.jsonl}"
+compression = "none"
+idle_timeout_secs = 5
+
+  [sinks.history_archive_local.encoding]
+  codec = "json"

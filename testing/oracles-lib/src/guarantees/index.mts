@@ -6,6 +6,7 @@ import { crashBlastRadius } from "./crash-blast-radius.mjs";
 import { evictionMinimumBudget } from "./eviction-minimum-budget.mjs";
 import { faithfulApiDispatch } from "./faithful-api-dispatch.mjs";
 import { historyCompleteness } from "./history-completeness.mjs";
+import { hostEventDurability } from "./host-event-durability.mjs";
 import { idempotentPlayerInput } from "./idempotent-player-input.mjs";
 import { migrationRollbackSafety } from "./migration-rollback-safety.mjs";
 import { noRandomParentCrashes } from "./no-random-parent-crashes.mjs";
@@ -39,6 +40,7 @@ export const guaranteeIndex = [
   { guarantee: 14, name: "history-completeness", oracle: historyCompleteness },
   { guarantee: 15, name: "bundle-compatibility-safety", oracle: bundleCompatibilitySafety },
   { guarantee: 16, name: "placement-contract-safety", oracle: placementContractSafety },
+  { guarantee: 17, name: "host-event-durability", oracle: hostEventDurability },
 ] satisfies readonly GuaranteeOracleEntry[];
 
 export const guaranteeOracles = guaranteeIndex.map((entry) => entry.oracle);
@@ -72,6 +74,7 @@ export {
   evictionMinimumBudget,
   faithfulApiDispatch,
   historyCompleteness,
+  hostEventDurability,
   idempotentPlayerInput,
   migrationRollbackSafety,
   noRandomParentCrashes,

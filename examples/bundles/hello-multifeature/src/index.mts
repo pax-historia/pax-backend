@@ -28,6 +28,7 @@ interface MultiFeatureBlob {
 const connectedPlayers = new Set<string>();
 let cachedState: MultiFeatureState = emptyState();
 let cachedBlob: MultiFeatureBlob = emptyBlob();
+const BLOB_KEY = "current.json";
 
 export default defineBundle({
   manifest: {
@@ -39,14 +40,14 @@ export default defineBundle({
   async onWake(c, payload) {
     const [storedStateRaw, storedBlobRaw, allowedPlayers, connectedSessions, budget] = await Promise.all([
       c.state.read(),
-      c.blob.read(),
+      c.blob.get(BLOB_KEY),
       c.players.allowed(),
       c.players.connected(),
       c.compute.budget(),
     ]);
 
     const storedState = normalizeState(storedStateRaw ?? payload.state);
-    const storedBlob = normalizeBlob(storedBlobRaw ?? payload.blob);
+    const storedBlob = normalizeBlob(decodeJson(storedBlobRaw));
     const nextState: MultiFeatureState = {
       ...storedState,
       wakes: storedState.wakes + 1,
@@ -58,7 +59,7 @@ export default defineBundle({
 
     const stateWrite = await c.state.write(nextState);
     const stateFlush = stateWrite.ok ? await c.state.flush() : stateWrite;
-    const blobWrite = await c.blob.write(nextBlob);
+    const blobWrite = await c.blob.put(BLOB_KEY, encodeJson(nextBlob));
     if (stateWrite.ok && stateFlush.ok) cachedState = nextState;
     if (blobWrite.ok) cachedBlob = nextBlob;
 
@@ -124,7 +125,7 @@ export default defineBundle({
     const [storedStateRaw, storedBlobRaw, allowedPlayers, connectedSessions, budgetBefore] =
       await Promise.all([
         c.state.read(),
-        c.blob.read(),
+        c.blob.get(BLOB_KEY),
         c.players.allowed(),
         c.players.connected(),
         c.compute.budget(),
@@ -139,7 +140,7 @@ export default defineBundle({
       sample,
     };
     const storedState = normalizeState(storedStateRaw);
-    const storedBlob = normalizeBlob(storedBlobRaw);
+    const storedBlob = normalizeBlob(decodeJson(storedBlobRaw));
 
     const nextState: MultiFeatureState = {
       version: 1,
@@ -176,7 +177,7 @@ export default defineBundle({
       recentMessages: [...storedBlob.recentMessages.slice(-9), message],
       lastApiResult: apiResponse,
     };
-    const blobWrite = await c.blob.write(nextBlob);
+    const blobWrite = await c.blob.put(BLOB_KEY, encodeJson(nextBlob));
     if (blobWrite.ok) cachedBlob = nextBlob;
 
     const budgetAfter = await c.compute.budget();
@@ -294,6 +295,26 @@ function normalizeBlob(value: unknown): MultiFeatureBlob {
     recentMessages: normalizeMessages(value["recentMessages"]),
     lastApiResult: value["lastApiResult"],
   };
+}
+
+function encodeJson(value: unknown): Uint8Array {
+  const raw = JSON.stringify(value);
+  const bytes = new Uint8Array(raw.length);
+  for (let index = 0; index < raw.length; index += 1) {
+    bytes[index] = raw.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+function decodeJson(bytes: Uint8Array | null): unknown {
+  if (!bytes) return undefined;
+  let raw = "";
+  for (const byte of bytes) raw += String.fromCharCode(byte);
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeMessages(value: unknown): readonly MessageSummary[] {

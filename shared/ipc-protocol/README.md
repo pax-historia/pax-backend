@@ -24,7 +24,8 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   `_exhaustive: never` guard).
 - Lifecycle payload types: `OnWakePayload`, `OnSleepPayload`,
   `OnPlayerConnectPayload`, `OnPlayerDisconnectPayload`,
-  `OnPlayerMessagePayload`, `OnCapacityWarningPayload`.
+  `OnPlayerMessagePayload`, `OnCapacityWarningPayload`, and
+  `OnHostEventPayload`.
 - Child-to-parent payload types: `BootstrapPayload`, `WsSendPayload`,
   `WsSendRejectedPayload`, `LogEmitPayload`, `ChildFatalPayload`,
   `ChildHandlerErrorPayload`, `ChildHandlerCompletePayload`,
@@ -39,7 +40,8 @@ See [`../README.md`](../README.md) for the zone's broader rules.
   and deterministic helpers match the advertised runtime mode.
 - Redis key prefixes + TTLs: `ACTIVE_GAMES_KEY_PREFIX`,
   `SHARD_REGISTRY_KEY_PREFIX`, `PLACEMENT_RECENT_WAKES_KEY_PREFIX`,
-  `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`.
+  `BUNDLE_KEY_PREFIX`, `GAME_KEY_PREFIX`, and
+  `HOST_EVENT_QUEUE_KEY_PREFIX`.
 - Redis row schemas: `ShardRegistration`, `ActiveGamePlacement`,
   `BundleRecord`, `BundleManifest`, `GameRecord`, and the
   `BundleRollbackRecord` metadata a flipped game uses for rollback safety.
@@ -65,8 +67,8 @@ Per [plan README](../../README.md) §"Storage tiers" (storage tiers v2),
 the next contract bump replaces the single-object `c.blob` channels with
 a keyed-namespace surface:
 
-- `blob.read` / `blob.write` → `blob.put(key, bytes)`, `blob.get(key)`,
-  `blob.delete(key)`, `blob.list(prefix?)`
+- `blob.put(key, bytes)`, `blob.get(key)`, `blob.delete(key)`,
+  `blob.list(prefix?)` carry blob bytes as base64 in JSON-mode child IPC
 - `state.read` / `state.write` / `state.flush` stay; their durability
   semantics tighten (Tigris-canonical, flush-window guarantee)
 - Wake reasons collapse: `cold-restart-after-shard-loss` is removed in

@@ -3,7 +3,7 @@ import type { HistoryEvent, OracleFinding, OracleResult } from "../types.mjs";
 
 const ORACLE = "compute-plane-quotas";
 const GUARANTEE = 7;
-const STORAGE_ERRORS = new Set(["sizeExceeded", "storageUnavailable"]);
+const STORAGE_ERRORS = new Set(["sizeExceeded", "keyCountExceeded", "storageUnavailable"]);
 const API_ERRORS = new Set([
   "apiRateExceeded",
   "kindUnknown",
@@ -23,6 +23,7 @@ const COMPUTE_BUDGETS = new Set([
   "ws-messages-per-sec",
   "state-bytes",
   "blob-bytes",
+  "blob-keys",
   "api-invocations-per-min",
 ]);
 
@@ -35,7 +36,7 @@ export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResu
       observed += 1;
       continue;
     }
-    if (event.event === "state.write" || event.event === "blob.write") {
+    if (event.event === "state.write" || event.event === "blob.put") {
       observed += 1;
       if (booleanField(event, "ok") === false) {
         const error = stringField(event, "error");

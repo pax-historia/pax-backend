@@ -6,6 +6,7 @@ import {
   type ApiInvokeWireRecord,
   type GatewayHttpResponseBody,
 } from "@pax-backend/ipc-protocol";
+import { withPaxSpan } from "@pax-backend/node-telemetry";
 
 import type { ApiInvocationBudget } from "./budgets.mjs";
 import { buildGatewayEnvelope, stableSerialize } from "./envelope.mjs";
@@ -61,6 +62,28 @@ export class ApiGateway {
   }
 
   async invoke(input: ApiGatewayDispatchInput): Promise<ApiGatewayInvokeResult> {
+    return withPaxSpan(
+      "gateway.invoke",
+      {
+        kind: input.kind,
+        mode: input.replayMode === true ? "replay" : this.#defaultMode,
+        game_id: input.gameId,
+        run_id: input.runId,
+        bundle_name: input.bundleName,
+        bundle_compat_tag: input.bundleCompatTag,
+      },
+      async (span) => {
+        const result = await this.#invokeWithMetrics(input);
+        span.setAttribute("result", result.response.ok ? "ok" : result.response.error);
+        if (result.wireRecord) {
+          span.setAttribute("http.response.status_code", result.wireRecord.statusCode);
+        }
+        return result;
+      },
+    );
+  }
+
+  async #invokeWithMetrics(input: ApiGatewayDispatchInput): Promise<ApiGatewayInvokeResult> {
     this.#invocationsTotal += 1;
     const mode = input.replayMode === true ? "replay" : this.#defaultMode;
     const envelope = buildGatewayEnvelope(input, mode);

@@ -53,7 +53,7 @@ export default {
         "api.invoke.request",
         "api.invoke.response",
         "state.write",
-        "blob.write",
+        "blob.put",
       ],
       minimumPerGame: 1,
     },

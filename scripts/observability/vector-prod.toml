@@ -1,0 +1,199 @@
+# Vector sidecar config for Fly production apps.
+#
+# `PAX_OBSERVABILITY=off` should skip starting Vector entirely. The default
+# production path expects BetterStack and Tigris credentials to be present and
+# lets Vector fail fast during sink health checks when they are not reachable.
+
+data_dir = "${VECTOR_DATA_DIR:-/var/lib/vector}"
+
+[api]
+enabled = true
+address = "${VECTOR_API_ADDRESS:-127.0.0.1:8686}"
+
+[sources.stdin_logs]
+type = "stdin"
+
+[sources.history_jsonl]
+type = "file"
+include = ["${PAX_HISTORY_PATH:-/app/var/history.jsonl}"]
+read_from = "beginning"
+
+[sources.otlp]
+type = "opentelemetry"
+
+  [sources.otlp.grpc]
+  address = "${PAX_VECTOR_OTLP_GRPC_ADDRESS:-0.0.0.0:4317}"
+
+  [sources.otlp.http]
+  address = "${PAX_VECTOR_OTLP_HTTP_ADDRESS:-0.0.0.0:4318}"
+  headers = []
+
+[sources.parent_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_PARENT_METRICS_URL:-http://127.0.0.1:7700/metrics}"]
+scrape_interval_secs = 15
+
+[sources.gateway_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_GATEWAY_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
+scrape_interval_secs = 15
+
+[sources.control_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_CONTROL_METRICS_URL:-http://127.0.0.1:7900/metrics}"]
+scrape_interval_secs = 15
+
+[sources.router_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_ROUTER_METRICS_URL:-http://127.0.0.1:9080/metrics}"]
+scrape_interval_secs = 15
+
+[sources.url_service_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_URL_SERVICE_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
+scrape_interval_secs = 15
+
+[sources.rivet_metrics]
+type = "prometheus_scrape"
+endpoints = ["${PAX_RIVET_METRICS_URL:-http://127.0.0.1:6430/metrics}"]
+scrape_interval_secs = 15
+
+[sources.vector_internal_metrics]
+type = "internal_metrics"
+scrape_interval_secs = 30
+
+[transforms.stdout_enrich]
+type = "remap"
+inputs = ["stdin_logs"]
+drop_on_error = false
+source = '''
+parsed, err = parse_json(.message)
+if err == null && is_object(parsed) {
+  . = merge(., object!(parsed))
+}
+
+.service = "${PAX_SERVICE_NAME:-pax-backend}"
+.pax_zone = "${PAX_ZONE:-runtime}"
+.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+.fly_app = "${FLY_APP_NAME:-unknown}"
+.fly_machine_id = "${FLY_MACHINE_ID:-unknown}"
+.fly_region = "${FLY_REGION:-unknown}"
+.run_id = "${PAX_RUN_ID:-}"
+
+if .run_id == "" { del(.run_id) }
+if !exists(.event) { .event = "log.line" }
+'''
+
+[transforms.history_enrich]
+type = "remap"
+inputs = ["history_jsonl"]
+drop_on_error = false
+source = '''
+parsed, err = parse_json(.message)
+if err == null && is_object(parsed) {
+  . = merge(., object!(parsed))
+}
+
+.service = "pax-history"
+.pax_zone = "${PAX_ZONE:-runtime}"
+.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+.fly_app = "${FLY_APP_NAME:-unknown}"
+.fly_machine_id = "${FLY_MACHINE_ID:-unknown}"
+.fly_region = "${FLY_REGION:-unknown}"
+.run_id = "${PAX_RUN_ID:-}"
+
+if .run_id == "" { del(.run_id) }
+if !exists(.event) { .event = "history.line" }
+'''
+
+[transforms.metric_cardinality_firewall]
+type = "remap"
+inputs = [
+  "parent_metrics",
+  "gateway_metrics",
+  "control_metrics",
+  "router_metrics",
+  "url_service_metrics",
+  "rivet_metrics",
+  "vector_internal_metrics",
+  "otlp.metrics",
+]
+drop_on_error = false
+source = '''
+if !exists(.tags) {
+  .tags = {}
+}
+
+.tags.pax_zone = "${PAX_ZONE:-runtime}"
+.tags.runtime_contract = "${PAX_RUNTIME_CONTRACT:-1}"
+.tags.fly_app = "${FLY_APP_NAME:-unknown}"
+.tags.fly_region = "${FLY_REGION:-unknown}"
+
+run_id = "${PAX_RUN_ID:-}"
+if run_id != "" {
+  .tags.run_id = run_id
+}
+
+del(.tags.game_id)
+del(.tags.session_id)
+del(.tags.player_id)
+del(.tags.actor_id)
+del(.tags.actor_id_gen)
+del(.tags.trace_id)
+del(.tags.request_id)
+del(.tags.bundle_name)
+del(.tags.database_id)
+'''
+
+[transforms.metric_tag_limit]
+type = "tag_cardinality_limit"
+inputs = ["metric_cardinality_firewall"]
+mode = "exact"
+value_limit = 512
+limit_exceeded_action = "drop_tag"
+
+  [transforms.metric_tag_limit.internal_metrics]
+  include_extended_tags = false
+
+[sinks.better_stack]
+type = "http"
+method = "post"
+inputs = ["stdout_enrich", "history_enrich", "metric_tag_limit", "otlp.logs", "otlp.traces"]
+uri = "https://${BETTERSTACK_INGESTING_HOST:-in.logs.betterstack.com}/"
+compression = "gzip"
+healthcheck.enabled = true
+
+  [sinks.better_stack.encoding]
+  codec = "json"
+
+  [sinks.better_stack.auth]
+  strategy = "bearer"
+  token = "${BETTERSTACK_SOURCE_TOKEN:?BETTERSTACK_SOURCE_TOKEN is required when PAX_OBSERVABILITY is on}"
+
+  [sinks.better_stack.buffer]
+  type = "disk"
+  max_size = 536870912
+  when_full = "block"
+
+[sinks.history_tigris]
+type = "aws_s3"
+inputs = ["history_enrich"]
+bucket = "${BUCKET_NAME:?BUCKET_NAME is required for Tigris history archive}"
+region = "${AWS_REGION:-auto}"
+endpoint = "${AWS_ENDPOINT_URL_S3:?AWS_ENDPOINT_URL_S3 is required for Tigris history archive}"
+key_prefix = "history/date=%Y-%m-%d/"
+compression = "gzip"
+content_encoding = "gzip"
+content_type = "application/gzip"
+filename_extension = "jsonl.gz"
+filename_time_format = "%s"
+filename_append_uuid = true
+healthcheck.enabled = true
+
+  [sinks.history_tigris.encoding]
+  codec = "json"
+
+  [sinks.history_tigris.buffer]
+  type = "disk"
+  max_size = 536870912
+  when_full = "block"

@@ -8,4 +8,14 @@ Format suggestion: a `## YYYY-MM-DD HH:MM` heading per entry, followed by prose 
 
 ---
 
-(no entries yet)
+## 2026-05-28 03:46 PDT
+
+Started Phase 1 after Phase 0 verification completed. Per `AGENTS.md`, commit
+cadence is now around once per task unless there is a concrete reason to split
+or batch differently.
+
+Initial root `pnpm typecheck` result: one failure in
+`examples/url-services/billing-mock.v1/src/index.mts`, where the existing
+refund record passed to the ledger is missing the required `eventId` field.
+Because this is a billing-shaped example outside the substrate, re-read
+`docs-next/why/why-no-billing.md` before touching it.

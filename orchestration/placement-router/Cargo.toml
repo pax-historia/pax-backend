@@ -21,6 +21,10 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 uuid = { version = "1", default-features = false, features = ["v4"] }
+opentelemetry = "0.32.0"
+opentelemetry_sdk = "0.32.1"
+tracing-opentelemetry = "0.33.0"
+opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic", "trace"] }
 
 [profile.release]
 # Smoke-shape build: codegen-units=16 + lto=off keeps cold compiles under a

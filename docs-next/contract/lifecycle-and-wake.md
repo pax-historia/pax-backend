@@ -97,8 +97,8 @@ type WakeReason =
   bundle sees `onPlayerConnect`, not `onWake`.
 - **`cold-restart-after-crash`**: the child died (OOM, segfault, unhandled
   exception). `state` reflects the last durable flush — at most the flush
-  window of writes is lost. May include `errorClass: 'oom' | 'crash' |
-  'cpuTimeout'` (TBD attribute).
+  window of writes is lost. Includes `errorClass: 'oom' | 'crash' |
+  'cpuTimeout' | 'unknown'`.
 - **`cold-restart-after-eviction`**: the shard chose to evict this game
   (capacity pressure, drain in progress). State reflects the pre-eviction
   flush (zero loss — eviction is planned, so the substrate flushes

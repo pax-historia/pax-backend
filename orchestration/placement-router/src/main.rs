@@ -43,9 +43,20 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
 use jsonwebtoken::{encode, EncodingKey, Header};
+use opentelemetry::global;
+use opentelemetry::propagation::Extractor;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::Resource;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{info, warn, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHARD_FRESHNESS_MS: u64 = 30_000;
@@ -69,9 +80,11 @@ impl Config {
             .parse()
             .context("PAX_ROUTER_BIND not a socketaddr")?;
         Ok(Self {
-            redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
+            redis_url: env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
             bind,
-            jwt_secret: env::var("PAX_JWT_SECRET").unwrap_or_else(|_| "local-dev-secret".to_string()),
+            jwt_secret: env::var("PAX_JWT_SECRET")
+                .unwrap_or_else(|_| "local-dev-secret".to_string()),
             placement_token_ttl_secs: env::var("PAX_PLACEMENT_TOKEN_TTL_SECONDS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -219,8 +232,12 @@ impl IntoResponse for PlacementError {
         let (status, code) = match &self {
             PlacementError::GameNotFound(_) => (StatusCode::NOT_FOUND, "gameNotFound"),
             PlacementError::BundleNotFound(_) => (StatusCode::NOT_FOUND, "bundleNotFound"),
-            PlacementError::NoEligibleShards { .. } => (StatusCode::SERVICE_UNAVAILABLE, "noEligibleShards"),
-            PlacementError::ContractOutOfRange { .. } => (StatusCode::CONFLICT, "contractOutOfRange"),
+            PlacementError::NoEligibleShards { .. } => {
+                (StatusCode::SERVICE_UNAVAILABLE, "noEligibleShards")
+            }
+            PlacementError::ContractOutOfRange { .. } => {
+                (StatusCode::CONFLICT, "contractOutOfRange")
+            }
             PlacementError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let detail = match &self {
@@ -295,18 +312,42 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         state.metrics.placement_contract_rejected_total.load(Ordering::Relaxed),
         VERSION,
     );
-    ([("content-type", "text/plain; version=0.0.4; charset=utf-8")], body)
+    (
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+        body,
+    )
 }
 
+#[tracing::instrument(
+    name = "router.placement",
+    skip(state, q, headers),
+    err,
+    fields(
+        otel.kind = "server",
+        game_id = %game_id,
+        user_id = tracing::field::Empty,
+        trace_id = tracing::field::Empty,
+        run_id = tracing::field::Empty,
+        bundle_name = tracing::field::Empty,
+        runtime_contract = tracing::field::Empty,
+        shard_id = tracing::field::Empty,
+    )
+)]
 async fn placement(
     State(state): State<AppState>,
     Path(game_id): Path<String>,
     Query(q): Query<PlacementQuery>,
     headers: HeaderMap,
 ) -> Result<Json<PlacementResponse>, PlacementError> {
+    let _ = Span::current().set_parent(global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(&headers))
+    }));
     let mut timings = BTreeMap::new();
     let t0 = std::time::Instant::now();
-    state.metrics.placement_requests_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .placement_requests_total
+        .fetch_add(1, Ordering::Relaxed);
 
     let mut conn = state
         .redis
@@ -320,8 +361,7 @@ async fn placement(
         .await
         .context("redis games get")?;
     let game_raw = game_raw.ok_or_else(|| PlacementError::GameNotFound(game_id.clone()))?;
-    let game: GameRecord = serde_json::from_str(&game_raw)
-        .context("games:* json parse")?;
+    let game: GameRecord = serde_json::from_str(&game_raw).context("games:* json parse")?;
     timings.insert("gameLookupMs".to_string(), t0.elapsed().as_millis());
 
     // 2. Bundle record
@@ -330,9 +370,9 @@ async fn placement(
         .get(format!("bundles:{}", game.bundle_name))
         .await
         .context("redis bundles get")?;
-    let bundle_raw = bundle_raw.ok_or_else(|| PlacementError::BundleNotFound(game.bundle_name.clone()))?;
-    let bundle: BundleRecord = serde_json::from_str(&bundle_raw)
-        .context("bundles:* json parse")?;
+    let bundle_raw =
+        bundle_raw.ok_or_else(|| PlacementError::BundleNotFound(game.bundle_name.clone()))?;
+    let bundle: BundleRecord = serde_json::from_str(&bundle_raw).context("bundles:* json parse")?;
     timings.insert("bundleLookupMs".to_string(), t1.elapsed().as_millis());
 
     // 3. SCAN shards:*
@@ -342,6 +382,8 @@ async fn placement(
 
     // 4. Filter — README guarantee #16
     let required = bundle.manifest.runtime_contract_required;
+    Span::current().record("bundle_name", tracing::field::display(&game.bundle_name));
+    Span::current().record("runtime_contract", required);
     let now_ms = now_ms();
     let eligible: Vec<&ShardRow> = shards
         .iter()
@@ -354,15 +396,25 @@ async fn placement(
         .collect();
 
     if eligible.is_empty() {
-        let any_supports = shards
-            .iter()
-            .any(|s| s.runtime_contracts_supported[0] <= required && required <= s.runtime_contracts_supported[1]);
+        let any_supports = shards.iter().any(|s| {
+            s.runtime_contracts_supported[0] <= required
+                && required <= s.runtime_contracts_supported[1]
+        });
         if !any_supports && !shards.is_empty() {
-            state.metrics.placement_rejected_total.fetch_add(1, Ordering::Relaxed);
-            state.metrics.placement_contract_rejected_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .placement_rejected_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .placement_contract_rejected_total
+                .fetch_add(1, Ordering::Relaxed);
             return Err(PlacementError::ContractOutOfRange { required });
         }
-        state.metrics.placement_rejected_total.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .placement_rejected_total
+            .fetch_add(1, Ordering::Relaxed);
         return Err(PlacementError::NoEligibleShards {
             required,
             seen: shards.len(),
@@ -377,7 +429,8 @@ async fn placement(
         let active_games_score = (s.active_games as f64 / target_games_per_shard).clamp(0.0, 2.0);
         let cpu = (s.cpu_pct / 100.0).clamp(0.0, 1.0);
         let wake_rate = (s.recent_wake_rate as f64 / 50.0).clamp(0.0, 2.0);
-        let score = effective_load * 0.45 + active_games_score * 0.35 + cpu * 0.15 + wake_rate * 0.05;
+        let score =
+            effective_load * 0.45 + active_games_score * 0.35 + cpu * 0.15 + wake_rate * 0.05;
         match &best {
             None => best = Some((score, s)),
             Some((b, _)) if score < *b => best = Some((score, s)),
@@ -388,14 +441,15 @@ async fn placement(
 
     // 6. Sign JWT
     let t6 = std::time::Instant::now();
-    let run_id = format!(
-        "run_{}_{}",
-        now_ms,
-        uuid::Uuid::new_v4().simple()
-    );
+    let run_id = format!("run_{}_{}", now_ms, uuid::Uuid::new_v4().simple());
     let trace_id = trace_id_from_headers(&headers)
         .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
     let user_id = q.user_id.unwrap_or_else(|| "anon".to_string());
+    let span = Span::current();
+    span.record("trace_id", tracing::field::display(&trace_id));
+    span.record("run_id", tracing::field::display(&run_id));
+    span.record("user_id", tracing::field::display(&user_id));
+    span.record("shard_id", tracing::field::display(&picked.shard_id));
     let claims = PlacementClaims {
         game_id: game_id.clone(),
         shard_id: picked.shard_id.clone(),
@@ -418,12 +472,15 @@ async fn placement(
     timings.insert("jwtSignMs".to_string(), t6.elapsed().as_millis());
 
     // 7. webSocketUrl
-    let admin_token = env::var(&picked.rivet.admin_token_hint)
-        .unwrap_or_else(|_| "dev".to_string());
+    let admin_token =
+        env::var(&picked.rivet.admin_token_hint).unwrap_or_else(|_| "dev".to_string());
     let ws_url = build_ws_url(picked, &game_id, &token, &admin_token, &user_id);
 
     timings.insert("totalMs".to_string(), t0.elapsed().as_millis());
-    state.metrics.placement_accepted_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .placement_accepted_total
+        .fetch_add(1, Ordering::Relaxed);
 
     Ok(Json(PlacementResponse {
         game_id,
@@ -463,9 +520,19 @@ fn trace_id_from_headers(headers: &HeaderMap) -> Option<String> {
     Some(trace_id.to_ascii_lowercase())
 }
 
-async fn fetch_shards(
-    conn: &mut redis::aio::MultiplexedConnection,
-) -> Result<Vec<ShardRow>> {
+struct HeaderExtractor<'a>(&'a HeaderMap);
+
+impl Extractor for HeaderExtractor<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|value| value.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|name| name.as_str()).collect()
+    }
+}
+
+async fn fetch_shards(conn: &mut redis::aio::MultiplexedConnection) -> Result<Vec<ShardRow>> {
     // SCAN cursor over shards:*
     let mut cursor: u64 = 0;
     let mut keys: Vec<String> = Vec::new();
@@ -507,7 +574,10 @@ fn build_ws_url(
     admin_token: &str,
     user_id: &str,
 ) -> String {
-    let base = shard.url.replacen("http://", "ws://", 1).replacen("https://", "wss://", 1);
+    let base = shard
+        .url
+        .replacen("http://", "ws://", 1)
+        .replacen("https://", "wss://", 1);
     let path = format!("/gateway/{}", url_encode(&shard.rivet.actor_name));
     let qs = [
         ("rvt-namespace", shard.rivet.namespace.as_str()),
@@ -552,10 +622,7 @@ fn now_ms() -> u64 {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")))
-        .init();
+    let tracer_provider = init_tracing()?;
 
     let cfg = Arc::new(Config::from_env()?);
     info!(bind = %cfg.bind, redis = %cfg.redis_url, "placement-router boot");
@@ -566,7 +633,10 @@ async fn main() -> Result<()> {
         .get_multiplexed_async_connection()
         .await
         .context("redis connect probe")?;
-    let pong: String = redis::cmd("PING").query_async(&mut probe).await.context("redis ping")?;
+    let pong: String = redis::cmd("PING")
+        .query_async(&mut probe)
+        .await
+        .context("redis ping")?;
     info!(pong = %pong, "redis ok");
 
     let state = AppState {
@@ -580,7 +650,9 @@ async fn main() -> Result<()> {
         .route("/games/:game_id/placement", get(placement))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(cfg.bind).await.context("bind")?;
+    let listener = tokio::net::TcpListener::bind(cfg.bind)
+        .await
+        .context("bind")?;
     info!(addr = %cfg.bind, "listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -589,6 +661,91 @@ async fn main() -> Result<()> {
         .await
         .context("serve")?;
 
+    if let Some(provider) = tracer_provider {
+        if let Err(err) = provider.shutdown() {
+            warn!(error = ?err, "failed to shut down OpenTelemetry tracer provider");
+        }
+    }
+
     let _ = tokio::time::sleep(Duration::from_millis(50)).await;
     Ok(())
+}
+
+fn init_tracing() -> Result<Option<SdkTracerProvider>> {
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let fmt_layer = tracing_subscriber::fmt::layer();
+
+    if otel_disabled() {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .init();
+        return Ok(None);
+    }
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    let endpoint = env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        .or_else(|_| env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        .or_else(|_| env::var("PAX_OTEL_EXPORTER_OTLP_ENDPOINT"))
+        .unwrap_or_else(|_| "http://127.0.0.1:4317".to_string());
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint)
+        .build()
+        .context("build OTLP span exporter")?;
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_resource(router_resource())
+        .with_batch_exporter(exporter)
+        .build();
+    let tracer = tracer_provider.tracer("pax-placement-router");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    global::set_tracer_provider(tracer_provider.clone());
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .with(otel_layer)
+        .init();
+    Ok(Some(tracer_provider))
+}
+
+fn otel_disabled() -> bool {
+    env::var("PAX_OBSERVABILITY").is_ok_and(|value| value == "off")
+        || env::var("OTEL_SDK_DISABLED").is_ok_and(|value| value == "true")
+        || env::var("OTEL_TRACES_EXPORTER").is_ok_and(|value| value == "none")
+}
+
+fn router_resource() -> Resource {
+    let mut attrs = vec![
+        KeyValue::new("service.namespace", "pax-backend"),
+        KeyValue::new(
+            "deployment.environment.name",
+            env::var("PAX_ENVIRONMENT")
+                .or_else(|_| env::var("RUST_ENV"))
+                .unwrap_or_else(|_| "development".to_string()),
+        ),
+        KeyValue::new("pax.zone", "orchestration"),
+        KeyValue::new(
+            "pax.runtime_contract",
+            env::var("PAX_RUNTIME_CONTRACT").unwrap_or_else(|_| "1".to_string()),
+        ),
+    ];
+    push_env_attr(&mut attrs, "pax.run_id", "PAX_RUN_ID");
+    push_env_attr(&mut attrs, "fly.app", "FLY_APP_NAME");
+    push_env_attr(&mut attrs, "fly.machine_id", "FLY_MACHINE_ID");
+    push_env_attr(&mut attrs, "fly.region", "FLY_REGION");
+
+    Resource::builder()
+        .with_service_name("pax-placement-router")
+        .with_attributes(attrs)
+        .build()
+}
+
+fn push_env_attr(attrs: &mut Vec<KeyValue>, key: &'static str, env_key: &str) {
+    if let Ok(value) = env::var(env_key) {
+        if !value.is_empty() {
+            attrs.push(KeyValue::new(key, value));
+        }
+    }
 }

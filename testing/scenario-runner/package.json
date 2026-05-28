@@ -9,6 +9,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@pax-backend/oracles-lib": "workspace:*"
+    "@pax-backend/oracles-lib": "workspace:*",
+    "ws": "^8.21.0"
   }
 }

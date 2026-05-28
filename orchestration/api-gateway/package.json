@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@pax-backend/ipc-protocol": "workspace:*",
+    "@pax-backend/node-telemetry": "workspace:*",
     "@pax-backend/url-services": "workspace:*",
     "ioredis": "^5.4.1"
   }

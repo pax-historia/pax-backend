@@ -1,17 +1,27 @@
+import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Redis } from "ioredis";
+import WebSocket from "ws";
 
+import { startPaxNodeTelemetry } from "@pax-backend/node-telemetry";
 import {
   type ApiKindRegistration,
   DEFAULT_BLOB_BYTES_LIMIT,
   DEFAULT_STATE_BYTES_LIMIT,
   type BundleRecord,
   type GameRecord,
+  type HostEventRecord,
+  HOST_EVENT_QUEUE_TTL_SECONDS,
+  type ShardRegistration,
 } from "@pax-backend/ipc-protocol";
+
+startPaxNodeTelemetry({ serviceName: "pax-control-plane", paxZone: "orchestration" });
 
 import {
   apiWireRecordsForGame,
@@ -42,6 +52,12 @@ const ROLLBACK_BACKUP_RETENTION_MS = parsePositiveInteger(
   process.env["PAX_ROLLBACK_BACKUP_RETENTION_MS"] ?? "604800000",
   604_800_000,
 );
+const TIGRIS_BUCKET =
+  process.env["BUCKET_NAME"] ?? process.env["PAX_TIGRIS_BUCKET"] ?? "";
+const TIGRIS_REGION = process.env["AWS_REGION"] ?? "auto";
+const TIGRIS_ENDPOINT = process.env["AWS_ENDPOINT_URL_S3"];
+const LOCAL_TIGRIS_DIR =
+  process.env["PAX_LOCAL_TIGRIS_DIR"] ?? join(REPO_ROOT, "var", "tigris-local");
 const CONTROL_PLANE_SHARD_ID = "control-plane";
 const nextControlPaxSeqByPath = new Map<string, number>();
 
@@ -50,6 +66,7 @@ export interface ControlPlaneConfig {
   readonly bindPort: number;
   readonly baseUrl: string;
   readonly redisUrl: string;
+  readonly routerUrl: string;
   readonly historyPath: string;
   readonly apiWireRecordsPath: string;
 }
@@ -57,6 +74,123 @@ export interface ControlPlaneConfig {
 interface ControlPlaneMetrics {
   requestsTotal: number;
   errorsTotal: number;
+}
+
+interface BundleObjectStore {
+  put(key: string, body: string, contentType: string): Promise<void>;
+  get(key: string): Promise<string | undefined>;
+}
+
+class S3BundleObjectStore implements BundleObjectStore {
+  private readonly client: S3Client;
+
+  constructor(
+    private readonly bucket: string,
+    region: string,
+    endpoint: string | undefined,
+  ) {
+    this.client = new S3Client({
+      region,
+      endpoint,
+      forcePathStyle: endpoint !== undefined,
+    });
+  }
+
+  async put(key: string, body: string, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  async get(key: string): Promise<string | undefined> {
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!result.Body) return "";
+      return responseBodyToString(result.Body);
+    } catch (err) {
+      if (isObjectNotFound(err)) return undefined;
+      throw err;
+    }
+  }
+}
+
+class LocalBundleObjectStore implements BundleObjectStore {
+  private readonly root: string;
+
+  constructor(root: string) {
+    this.root = resolve(root);
+  }
+
+  async put(key: string, body: string): Promise<void> {
+    const path = localObjectPath(this.root, key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body, "utf8");
+  }
+
+  async get(key: string): Promise<string | undefined> {
+    try {
+      return await readFile(localObjectPath(this.root, key), "utf8");
+    } catch (err) {
+      if (isErrnoException(err) && err.code === "ENOENT") return undefined;
+      throw err;
+    }
+  }
+}
+
+const bundleObjectStore: BundleObjectStore =
+  TIGRIS_BUCKET.length > 0
+    ? new S3BundleObjectStore(TIGRIS_BUCKET, TIGRIS_REGION, TIGRIS_ENDPOINT)
+    : new LocalBundleObjectStore(LOCAL_TIGRIS_DIR);
+
+async function responseBodyToString(body: unknown): Promise<string> {
+  if (body && typeof body === "object" && "transformToString" in body) {
+    return (body as { transformToString: () => Promise<string> }).transformToString();
+  }
+  if (body instanceof Uint8Array) return Buffer.from(body).toString("utf8");
+  if (typeof body === "string") return body;
+  if (body && typeof body === "object" && Symbol.asyncIterator in body) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as AsyncIterable<Uint8Array | string>) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  }
+  throw new Error("Tigris object body is not readable");
+}
+
+function isObjectNotFound(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const candidate = err as { readonly name?: unknown; readonly $metadata?: unknown };
+  const metadata = candidate.$metadata;
+  const statusCode =
+    metadata && typeof metadata === "object"
+      ? (metadata as { readonly httpStatusCode?: unknown }).httpStatusCode
+      : undefined;
+  return candidate.name === "NoSuchKey" || statusCode === 404;
+}
+
+function localObjectPath(root: string, key: string): string {
+  const resolvedRoot = resolve(root);
+  const path = resolve(resolvedRoot, ...key.split("/").filter((part) => part.length > 0));
+  if (path !== resolvedRoot && !path.startsWith(`${resolvedRoot}${sep}`)) {
+    throw new Error(`object key escapes local object store root: ${key}`);
+  }
+  return path;
+}
+
+function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
+}
+
+function sha256String(source: string): string {
+  return `sha256:${createHash("sha256").update(source).digest("hex")}`;
 }
 
 export interface ControlPlaneServer {
@@ -72,6 +206,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ControlPlaneConfig {
     bindPort: bind.port,
     baseUrl: env["PAX_CONTROL_BASE_URL"] ?? `http://${bind.host}:${bind.port}`,
     redisUrl: env["REDIS_URL"] ?? "redis://127.0.0.1:6379",
+    routerUrl: env["PAX_ROUTER_URL"] ?? "http://127.0.0.1:9080",
     historyPath: env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl"),
     apiWireRecordsPath:
       env["PAX_API_WIRE_RECORDS_PATH"] ?? join(REPO_ROOT, "var", "api-invoke-records.jsonl"),
@@ -177,12 +312,12 @@ async function handleRequest(
     }
 
     if (parts[0] === "admin" && parts[1] === "shards" && parts.length === 2) {
-      await handleShardsCollection(req, res, store);
+      await handleShardsCollection(req, res, store, config);
       return;
     }
 
     if (parts[0] === "admin" && parts[1] === "shards" && parts.length >= 3) {
-      await handleShardResource(req, res, store, parts);
+      await handleShardResource(req, res, store, config, parts);
       return;
     }
 
@@ -251,17 +386,65 @@ async function handleBundle(
   if (req.method !== "POST") {
     throw new HttpError(405, "methodNotAllowed", { method: req.method });
   }
+  assertBundleName(bundleName);
   const body = asRecord(await readJson(req), "bundle upload body");
   const manifest = assertBundleManifest(body["manifest"] ?? body);
+  const source = readString(body, "source");
+  const uploadedAt = new Date().toISOString();
+  const uploadedBy = req.headers["x-pax-uploaded-by"]?.toString() ?? "vercel-backend";
+  const tigrisPath = `bundles/${bundleName}/`;
+  const sourceObjectKey = `${tigrisPath}source.js`;
+  const manifestObjectKey = `${tigrisPath}manifest.json`;
+  const metadataObjectKey = `${tigrisPath}metadata.json`;
+  const contentSha256 = sha256String(source);
+  const sizeBytes = Buffer.byteLength(source, "utf8");
+  const existing = await store.getBundle(bundleName);
+  if (existing) throw new HttpError(409, "bundleAlreadyExists", { bundleName });
+  const metadata = {
+    bundleName,
+    uploadedAt,
+    uploadedBy,
+    tigrisPath,
+    sourceObjectKey,
+    manifestObjectKey,
+    metadataObjectKey,
+    contentSha256,
+    sizeBytes,
+  };
+  await bundleObjectStore.put(sourceObjectKey, source, "application/javascript; charset=utf-8");
+  await bundleObjectStore.put(
+    manifestObjectKey,
+    JSON.stringify(manifest, null, 2),
+    "application/json",
+  );
+  await bundleObjectStore.put(
+    metadataObjectKey,
+    JSON.stringify(metadata, null, 2),
+    "application/json",
+  );
+  const storedSource = await bundleObjectStore.get(sourceObjectKey);
+  if (storedSource === undefined || sha256String(storedSource) !== contentSha256) {
+    throw new HttpError(503, "bundleStorageVerificationFailed", {
+      bundleName,
+      sourceObjectKey,
+      contentSha256,
+    });
+  }
   const record: BundleRecord = {
     bundleName,
     manifest,
-    source: readOptionalString(body, "source"),
-    publishedAt: Date.now(),
+    uploadedAt,
+    uploadedBy,
+    tigrisPath,
+    sourceObjectKey,
+    manifestObjectKey,
+    metadataObjectKey,
+    contentSha256,
+    sizeBytes,
   };
   const created = await store.putBundleWriteOnce(record);
   if (!created) throw new HttpError(409, "bundleAlreadyExists", { bundleName });
-  writeJson(res, 201, { ok: true, bundle: record });
+  writeJson(res, 201, { ok: true, bundle: record, contentSha256, sizeBytes });
 }
 
 async function handleGamesCollection(
@@ -458,6 +641,11 @@ async function handleGameResource(
     return;
   }
 
+  if (parts.length === 4 && parts[3] === "host-event" && req.method === "POST") {
+    await handleHostEvent(req, res, store, config, gameId);
+    return;
+  }
+
   if (parts.length === 4 && parts[3] === "allowed-players" && req.method === "GET") {
     writeJson(res, 200, {
       ok: true,
@@ -513,46 +701,242 @@ async function handleGameResource(
   throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });
 }
 
+async function handleHostEvent(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  config: ControlPlaneConfig,
+  gameId: string,
+): Promise<void> {
+  await requireGame(store, gameId);
+  const body = asRecord(await readJson(req), "host-event body");
+  const eventType = readString(body, "eventType");
+  const payload = Object.prototype.hasOwnProperty.call(body, "payload")
+    ? body["payload"]
+    : null;
+  const wakeOnDelivery = body["wakeOnDelivery"] === true;
+  const activeGame = await store.getActiveGame(gameId);
+  const now = Date.now();
+  const record: HostEventRecord = {
+    eventId: randomUUID(),
+    gameId,
+    eventType,
+    payload,
+    wakeOnDelivery,
+    receivedAt: now,
+    deliveryAttempts: 0,
+    expiresAt: now + HOST_EVENT_QUEUE_TTL_SECONDS * 1000,
+  };
+  appendControlHistory(config, "onHostEvent.received", {
+    gameId,
+    eventId: record.eventId,
+    eventType,
+    payload,
+    wakeOnDelivery,
+    receivedAt: record.receivedAt,
+  });
+
+  if (!wakeOnDelivery && !activeGame) {
+    appendControlHistory(config, "onHostEvent.dropped", {
+      gameId,
+      eventId: record.eventId,
+      eventType,
+      wakeOnDelivery,
+      reason: "gameAsleep",
+    });
+    writeJson(res, 202, {
+      ok: true,
+      eventId: record.eventId,
+      status: "dropped",
+      wakeTriggered: false,
+    });
+    return;
+  }
+
+  await store.enqueueHostEvent(record, HOST_EVENT_QUEUE_TTL_SECONDS);
+  let wakeTriggered = false;
+  if (wakeOnDelivery && !activeGame) {
+    await triggerHostEventWake(config, gameId);
+    wakeTriggered = true;
+  }
+  writeJson(res, 202, {
+    ok: true,
+    eventId: record.eventId,
+    status: "queued",
+    wakeTriggered,
+  });
+}
+
+async function triggerHostEventWake(
+  config: ControlPlaneConfig,
+  gameId: string,
+): Promise<void> {
+  const placementUrl = new URL(
+    `/games/${encodeURIComponent(gameId)}/placement`,
+    config.routerUrl,
+  );
+  placementUrl.searchParams.set("userId", "__pax_host_event__");
+  const placementResponse = await fetch(placementUrl);
+  if (!placementResponse.ok) {
+    throw new HttpError(503, "hostEventWakePlacementFailed", {
+      gameId,
+      status: placementResponse.status,
+      body: await placementResponse.text(),
+    });
+  }
+  const placement = (await placementResponse.json()) as { readonly webSocketUrl?: unknown };
+  if (typeof placement.webSocketUrl !== "string") {
+    throw new HttpError(503, "hostEventWakePlacementFailed", {
+      gameId,
+      detail: "placement response missing webSocketUrl",
+    });
+  }
+  await openWakeWebSocket(placement.webSocketUrl, gameId);
+  appendControlHistory(config, "onHostEvent.wakeRequested", {
+    gameId,
+    placementUrl: placementUrl.toString(),
+  });
+}
+
+function openWakeWebSocket(webSocketUrl: string, gameId: string): Promise<void> {
+  return new Promise<void>((resolveWake, rejectWake) => {
+    const ws = new WebSocket(webSocketUrl, [...rivetProtocols(gameId)]);
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        ws.close();
+      } catch {
+        // Ignore close races; timeout already decides the result.
+      }
+      rejectWake(new Error("host-event wake websocket timed out"));
+    }, 5_000);
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try {
+        ws.close(1000, "host-event wake complete");
+      } catch {
+        // The shard may already have closed the synthetic connection.
+      }
+      resolveWake();
+    };
+    ws.once("open", finish);
+    ws.once("close", finish);
+    ws.once("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      rejectWake(err);
+    });
+  });
+}
+
+function rivetProtocols(gameId: string): readonly string[] {
+  return [
+    "rivet",
+    "rivet_encoding.json",
+    `rivet_conn_params.${encodeURIComponent(JSON.stringify({ name: gameId }))}`,
+  ];
+}
+
 async function handleShardsCollection(
   req: IncomingMessage,
   res: ServerResponse,
   store: ControlPlaneStore,
+  config: ControlPlaneConfig,
 ): Promise<void> {
   if (req.method !== "GET") {
     throw new HttpError(405, "methodNotAllowed", { method: req.method });
   }
-  writeJson(res, 200, { ok: true, shards: await store.listShards() });
+  const shards = await Promise.all(
+    (await store.listShards()).map(async (shard) => {
+      await maybeEmitDrainCompleted(config, store, shard);
+      return shardView(shard);
+    }),
+  );
+  writeJson(res, 200, { ok: true, shards });
 }
 
 async function handleShardResource(
   req: IncomingMessage,
   res: ServerResponse,
   store: ControlPlaneStore,
+  config: ControlPlaneConfig,
   parts: readonly string[],
 ): Promise<void> {
   const shardId = parts[2] ?? "";
   if (parts.length === 3 && req.method === "GET") {
     const shard = await store.getShard(shardId);
     if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
-    writeJson(res, 200, { ok: true, shard });
+    await maybeEmitDrainCompleted(config, store, shard);
+    writeJson(res, 200, { ok: true, shard: shardView(shard) });
     return;
   }
 
   if (parts.length === 4 && parts[3] === "drain" && req.method === "POST") {
     const shard = await store.setShardDrain(shardId, true);
     if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
-    writeJson(res, 200, { ok: true, draining: true, shard });
+    appendControlHistory(config, "shard.drain.started", {
+      shardId,
+      activeGames: shard.activeGames,
+    });
+    await maybeEmitDrainCompleted(config, store, shard);
+    writeJson(res, 202, { ok: true, draining: true, shard: shardView(shard) });
     return;
   }
 
   if (parts.length === 4 && parts[3] === "drain" && req.method === "DELETE") {
     const shard = await store.setShardDrain(shardId, false);
     if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
-    writeJson(res, 200, { ok: true, draining: false, shard });
+    writeJson(res, 200, { ok: true, draining: false, shard: shardView(shard) });
     return;
   }
 
   throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });
+}
+
+async function maybeEmitDrainCompleted(
+  config: ControlPlaneConfig,
+  store: ControlPlaneStore,
+  shard: ShardRegistrationLike,
+): Promise<void> {
+  const status = shardStatus(shard);
+  if (status !== "drained") return;
+  if (!(await store.markShardDrainCompletedOnce(shard.shardId))) return;
+  appendControlHistory(config, "shard.drain.completed", {
+    shardId: shard.shardId,
+    activeGames: shard.activeGames,
+  });
+}
+
+type ShardStatus = ShardRegistration["status"];
+type ShardRegistrationLike = Omit<ShardRegistration, "status"> & {
+  readonly status?: ShardStatus;
+};
+
+function shardStatus(shard: ShardRegistrationLike): ShardStatus {
+  if (
+    shard.status === "healthy" ||
+    shard.status === "draining" ||
+    shard.status === "drained" ||
+    shard.status === "unhealthy"
+  ) {
+    return shard.status;
+  }
+  if (!shard.healthy) return "unhealthy";
+  if (!shard.acceptingWakes) return shard.activeGames === 0 ? "drained" : "draining";
+  return "healthy";
+}
+
+function shardView(shard: ShardRegistrationLike): Record<string, unknown> {
+  return {
+    ...shard,
+    status: shardStatus(shard),
+    currentGameCount: shard.activeGames,
+  };
 }
 
 function handleHistory(
@@ -860,6 +1244,15 @@ function readString(record: Readonly<Record<string, unknown>>, field: string): s
   return value;
 }
 
+function assertBundleName(bundleName: string): void {
+  if (!/^[A-Za-z0-9._-]{1,256}$/.test(bundleName)) {
+    throw new HttpError(400, "badRequest", {
+      field: "bundleName",
+      expected: "1-256 characters: letters, numbers, dots, underscores, or hyphens",
+    });
+  }
+}
+
 function readOptionalString(
   record: Readonly<Record<string, unknown>>,
   field: string,
@@ -887,7 +1280,7 @@ function readOptionalStringArray(
   return value;
 }
 
-function readOptionalStoredValue(
+async function readOptionalStoredValue(
   record: Readonly<Record<string, unknown>>,
   field: "initialState" | "initialBlob",
   urlField: "initialStateUrl" | "initialBlobUrl",

@@ -25,12 +25,15 @@ export const ALLOWED_PLAYERS_KEY_PREFIX = "allowed_players:" as const;
 export const API_KIND_KEY_PREFIX = "api_kinds:" as const;
 export const STATE_KEY_PREFIX = "state:" as const;
 export const BLOB_KEY_PREFIX = "blob:" as const;
+export const HOST_EVENT_QUEUE_KEY_PREFIX = "host_events:" as const;
 
 export const SHARD_REGISTRY_TTL_SECONDS = 45 as const;
 export const ACTIVE_GAME_TTL_SECONDS = 3600 as const;
 export const PLACEMENT_RECENT_WAKES_TTL_SECONDS = 45 as const;
 export const DEFAULT_STATE_BYTES_LIMIT = 131072 as const;
-export const DEFAULT_BLOB_BYTES_LIMIT = 10485760 as const;
+export const DEFAULT_BLOB_BYTES_LIMIT = 104857600 as const;
+export const DEFAULT_BLOB_KEYS_LIMIT = 1024 as const;
+export const HOST_EVENT_QUEUE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // ----- IPC envelope ------------------------------------------------------
 
@@ -58,22 +61,30 @@ export type WakeReason =
   | "reconnect"
   | "cold-restart-after-crash"
   | "cold-restart-after-eviction"
-  | "cold-restart-after-shard-loss"
+  | "cold-restart-from-storage"
   | "upgrade";
+
+export type WakeErrorClass = "oom" | "crash" | "cpuTimeout" | "unknown";
 
 export interface OnWakePayload {
   readonly reason: WakeReason;
+  readonly errorClass?: WakeErrorClass;
   readonly runId: string;
   readonly bundleName: string;
   readonly bundleCompatTag: string;
   readonly blobCompatTag?: string;
   readonly state?: unknown;
-  readonly blob?: unknown;
 }
 
 export interface OnSleepPayload {
   readonly deadline: number;
-  readonly reason: "evicted" | "shutdown" | "upgrade" | "requestedBySleep";
+  readonly reason:
+    | "idle"
+    | "requestedBySleep"
+    | "evicted"
+    | "shardEvicted"
+    | "shutdown"
+    | "upgrade";
 }
 
 export interface OnPlayerConnectPayload {
@@ -107,6 +118,20 @@ export interface OnCapacityWarningPayload {
   readonly budget: string;
   readonly currentUsage: number;
   readonly limit: number;
+}
+
+export interface OnHostEventPayload {
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly payload: unknown;
+  readonly receivedAt: number;
+  readonly deliveryAttempts: number;
+}
+
+export interface HostEventRecord extends OnHostEventPayload {
+  readonly gameId: string;
+  readonly wakeOnDelivery: boolean;
+  readonly expiresAt: number;
 }
 
 // ----- External API channel + gateway envelope --------------------------
@@ -221,6 +246,7 @@ export type ComputeBudgetName =
   | "ws-messages-per-sec"
   | "state-bytes"
   | "blob-bytes"
+  | "blob-keys"
   | "api-invocations-per-min";
 
 export interface ComputeBudgetUsage {
@@ -241,7 +267,7 @@ export type StorageWriteResponse =
   | { readonly ok: true }
   | {
       readonly ok: false;
-      readonly error: "sizeExceeded" | "storageUnavailable";
+      readonly error: "sizeExceeded" | "keyCountExceeded" | "storageUnavailable";
       readonly detail?: unknown;
     };
 
@@ -263,6 +289,42 @@ export interface StorageFlushResponsePayload {
   readonly response: StorageWriteResponse;
 }
 
+export interface BlobPutIpcPayload {
+  readonly key: string;
+  readonly bytesBase64: string;
+}
+
+export interface BlobGetIpcPayload {
+  readonly key: string;
+}
+
+export interface BlobGetResponsePayload {
+  readonly found: boolean;
+  readonly bytesBase64?: string;
+  readonly bytes: number;
+}
+
+export interface BlobDeleteIpcPayload {
+  readonly key: string;
+}
+
+export interface BlobDeleteResponsePayload {
+  readonly ok: true;
+}
+
+export interface BlobListIpcPayload {
+  readonly prefix?: string;
+}
+
+export interface BlobListItem {
+  readonly key: string;
+  readonly size: number;
+}
+
+export interface BlobListResponsePayload {
+  readonly items: readonly BlobListItem[];
+}
+
 // ----- Discriminated union: parent → child --------------------------------
 
 export type ParentToChildEnvelope =
@@ -274,15 +336,18 @@ export type ParentToChildEnvelope =
   | IpcEnvelope<"state.read.response", StorageReadResponsePayload>
   | IpcEnvelope<"state.write.response", StorageWriteResponsePayload>
   | IpcEnvelope<"state.flush.response", StorageFlushResponsePayload>
-  | IpcEnvelope<"blob.read.response", StorageReadResponsePayload>
-  | IpcEnvelope<"blob.write.response", StorageWriteResponsePayload>
+  | IpcEnvelope<"blob.put.response", StorageWriteResponsePayload>
+  | IpcEnvelope<"blob.get.response", BlobGetResponsePayload>
+  | IpcEnvelope<"blob.delete.response", BlobDeleteResponsePayload>
+  | IpcEnvelope<"blob.list.response", BlobListResponsePayload>
   | IpcEnvelope<"ws.send.response", WsSendResponsePayload>
   | IpcEnvelope<"onWake", OnWakePayload>
   | IpcEnvelope<"onSleep", OnSleepPayload>
   | IpcEnvelope<"onPlayerConnect", OnPlayerConnectPayload>
   | IpcEnvelope<"onPlayerDisconnect", OnPlayerDisconnectPayload>
   | IpcEnvelope<"onPlayerMessage", OnPlayerMessagePayload>
-  | IpcEnvelope<"onCapacityWarning", OnCapacityWarningPayload>;
+  | IpcEnvelope<"onCapacityWarning", OnCapacityWarningPayload>
+  | IpcEnvelope<"onHostEvent", OnHostEventPayload>;
 
 export interface BootstrapPayload {
   readonly bundleName: string;
@@ -378,8 +443,10 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"state.read", Record<string, never>>
   | IpcEnvelope<"state.write", StorageWriteIpcPayload>
   | IpcEnvelope<"state.flush", Record<string, never>>
-  | IpcEnvelope<"blob.read", Record<string, never>>
-  | IpcEnvelope<"blob.write", StorageWriteIpcPayload>
+  | IpcEnvelope<"blob.put", BlobPutIpcPayload>
+  | IpcEnvelope<"blob.get", BlobGetIpcPayload>
+  | IpcEnvelope<"blob.delete", BlobDeleteIpcPayload>
+  | IpcEnvelope<"blob.list", BlobListIpcPayload>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"ws.send.rejected", WsSendRejectedPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
@@ -401,8 +468,10 @@ export const PARENT_TO_CHILD = Object.freeze({
   stateReadResponse: "state.read.response",
   stateWriteResponse: "state.write.response",
   stateFlushResponse: "state.flush.response",
-  blobReadResponse: "blob.read.response",
-  blobWriteResponse: "blob.write.response",
+  blobPutResponse: "blob.put.response",
+  blobGetResponse: "blob.get.response",
+  blobDeleteResponse: "blob.delete.response",
+  blobListResponse: "blob.list.response",
   wsSendResponse: "ws.send.response",
   onWake: "onWake",
   onSleep: "onSleep",
@@ -410,6 +479,7 @@ export const PARENT_TO_CHILD = Object.freeze({
   onPlayerDisconnect: "onPlayerDisconnect",
   onPlayerMessage: "onPlayerMessage",
   onCapacityWarning: "onCapacityWarning",
+  onHostEvent: "onHostEvent",
 } as const);
 
 export const CHILD_TO_PARENT = Object.freeze({
@@ -421,8 +491,10 @@ export const CHILD_TO_PARENT = Object.freeze({
   stateRead: "state.read",
   stateWrite: "state.write",
   stateFlush: "state.flush",
-  blobRead: "blob.read",
-  blobWrite: "blob.write",
+  blobPut: "blob.put",
+  blobGet: "blob.get",
+  blobDelete: "blob.delete",
+  blobList: "blob.list",
   wsSend: "ws.send",
   wsSendRejected: "ws.send.rejected",
   logEmit: "log.emit",
@@ -444,6 +516,7 @@ export interface ShardRivetInfo {
 export interface ShardRegistration {
   readonly shardId: string;
   readonly url: string;
+  readonly status: "healthy" | "draining" | "drained" | "unhealthy";
   readonly healthy: boolean;
   readonly acceptingWakes: boolean;
   readonly runtimeContractsSupported: readonly [number, number];
@@ -472,8 +545,17 @@ export interface BundleManifest {
 export interface BundleRecord {
   readonly bundleName: string;
   readonly manifest: BundleManifest;
+  readonly uploadedAt?: string;
+  readonly uploadedBy?: string;
+  readonly tigrisPath?: string;
+  readonly sourceObjectKey?: string;
+  readonly manifestObjectKey?: string;
+  readonly metadataObjectKey?: string;
+  readonly contentSha256?: string;
+  readonly sizeBytes?: number;
+  /** Legacy local smoke path; new control-plane uploads store source in Tigris. */
   readonly source?: string;
-  readonly publishedAt: number;
+  readonly publishedAt?: number;
 }
 
 export interface GameRecord {

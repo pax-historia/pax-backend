@@ -8,10 +8,10 @@ Includes the `BundleManifest` type and a local pre-publish validator that
 mirrors the admin endpoint's upload-time check
 (`compatTagProduced ∈ compatTagsAccepted`).
 
-Current source pass exposes the typed creator surface for lifecycle hooks,
-websocket send with typed quota/serialization responses, logs, metrics, URL-service calls,
-players, compute budgets, state/blob storage, and deterministic `c.rng()` /
-`c.now()` helpers.
+Current source pass exposes the typed creator surface for lifecycle hooks
+including `onHostEvent`, websocket send with typed quota/serialization
+responses, logs, metrics, URL-service calls, players, compute budgets,
+state/blob storage, and deterministic `c.rng()` / `c.now()` helpers.
 
 Storage surface, per [plan](../../README.md) §"Storage tiers":
 
@@ -22,7 +22,5 @@ Storage surface, per [plan](../../README.md) §"Storage tiers":
   `put(key, bytes)` / `get(key)` / `delete(key)` / `list(prefix?)`.
   Async, durable on resolve. ≤ 1024 keys and ≤ 100 MB per game.
 
-Current source pass still exposes the older single-object `c.blob.read` /
-`c.blob.write` shape; the keyed `put/get/delete/list` surface is the
-target the SDK migrates to alongside the parent-actor's namespace
-dispatch.
+The child IPC carries blob bytes as base64 internally because Node IPC uses
+JSON serialization; bundle authors see `Uint8Array`.

@@ -29,7 +29,8 @@ const DEFAULT_COMPUTE_BUDGET: ComputeBudgetSnapshot = {
   "bandwidth-bytes-per-sec": { currentUsage: 0, limit: 65_536, windowMs: 1_000 },
   "ws-messages-per-sec": { currentUsage: 0, limit: 50, windowMs: 1_000 },
   "state-bytes": { currentUsage: 0, limit: 131_072 },
-  "blob-bytes": { currentUsage: 0, limit: 10_485_760 },
+  "blob-bytes": { currentUsage: 0, limit: 104_857_600 },
+  "blob-keys": { currentUsage: 0, limit: 1_024 },
   "api-invocations-per-min": { currentUsage: 0, limit: 60, windowMs: 60_000 },
 };
 
@@ -38,7 +39,9 @@ export function createRuntimeSdkHarness(
   options: HarnessOptions = {},
 ): RuntimeSdkHarness {
   let stateValue = options.state;
-  let blobValue = options.blob;
+  const blobValues = new Map<string, Uint8Array>(
+    Object.entries(options.blobs ?? {}).map(([key, value]) => [key, copyBytes(value)]),
+  );
   let nowMs = options.nowStartMs ?? 1_700_000_000_000;
   let nextSeq = 0;
   let currentTriggeringSessionId: string | null = null;
@@ -118,11 +121,23 @@ export function createRuntimeSdkHarness(
       flush: async () => ok(),
     },
     blob: {
-      read: async () => blobValue,
-      write: async (value) => {
-        blobValue = value;
+      put: async (key, bytes) => {
+        blobValues.set(key, copyBytes(bytes));
         return ok();
       },
+      get: async (key) => {
+        const value = blobValues.get(key);
+        return value ? copyBytes(value) : null;
+      },
+      delete: async (key) => {
+        blobValues.delete(key);
+        return { ok: true };
+      },
+      list: async (prefix = "") =>
+        Array.from(blobValues.entries())
+          .filter(([key]) => key.startsWith(prefix))
+          .map(([key, bytes]) => ({ key, size: bytes.byteLength }))
+          .sort((a, b) => a.key.localeCompare(b.key)),
     },
   };
 
@@ -135,7 +150,9 @@ export function createRuntimeSdkHarness(
     allowedPlayers: () => Array.from(allowed).sort(),
     connectedSessions: () => Array.from(sessions.values()),
     state: () => stateValue,
-    blob: () => blobValue,
+    blobs: () => Object.fromEntries(
+      Array.from(blobValues.entries()).map(([key, bytes]) => [key, copyBytes(bytes)]),
+    ),
     connect: async (session) => {
       allowed.add(session.playerId);
       sessions.set(session.sessionId, session);
@@ -165,7 +182,6 @@ export function createRuntimeSdkHarness(
         bundleCompatTag:
           input.bundleCompatTag ?? input.bundle.manifest.compatTagProduced,
         state: stateValue,
-        blob: blobValue,
         ...payload,
       } satisfies OnWakePayload);
     },
@@ -214,6 +230,10 @@ function serializationFailed(field: string, message: string): JsonStringifyResul
 
 function ok(): StorageWriteResponse {
   return { ok: true };
+}
+
+function copyBytes(bytes: Uint8Array): Uint8Array {
+  return new Uint8Array(bytes);
 }
 
 function fixtureMap(

@@ -33,6 +33,7 @@ Parent → child. Bundle receives `onWake`.
 | `bundleCompatTag` | |
 | `blobCompatTag?` | undefined on cold-start |
 | `wakeReason` | one of `cold-start`, `reconnect`, `cold-restart-after-crash`, `cold-restart-after-eviction`, `cold-restart-from-storage`, `upgrade` |
+| `errorClass?` | present on `cold-restart-after-crash` |
 | `runId` | |
 
 ### `onWake.succeeded`
@@ -62,18 +63,71 @@ Parent → child. Bundle receives `onSleep`.
 | Field | Notes |
 |---|---|
 | `gameId` | |
-| `sleepReason` | `'idle' \| 'requestedBySleep' \| 'evicted' \| 'shardEvicted' \| 'shutdown' \| 'upgrade'` |
-| `deadline` | ISO timestamp |
+| `reason` | `'idle' \| 'requestedBySleep' \| 'evicted' \| 'shardEvicted' \| 'shutdown' \| 'upgrade'` |
+| `deadline` | ms since epoch |
 | `budgetMs` | grace window from now |
 
-### `onSleep.completed`
+### `onSleep.deadline`
 
-Bundle's `onSleep` returned (or hit the deadline).
+Bundle did not report `lifecycle.sleepComplete` before the deadline.
 
 | Field | Notes |
 |---|---|
 | `gameId` | |
-| `pastDeadline` | bool |
+| `reason` | sleep reason |
+| `deadline` | ms since epoch |
+
+### `lifecycle.sleepComplete`
+
+Bundle signaled it is done with `onSleep`; the parent then flushed state
+and released the active game.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `reason` | sleep reason |
+| `deadline` | ms since epoch |
+| `bundleName` | |
+| `blobCompatTag` | after the planned-transition flush |
+
+### `lifecycle.sleepGrace.started`
+
+The last player disconnected and the parent started the idle grace timer.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `delayMs` | configured grace duration |
+| `deadline` | ms since epoch |
+
+### `lifecycle.sleepGrace.cancelled`
+
+A reconnect, explicit sleep, or release cancelled the pending idle grace.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `cause` | cancellation source |
+
+### `lifecycle.sleepGrace.expired`
+
+The idle grace expired with no connected sessions; the parent will send
+`onSleep` with `reason: 'idle'`.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `deadline` | ms since epoch |
+
+### `game.released`
+
+The parent released the game from the active-game directory after a
+planned sleep transition.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `reason` | sleep reason |
 
 ### `actor.start`
 
@@ -151,14 +205,6 @@ A bundle handler threw or timed out.
 | `code` | `'handlerTimeout' \| 'handlerException'` |
 | `timeoutMs?` | for `handlerTimeout` |
 | `message?` | for `handlerException` |
-
-### `lifecycle.sleepComplete`
-
-Bundle signaled it's done with `onSleep` flushing.
-
-| Field | Notes |
-|---|---|
-| `gameId` | |
 
 ### `onCapacityWarning.sent`
 

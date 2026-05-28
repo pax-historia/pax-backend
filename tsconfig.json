@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./shared/ipc-protocol" },
+    { "path": "./shared/node-telemetry" },
     { "path": "./sdk/runtime-sdk" },
     { "path": "./sdk/runtime-sdk-test-harness" },
     { "path": "./sdk/bundle-tools" },
