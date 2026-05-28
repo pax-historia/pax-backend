@@ -8,6 +8,7 @@ export interface PlayerMessageInput {
   readonly playerId: string;
   readonly sessionId: string;
   readonly seq: number;
+  readonly jwtClaims: Readonly<Record<string, unknown>>;
   readonly body: Readonly<Record<string, unknown>>;
 }
 

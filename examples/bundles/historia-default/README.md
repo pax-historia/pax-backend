@@ -3,9 +3,9 @@
 > **Status: scaffolded.** The package, manifest, TypeScript config, runtime
 > ambient declarations, minimal lifecycle entrypoint, and core
 > state/blob/migration adapter are present and build to `dist/bundle.js`.
-> The first pass of the module/workflow runtime is present; stateful routing,
-> policy gates, scenarios, and bundle oracles land in follow-up Phase 3 tasks.
-> The plan is in
+> The first pass of the module/workflow runtime, stateful routing, hydration,
+> and policy gates are present; scenarios and bundle oracles land in follow-up
+> Phase 3 tasks. The plan is in
 > [`docs-next/proofs/historia-default.md`](../../../docs-next/proofs/historia-default.md).
 
 `historia-default` is the reference creator bundle for the historia game

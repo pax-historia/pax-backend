@@ -47,3 +47,9 @@ This still leaves policy tightening and richer scenario behavior for the next ta
 ## 2026-05-28 09:02 PDT
 
 Closed the module/workflow task by adding the workflow task tracker and wiring it into the inline generator runner. The module port is still proof-local rather than a verbatim Pax-historia source move, because this repo does not contain the Pax-historia module source, but the Phase 3-required bundle surface is now present: seven module folders, supporting modules, default workflow strings, workflow engine, executors, and task tracking. Policy and hydration hardening moves to task 5. Verification: `pnpm --filter @pax-backend/bundle-historia-default check-types` and `pnpm --filter @pax-backend/bundle-historia-default build` passed.
+
+## 2026-05-28 09:05 PDT
+
+Finished routing/hydration/policy wiring. Connect now sends a richer hydration snapshot with player state, entity options, pending working events, and workflow task state. The bundle stores session JWT claims from `onPlayerConnect` and uses them for admin/cheat policy checks. Chat, advisor, actions, and jump-forward now require the player to be a participant in the bundle's participation cache before issuing AI URL-service calls; refusals broadcast `historia.policyRefused` and append `policy.refused` working events. Host-event routing persists participation changes and moderation ejects through the same state/blob path as player-message handlers.
+
+Verification: `pnpm --filter @pax-backend/bundle-historia-default check-types` and `pnpm --filter @pax-backend/bundle-historia-default build` passed.

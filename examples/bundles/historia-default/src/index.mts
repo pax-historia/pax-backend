@@ -2,7 +2,7 @@ import { defineBundle, type SubstrateContext } from "@pax-backend/runtime-sdk";
 
 import { manifest } from "../manifest.js";
 import { createGameContext, type HistoriaGameContext } from "./context.mjs";
-import { workflowTaskTracker } from "./ai/task-tracker.mjs";
+import { buildHydrationSnapshot } from "./hydration.mjs";
 import {
   commitSnapshot,
   loadHistoriaState,
@@ -16,6 +16,7 @@ import { dispatchPlayerMessage } from "./routing/websocket.mjs";
 interface SessionSummary {
   readonly playerId: string;
   readonly connectedAt: number;
+  readonly jwtClaims: Readonly<Record<string, unknown>>;
 }
 
 const sessions = new Map<string, SessionSummary>();
@@ -48,6 +49,7 @@ export default defineBundle({
     sessions.set(payload.sessionId, {
       playerId: payload.playerId,
       connectedAt: payload.connectedAt,
+      jwtClaims: payload.jwtClaims,
     });
 
     c.metrics.emit({
@@ -68,7 +70,7 @@ export default defineBundle({
       sessionId: payload.sessionId,
       compatTag: manifest.compatTagProduced,
       connectedPlayers: connectedPlayerCount(),
-      snapshot: hydrationSummary(),
+      snapshot: buildHydrationSnapshot(requireGameContext(c), payload.playerId),
     });
   },
 
@@ -81,6 +83,7 @@ export default defineBundle({
       playerId: payload.playerId,
       sessionId: payload.sessionId,
       seq: payload.seq,
+      jwtClaims: sessions.get(payload.sessionId)?.jwtClaims ?? {},
       body,
     });
     if (handled) {
@@ -192,19 +195,6 @@ function requireGameContext(c: SubstrateContext): HistoriaGameContext {
 function requireLoadedState(): LoadedHistoriaState {
   if (!loadedState) throw new Error("historia-default missing loaded state");
   return loadedState;
-}
-
-function hydrationSummary(): Readonly<Record<string, unknown>> {
-  if (!loadedState) return { status: "not-loaded" };
-    return {
-    status: loadedState.blob.game.status,
-    title: loadedState.blob.game.title ?? null,
-    currentRound: loadedState.blob.game.currentRound,
-    players: Object.keys(loadedState.blob.game.players).length,
-    pendingEvents: loadedState.workingState.currentRoundDeltas.length,
-    inFlightWorkflows: workflowTaskTracker.snapshot().length,
-    migratedFrom: loadedState.migratedFrom ?? null,
-  };
 }
 
 function readMessageType(body: unknown): string {

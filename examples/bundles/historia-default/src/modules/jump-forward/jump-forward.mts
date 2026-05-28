@@ -1,5 +1,6 @@
 import { executeWorkflowCommand } from "../../ai/executors.mjs";
 import { runWorkflow } from "../../ai/engine.mjs";
+import { isParticipant } from "../player-management.mjs";
 import { nextRound } from "../rounds.mjs";
 import type { PlayerMessageHandler } from "../types.mjs";
 import { readBodyType, readString } from "../util.mjs";
@@ -7,6 +8,20 @@ import { DEFAULT_JUMP_FORWARD_WORKFLOW } from "./default-workflow.mjs";
 
 export const handleJumpForwardMessage: PlayerMessageHandler = async (input) => {
   if (readBodyType(input.body) !== "jumpForward.request") return false;
+  if (!isParticipant(input.ctx, input.playerId)) {
+    input.ctx.appendWorkingEvent("policy.refused", {
+      playerId: input.playerId,
+      seq: input.seq,
+      reason: "playerIsSpectator",
+      surface: "jumpForward",
+    });
+    await input.c.ws.send(input.playerId, {
+      type: "historia.policyRefused",
+      reason: "playerIsSpectator",
+      seq: input.seq,
+    });
+    return true;
+  }
   const workflow = input.ctx.loaded.blob.workflows?.jumpForward;
   const result = await runWorkflow({
     code: workflow?.code ?? DEFAULT_JUMP_FORWARD_WORKFLOW,
