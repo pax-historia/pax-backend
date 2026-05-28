@@ -22,6 +22,8 @@
     { "path": "./examples/bundles/hello-state-rw" },
     { "path": "./examples/bundles/hello-ws-echo" },
     { "path": "./examples/bundles/hostile-ws-target" },
+    { "path": "./examples/bundles/race-edge-probe-v1" },
+    { "path": "./examples/bundles/race-edge-probe-v2" },
     { "path": "./examples/url-services/billing-mock.v1" }
   ]
 }

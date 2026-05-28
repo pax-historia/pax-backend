@@ -15,6 +15,7 @@ zone.
 | `hello-multifeature/` | WS, logs, metrics, players, compute budget, state, blob, deterministic time/RNG, lifecycle, capacity warnings, and `c.api.invoke('mock-ai.v1', ...)` in one readable integration bundle. | source added (untested) |
 | `historia-default/` | The Pax-historia proof bundle. Ports the game-session modules, workflow runtime, state/blob migrations, URL-service calls, routing, hydration, policy gates, and ten-scenario proof suite. | Phase 3 proof complete |
 | `hostile-ws-target/` | Adversarial bundle that tries to send to a player without a connected session; used by the Phase 4 compromised-bundle scenario. | scenario guard |
+| `race-edge-probe-v1/`, `race-edge-probe-v2/` | Adversarial host-event, sleep, reconnect, and bundle-flip race probes with opaque compat tags. | scenario guard |
 
 ## Per-bundle layout
 

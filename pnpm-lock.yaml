@@ -79,6 +79,18 @@ importers:
         specifier: workspace:*
         version: link:../../../sdk/runtime-sdk
 
+  examples/bundles/race-edge-probe-v1:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
+  examples/bundles/race-edge-probe-v2:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
   examples/url-services/billing-mock.v1:
     dependencies:
       '@pax-backend/ipc-protocol':

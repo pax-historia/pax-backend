@@ -10,6 +10,7 @@ for the broader rules about the `testing/` zone (kind-folders,
 | `compromised-bundle-adversarial/` | Hostile creator bundle behavior. Asserts a bundle cannot silently send to a missing player target and instead receives a typed `targetNotConnected` refusal. |
 | `compute-stress/` | Compute-budget edge probe. **No business-plane resources** — forces CPU timeout, websocket rate and bandwidth rejection, state/blob cap rejection, and API rate limiting. |
 | `jwt-adversarial/` | Tampered, expired, and misrouted placement JWT handshakes. Asserts invalid tokens are refused, wrong-game tokens are recorded as typed refusals, and no session opens. |
+| `race-and-deploy-adversarial/` | Host-event/sleep race, reconnect churn, and active bundle-flip collision guard using the `race-edge-probe` v1/v2 bundles. |
 | `shard-death-resilience/` | Composed with the `shard-death-every-5m` nemesis; asserts `c.state` flush-window durability (guarantee #11), `c.blob` namespace durability across shard loss (guarantee #12), and `cold-restart-from-storage` behavior on the next wake. |
 
 ## Per-scenario layout

@@ -188,6 +188,7 @@ const HOST_EVENT_DRAIN_INTERVAL_MS = parsePositiveInteger(
   process.env["PAX_HOST_EVENT_DRAIN_INTERVAL_MS"] ?? "1000",
   1_000,
 );
+const HOST_EVENT_WAKE_USER_ID = "__pax_host_event__";
 
 const HISTORY_PATH =
   process.env["PAX_HISTORY_PATH"] ?? join(REPO_ROOT, "var", "history.jsonl");
@@ -1201,11 +1202,11 @@ function forkChild(inst: GameInstance): Promise<void> {
       rejectReady(err);
     });
 
-    // One-shot ready watcher; remove itself once ready fires.
+    // One-shot ready watcher; remove itself once the child runtime has loaded
+    // the bundle. Host events are not drained until onWake has been sent.
     const readyHandler = (raw: unknown): void => {
       if (!isChildEnvelope(raw) || raw.type !== CHILD_TO_PARENT.ready) return;
       child.off("message", readyHandler);
-      inst.ready = true;
       void sendWakeAfterHydration(child, inst, resolveReady, rejectReady);
     };
     child.on("message", readyHandler);
@@ -1262,6 +1263,7 @@ async function sendWakeAfterHydration(
       blobKeys: inst.blobKeys,
       blobCompatTag: inst.blobCompatTag,
     });
+    inst.ready = true;
     inst.nextWakeReason = undefined;
     inst.nextWakeErrorClass = undefined;
     resolveReady();
@@ -1395,7 +1397,7 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
 }
 
 async function drainHostEvents(inst: GameInstance): Promise<void> {
-  if (!inst.child) return;
+  if (!inst.child || !inst.ready) return;
   const key = `${HOST_EVENT_QUEUE_KEY_PREFIX}${inst.gameId}`;
   for (let drained = 0; drained < 100; drained += 1) {
     const raw = await redis.lpop(key);
@@ -1818,6 +1820,51 @@ async function readGameRecord(gameId: string): Promise<GameRecord | undefined> {
 
 async function writeGameRecord(game: GameRecord): Promise<void> {
   await redis.set(`${GAME_KEY_PREFIX}${game.gameId}`, JSON.stringify(game));
+}
+
+async function refreshBundleForWake(inst: GameInstance): Promise<boolean> {
+  const game = await readGameRecord(inst.gameId);
+  if (!game) return true;
+  const blobCompatTag = game.blobCompatTag;
+  if (inst.bundleName === game.bundleName && inst.blobCompatTag === blobCompatTag) {
+    return true;
+  }
+
+  const bundle =
+    inst.bundleName === game.bundleName ? inst.bundle : await loadBundle(game.bundleName);
+  if (!bundleAcceptsBlobCompatTag(bundle.manifest, blobCompatTag)) {
+    history("bundle.coldWake.rejected", {
+      actorId: inst.actorId,
+      gameId: inst.gameId,
+      bundleName: game.bundleName,
+      bundleCompatTag: bundle.manifest.compatTagProduced,
+      error: "compatTagOutOfRange",
+      blobCompatTag,
+      bundleCompatTagsAccepted: bundle.manifest.compatTagsAccepted,
+    });
+    return false;
+  }
+
+  const previousBundleName = inst.bundleName;
+  const previousBundleCompatTag = inst.bundleCompatTag;
+  inst.bundle = bundle;
+  inst.bundleName = bundle.name;
+  inst.bundleCompatTag = bundle.manifest.compatTagProduced;
+  inst.blobCompatTag = blobCompatTag;
+  if (previousBundleName !== bundle.name && inst.nextWakeReason === "cold-restart-from-storage") {
+    inst.nextWakeReason = undefined;
+  }
+  history("bundle.refreshedForWake", {
+    actorId: inst.actorId,
+    gameId: inst.gameId,
+    runId: inst.runId,
+    previousBundleName,
+    previousBundleCompatTag,
+    bundleName: bundle.name,
+    bundleCompatTag: bundle.manifest.compatTagProduced,
+    blobCompatTag,
+  });
+  return true;
 }
 
 function handleLifecycleRequestSleep(inst: GameInstance): void {
@@ -3271,7 +3318,8 @@ const runner = new Runner({
       return;
     }
     const playerId = claims.userId;
-    const allowed = await isPlayerAllowed(inst.gameId, playerId);
+    const hostEventWake = playerId === HOST_EVENT_WAKE_USER_ID;
+    const allowed = hostEventWake ? true : await isPlayerAllowed(inst.gameId, playerId);
     if (!allowed) {
       history("connection.refused", {
         actorId,
@@ -3283,10 +3331,25 @@ const runner = new Runner({
       ws.close(4403, "player not allowed");
       return;
     }
+    if (!inst.child && !inst.bootstrapPromise && !(await refreshBundleForWake(inst))) {
+      ws.close(1011, "bundle compat rejected");
+      return;
+    }
     await forkChild(inst);
     markGameActive(inst);
     cancelSleepGrace(inst, "sessionOpened");
     void writeActiveGameDirectory(inst);
+
+    if (hostEventWake) {
+      history("connection.hostEventWake", {
+        actorId,
+        gameId: inst.gameId,
+        playerId,
+        traceId: claims.traceId,
+      });
+      ws.close(1000, "host event wake complete");
+      return;
+    }
 
     const sessionId = idGenerator.generateSessionId();
     const connectedAt = Date.now();
