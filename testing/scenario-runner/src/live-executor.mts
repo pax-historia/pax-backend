@@ -171,6 +171,18 @@ async function executePhase(
     case "send-json":
       await sendJson(ctx, phase.messagesPerSession, phase.intervalMs, phase.body);
       return;
+    case "send-host-events":
+      await sendHostEvents(
+        ctx,
+        phase.eventType,
+        phase.payload,
+        phase.wakeOnDelivery,
+        phase.targetGameCount,
+      );
+      return;
+    case "flip-bundles":
+      await flipBundles(ctx, phase.newBundleName, phase.targetGameCount);
+      return;
     case "expect-history-events":
       await expectHistoryEvents(ctx, phase.events, phase.minimumPerGame);
       return;
@@ -192,7 +204,7 @@ async function seedFixtures(
   ctx: LiveExecutorContext,
   fixtureKinds: readonly WorkloadFixtureKind[],
 ): Promise<void> {
-  await ensureBundleUploaded(ctx);
+  await ensureBundleUploaded(ctx, ctx.workload.bundleName);
   const selected = new Set(fixtureKinds);
   const allowedPlayers = selected.has("allowed-players")
     ? readStringArrayFixture(ctx, "allowed-players")
@@ -209,8 +221,10 @@ async function seedFixtures(
   }
 }
 
-async function ensureBundleUploaded(ctx: LiveExecutorContext): Promise<void> {
-  const bundleName = ctx.workload.bundleName;
+async function ensureBundleUploaded(
+  ctx: LiveExecutorContext,
+  bundleName: string,
+): Promise<void> {
   const existing = await fetchJsonMaybe(
     `${ctx.controlPlaneUrl}/admin/bundles/${encodeURIComponent(bundleName)}`,
   );
@@ -302,7 +316,7 @@ async function openSessions(
   sessionsPerGame: number,
   rampMs: number,
 ): Promise<void> {
-  await ensureBundleUploaded(ctx);
+  await ensureBundleUploaded(ctx, ctx.workload.bundleName);
   const allowedPlayers = readStringArrayFixture(ctx, "allowed-players");
   if (allowedPlayers.length === 0) {
     throw new Error("open-sessions requires an allowed-players fixture with at least one player");
@@ -432,6 +446,53 @@ async function sendJson(
   }
 }
 
+async function sendHostEvents(
+  ctx: LiveExecutorContext,
+  eventType: string,
+  payload: Readonly<Record<string, unknown>>,
+  wakeOnDelivery: boolean,
+  targetGameCount: number,
+): Promise<void> {
+  for (const gameId of targetGameIds(ctx.workload, targetGameCount)) {
+    const response = await requestJson<{ readonly eventId?: string; readonly status?: string }>(
+      `${ctx.controlPlaneUrl}/admin/games/${encodeURIComponent(gameId)}/host-event`,
+      {
+        method: "POST",
+        body: { eventType, payload, wakeOnDelivery },
+      },
+    );
+    ctx.historyWriter.append("workload.host-event.sent", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      eventType,
+      wakeOnDelivery,
+      eventId: response.eventId ?? null,
+      status: response.status ?? null,
+    });
+  }
+}
+
+async function flipBundles(
+  ctx: LiveExecutorContext,
+  newBundleName: string,
+  targetGameCount: number,
+): Promise<void> {
+  await ensureBundleUploaded(ctx, newBundleName);
+  for (const gameId of targetGameIds(ctx.workload, targetGameCount)) {
+    await requestJson(`${ctx.controlPlaneUrl}/admin/games/${encodeURIComponent(gameId)}/bundle`, {
+      method: "POST",
+      body: { newBundleName },
+    });
+    ctx.historyWriter.append("workload.bundle-flip.sent", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      newBundleName,
+    });
+  }
+}
+
 async function expectHistoryEvents(
   ctx: LiveExecutorContext,
   events: readonly string[],
@@ -508,6 +569,21 @@ function scenarioGameIds(workload: ScenarioWorkloadPlan): readonly string[] {
     { length: workload.maxGames },
     (_unused, index) => `${workload.gameIdPrefix}-${index + 1}`,
   );
+}
+
+function targetGameIds(
+  workload: ScenarioWorkloadPlan,
+  targetGameCount: number,
+): readonly string[] {
+  if (!Number.isInteger(targetGameCount) || targetGameCount < 1) {
+    throw new Error(`targetGameCount must be a positive integer, got ${targetGameCount}`);
+  }
+  if (targetGameCount > workload.maxGames) {
+    throw new Error(
+      `targetGameCount ${targetGameCount} exceeds workload maxGames ${workload.maxGames}`,
+    );
+  }
+  return scenarioGameIds(workload).slice(0, targetGameCount);
 }
 
 function readStringArrayFixture(

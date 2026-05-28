@@ -227,3 +227,14 @@ Verification evidence:
 The trace proof also exposed and fixed two continuity issues: router OTel span
 creation now happens after `traceparent` extraction, and gateway/reference URL
 service spans explicitly use the trace ID carried in the substrate envelope.
+
+## 2026-05-28 06:12 PDT
+
+Started task 4, the no-fault medium run. The live runner now has the missing
+pieces needed for a repeatable 100-game Phase 2 proof: `--game-id-prefix` keeps
+Fly runs from reusing old games, `send-host-events` exercises guarantee 17,
+and `flip-bundles` gives the migration/rollback oracle a successful flip to
+observe without injecting a failure. Added a dedicated
+`compute-stress/clients/phase2-no-fault.mts` workload that opens 100
+`hello-multifeature` games for a 30-minute no-fault window, then waits for the
+sleep-grace path so shutdown/sleep events reach archived history.

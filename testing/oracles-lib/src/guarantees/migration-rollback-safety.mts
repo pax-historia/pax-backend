@@ -14,6 +14,24 @@ export function migrationRollbackSafety(history: readonly HistoryEvent[]): Oracl
   let observed = 0;
 
   for (const event of history) {
+    if (event.event === "bundle.flip.succeeded") {
+      observed += 1;
+      if (
+        !stringField(event, "gameId") ||
+        !stringField(event, "oldBundleName") ||
+        !stringField(event, "newBundleName")
+      ) {
+        findings.push(
+          finding(
+            "missing-flip-scope",
+            "bundle.flip.succeeded must include gameId, oldBundleName, and newBundleName",
+            event,
+          ),
+        );
+      }
+      continue;
+    }
+
     if (event.event === "bundle.rollback.thresholdReached") {
       observed += 1;
       const gameId = stringField(event, "gameId");

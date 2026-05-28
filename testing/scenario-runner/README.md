@@ -23,8 +23,8 @@ Current source pass provides the first runner shell:
   `PAX_API_REPLAY_FIXTURES_PATH` when an `api-responses` fixture is present
 - executes the first live workload phase set against a running local/live
   substrate: `seed-fixtures`, `register-api-kinds`, `open-sessions`,
-  `send-json`, `wait`, `close-sessions`, `await-nemesis`, and
-  `expect-history-events`
+  `send-json`, `send-host-events`, `flip-bundles`, `wait`,
+  `close-sessions`, `await-nemesis`, and `expect-history-events`
 - schedules nemesis profile actions alongside the live workload; the
   `shard-death-every-5m` profile currently maps `kill-shard` to the
   production admin drain endpoint (`POST /admin/shards/:id/drain`)
@@ -32,6 +32,7 @@ Current source pass provides the first runner shell:
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list
 - can override fixture resolution with `--fixture-base-dir`
+- can override workload game IDs with `--game-id-prefix`
 - can target non-default live endpoints with `--control-url`, `--router-url`,
   and `--phase-timeout-ms`
 - emits a `result.json`-shaped object with oracle summaries, attribution

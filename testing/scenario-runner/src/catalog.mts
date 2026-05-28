@@ -43,7 +43,7 @@ export async function loadScenarioWorkloadPlan(
   input: ScenarioRunnerInput,
   scenario: ScenarioManifest,
 ): Promise<ScenarioWorkloadPlan | undefined> {
-  if (input.workloadPlan) return input.workloadPlan;
+  if (input.workloadPlan) return applyWorkloadOverrides(input, input.workloadPlan);
   const path = input.workloadPath
     ? resolvePath(input.workloadPath)
     : join(
@@ -57,7 +57,15 @@ export async function loadScenarioWorkloadPlan(
   if (plan.scenarioId !== scenario.scenarioId) {
     throw new Error(`${path} scenarioId does not match ${scenario.scenarioId}`);
   }
-  return plan;
+  return applyWorkloadOverrides(input, plan);
+}
+
+function applyWorkloadOverrides(
+  input: ScenarioRunnerInput,
+  plan: ScenarioWorkloadPlan,
+): ScenarioWorkloadPlan {
+  if (!input.workloadGameIdPrefix) return plan;
+  return { ...plan, gameIdPrefix: input.workloadGameIdPrefix };
 }
 
 async function importDefault(path: string): Promise<unknown> {
@@ -209,6 +217,20 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requireNonNegativeNumber(value["stateWritesPerMinute"], path, `${prefix}.stateWritesPerMinute`);
       requireNonNegativeNumber(value["blobWritesPerMinute"], path, `${prefix}.blobWritesPerMinute`);
       requirePositiveNumber(value["bytesPerWrite"], path, `${prefix}.bytesPerWrite`);
+      return normalized;
+    case "send-host-events":
+      requireString(value["eventType"], path, `${prefix}.eventType`);
+      if (!isRecord(value["payload"])) {
+        throw new Error(`${path} field ${prefix}.payload must be an object`);
+      }
+      if (typeof value["wakeOnDelivery"] !== "boolean") {
+        throw new Error(`${path} field ${prefix}.wakeOnDelivery must be a boolean`);
+      }
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      return normalized;
+    case "flip-bundles":
+      requireString(value["newBundleName"], path, `${prefix}.newBundleName`);
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
       return normalized;
     case "sleep-wake":
       requirePositiveNumber(value["cycles"], path, `${prefix}.cycles`);

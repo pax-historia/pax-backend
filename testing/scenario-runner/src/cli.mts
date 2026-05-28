@@ -58,6 +58,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     scenarioManifestPath: values.get("scenario-manifest"),
     nemesisProfilePath: values.get("nemesis-profile"),
     workloadPath: values.get("workload"),
+    workloadGameIdPrefix: values.get("game-id-prefix"),
     fixtureBaseDir: values.get("fixture-base-dir"),
     controlPlaneUrl: values.get("control-url"),
     routerUrl: values.get("router-url"),

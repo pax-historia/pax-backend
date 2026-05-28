@@ -107,6 +107,18 @@ export type ScenarioWorkloadPhase =
       readonly bytesPerWrite: number;
     }
   | {
+      readonly type: "send-host-events";
+      readonly eventType: string;
+      readonly payload: Readonly<Record<string, unknown>>;
+      readonly wakeOnDelivery: boolean;
+      readonly targetGameCount: number;
+    }
+  | {
+      readonly type: "flip-bundles";
+      readonly newBundleName: string;
+      readonly targetGameCount: number;
+    }
+  | {
       readonly type: "sleep-wake";
       readonly cycles: number;
       readonly idleMsBetweenCycles: number;
@@ -146,6 +158,7 @@ export interface ScenarioRunnerInput {
   readonly nemesisManifest?: NemesisManifest;
   readonly workloadPath?: string;
   readonly workloadPlan?: ScenarioWorkloadPlan;
+  readonly workloadGameIdPrefix?: string;
   readonly fixtureBaseDir?: string;
   readonly runtimeEnvironment?: ScenarioRuntimeEnvironment;
   readonly controlPlaneUrl?: string;
