@@ -232,6 +232,15 @@ export interface LogEmitPayload {
   readonly [key: string]: unknown;
 }
 
+export type MetricKind = "counter" | "gauge" | "histogram";
+
+export interface MetricsEmitPayload {
+  readonly name: string;
+  readonly kind: MetricKind;
+  readonly value: number;
+  readonly tags?: Readonly<Record<string, string>>;
+}
+
 export interface ChildFatalPayload {
   readonly message: string;
   readonly error: string;
@@ -253,6 +262,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"players.connected", Record<string, never>>
   | IpcEnvelope<"ws.send", WsSendPayload>
   | IpcEnvelope<"log.emit", LogEmitPayload>
+  | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
   | IpcEnvelope<"child.fatal", ChildFatalPayload>
   | IpcEnvelope<"child.handlerError", ChildHandlerErrorPayload>
@@ -279,6 +289,7 @@ export const CHILD_TO_PARENT = Object.freeze({
   playersConnected: "players.connected",
   wsSend: "ws.send",
   logEmit: "log.emit",
+  metricsEmit: "metrics.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",
 } as const);
 

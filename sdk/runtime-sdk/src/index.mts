@@ -10,6 +10,7 @@ import type {
   ApiInvokeResponse,
   BundleManifest,
   ConnectedSessionSnapshot,
+  MetricsEmitPayload,
   OnCapacityWarningPayload,
   OnPlayerConnectPayload,
   OnPlayerDisconnectPayload,
@@ -23,6 +24,7 @@ export type {
   ApiInvokeResponse,
   BundleManifest,
   ConnectedSessionSnapshot,
+  MetricsEmitPayload,
 } from "@pax-backend/ipc-protocol";
 
 // ----- The typed substrate context (`c`) ---------------------------------
@@ -38,6 +40,10 @@ export interface SubstrateContext {
   readonly log: {
     /** Structured log; routed to history with bundle metadata attached. */
     emit(payload: Readonly<Record<string, unknown>>): void;
+  };
+  readonly metrics: {
+    /** Numeric metric; counter, gauge, or histogram. */
+    emit(payload: MetricsEmitPayload): void;
   };
   readonly lifecycle: {
     /** Voluntary shutdown signal. The substrate may sleep this game soon. */

@@ -2,8 +2,9 @@
 //
 // One node child_process per game. The bundle source is loaded into an
 // isolated-vm Isolate; substrate context (c.ws.send / c.log.emit /
-// c.lifecycle.requestSleep / c.api.invoke / c.players.*) is exposed as ivm
-// bridges that post IPC envelopes back to the parent via process.send().
+// c.metrics.emit / c.lifecycle.requestSleep / c.api.invoke / c.players.*) is
+// exposed as ivm bridges that post IPC envelopes back to the parent via
+// process.send().
 //
 // Trust model (README §"Trust model"):
 //  - No outbound network (parent forks us with a stripped env).
@@ -99,6 +100,14 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       panic("c.log.emit bridge failed", err);
     }
   });
+  const cMetricsEmit = new ivm.Reference((payloadJson: string) => {
+    try {
+      const payload = JSON.parse(payloadJson);
+      emitOne(CHILD_TO_PARENT.metricsEmit, payload);
+    } catch (err) {
+      panic("c.metrics.emit bridge failed", err);
+    }
+  });
   const cLifecycleRequestSleep = new ivm.Reference(() => {
     emitOne(CHILD_TO_PARENT.lifecycleRequestSleep, {});
   });
@@ -115,6 +124,7 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
 
   await jail.set("__pax_c_ws_send", cWsSend);
   await jail.set("__pax_c_log_emit", cLogEmit);
+  await jail.set("__pax_c_metrics_emit", cMetricsEmit);
   await jail.set("__pax_c_lifecycle_requestSleep", cLifecycleRequestSleep);
   await jail.set("__pax_c_api_invoke", cApiInvoke);
   await jail.set("__pax_c_players_allowed", cPlayersAllowed);
@@ -133,6 +143,9 @@ async function bootstrapIsolate(cfg: BootstrapPayload): Promise<void> {
       },
       log: {
         emit: (payload) => __pax_c_log_emit.applySync(undefined, [JSON.stringify(payload)]),
+      },
+      metrics: {
+        emit: (payload) => __pax_c_metrics_emit.applySync(undefined, [JSON.stringify(payload)]),
       },
       lifecycle: {
         requestSleep: () => __pax_c_lifecycle_requestSleep.applySync(undefined, []),

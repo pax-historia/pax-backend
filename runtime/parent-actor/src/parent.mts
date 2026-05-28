@@ -430,6 +430,16 @@ function handleChildIpc(inst: GameInstance, raw: unknown): void {
         payload: raw.payload,
       });
       return;
+    case CHILD_TO_PARENT.metricsEmit:
+      history("metrics.emit", {
+        actorId: inst.actorId,
+        gameId: inst.gameId,
+        runId: inst.runId,
+        bundleName: inst.bundleName,
+        bundleCompatTag: inst.bundleCompatTag,
+        payload: raw.payload,
+      });
+      return;
     case CHILD_TO_PARENT.lifecycleRequestSleep:
       history("lifecycle.requestSleep", {
         actorId: inst.actorId,
