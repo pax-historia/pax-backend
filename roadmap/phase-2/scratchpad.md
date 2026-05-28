@@ -249,3 +249,13 @@ showed `onWake` exceeding the 1-second handler timeout at this load. The
 2GB/shared-2x shard profile is not enough for the 100-game topology proof, so
 the next attempt moves the shard machine to performance-4x/8GB and lengthens
 the actor-ready, route, and handler windows for the medium proof.
+
+## 2026-05-28 06:29 PDT
+
+The second no-fault attempt reached the 100-game sustained window, but shard
+logs showed `onHostEvent` handler errors for games whose bundle does not define
+that optional handler. The ivm child runner was treating a missing export as an
+`isolated-vm` Reference and calling `apply()` on it; the no-ivm runner already
+skips absent handlers. Patched the ivm path to no-op when a handler export is
+`undefined` or `null`, while still reporting non-function exports as malformed
+handler definitions.

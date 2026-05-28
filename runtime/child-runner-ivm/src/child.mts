@@ -525,6 +525,15 @@ async function invokeHandler(handlerName: HandlerName, payload: unknown): Promis
     | ivm.Reference
     | undefined;
   if (!fnRef) return true;
+  if (fnRef.typeof === "undefined" || fnRef.typeof === "null") return true;
+  if (fnRef.typeof !== "function") {
+    emitHandlerError(
+      handlerName,
+      `${handlerName} export is ${fnRef.typeof}, not a function`,
+      0,
+    );
+    return false;
+  }
   const cRef = (await context.global.get("c", { reference: true })) as ivm.Reference;
   const previousTriggeringSessionId = currentTriggeringSessionId;
   currentTriggeringSessionId = triggeringSessionIdFor(handlerName, payload);
