@@ -1,5 +1,5 @@
 {
-  "name": "@pax-backend/api-gateway",
+  "name": "@pax-backend/url-services",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,13 +11,10 @@
     }
   },
   "scripts": {
-    "dev": "tsx src/app.mts",
     "build": "tsc -b",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@pax-backend/ipc-protocol": "workspace:*",
-    "@pax-backend/url-services": "workspace:*",
-    "ioredis": "^5.4.1"
+    "@pax-backend/ipc-protocol": "workspace:*"
   }
 }

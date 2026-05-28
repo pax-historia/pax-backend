@@ -8,16 +8,16 @@ import type {
   ConnectedSessionSnapshot,
   GatewayHttpRequestBody,
 } from "@pax-backend/ipc-protocol";
+import {
+  handleReferenceService,
+  referenceServiceConfigFromEnv,
+  type ReferenceServiceConfig,
+} from "@pax-backend/url-services";
 
 import { budgetFromEnv } from "./budgets.mjs";
 import { ApiGateway } from "./dispatch.mjs";
 import { loadRedisRegistryFromEnv, type ApiKindRegistry } from "./registry.mjs";
 import { JsonlWireRecordStore } from "./record-replay.mjs";
-import {
-  handleReferenceService,
-  referenceServiceConfigFromEnv,
-  type ReferenceServiceConfig,
-} from "./reference-services.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");

@@ -6,6 +6,7 @@
     { "path": "./sdk/runtime-sdk-test-harness" },
     { "path": "./sdk/bundle-tools" },
     { "path": "./orchestration/control-plane" },
+    { "path": "./orchestration/url-services" },
     { "path": "./orchestration/api-gateway" },
     { "path": "./runtime/child-runner-ivm" },
     { "path": "./runtime/child-runner-noivm" },

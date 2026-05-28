@@ -31,4 +31,10 @@ Real production AI / vendor integrations are **operator-owned URL
 services outside this repo**. See [plan](../../README.md) §"Why no
 billing primitives".
 
-Stub. M2 lands the four substrate-shipped services here.
+## Source layout
+
+`src/router.mts` is the gateway-facing dispatcher and catalog. Each
+`src/services/<kind>.mts` module owns one reference service and exports a
+`ReferenceUrlService` descriptor. The API gateway imports the catalog so
+fallback `kindName -> URL` registrations stay in sync with the HTTP
+routes that actually handle calls.

@@ -6,6 +6,7 @@ import {
   API_KIND_KEY_PREFIX,
   type ApiKindRegistration,
 } from "@pax-backend/ipc-protocol";
+import { referenceKindRegistrations } from "@pax-backend/url-services";
 
 export type { ApiKindRegistration } from "@pax-backend/ipc-protocol";
 
@@ -88,16 +89,6 @@ export class RedisApiKindRegistry implements ApiKindRegistry {
     const raws = await this.#redis.mget(...keys);
     return raws.flatMap((raw) => (raw ? [JSON.parse(raw) as ApiKindRegistration] : []));
   }
-}
-
-export function referenceKindRegistrations(baseUrl: string): readonly ApiKindRegistration[] {
-  const normalized = baseUrl.replace(/\/+$/, "");
-  return [
-    { kindName: "echo.v1", url: `${normalized}/_url-services/echo/invoke` },
-    { kindName: "delay.v1", url: `${normalized}/_url-services/delay/invoke` },
-    { kindName: "http.fetch.v1", url: `${normalized}/_url-services/http-fetch/invoke` },
-    { kindName: "mock-ai.v1", url: `${normalized}/_url-services/mock-ai.v1/invoke` },
-  ];
 }
 
 export function loadRegistryFromEnv(

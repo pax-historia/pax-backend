@@ -7,7 +7,6 @@
   },
   "include": ["src/**/*.mts"],
   "references": [
-    { "path": "../../shared/ipc-protocol" },
-    { "path": "../url-services" }
+    { "path": "../../shared/ipc-protocol" }
   ]
 }

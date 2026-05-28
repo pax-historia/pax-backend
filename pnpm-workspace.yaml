@@ -5,6 +5,7 @@ packages:
   - "runtime/child-runner-noivm"
   - "orchestration/control-plane"
   - "orchestration/api-gateway"
+  - "orchestration/url-services"
   - "sdk/runtime-sdk"
   - "sdk/runtime-sdk-test-harness"
   - "sdk/bundle-tools"

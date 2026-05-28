@@ -27,7 +27,6 @@ export {
   type ApiKindRegistry,
   InMemoryApiKindRegistry,
   loadRegistryFromEnv,
-  referenceKindRegistrations,
 } from "./registry.mjs";
 export {
   InMemoryWireRecordStore,
@@ -35,8 +34,12 @@ export {
   type WireRecordStore,
 } from "./record-replay.mjs";
 export {
+  type ReferenceServiceCatalogEntry,
   type ReferenceServiceConfig,
   type ReferenceServiceResult,
+  type ReferenceUrlService,
+  REFERENCE_SERVICE_CATALOG,
   handleReferenceService,
+  referenceKindRegistrations,
   referenceServiceConfigFromEnv,
-} from "./reference-services.mjs";
+} from "@pax-backend/url-services";
