@@ -659,3 +659,13 @@ all 10 shard machines reported `onCapacityWarning.sent=0` and
 `compute.budget.rejected=0`. This repeats the direct child-RSS validation at
 target density while the new scale history profile keeps the driver artifact
 bounded.
+
+## 2026-05-29 00:13 PDT
+
+Hardened the final soak summarizer before the 24-hour run: history JSONL and
+monitor JSONL/TSV inputs are now parsed line-by-line instead of reading each
+file into one giant string. This matches the runner replay hardening and keeps
+the release verifier from becoming the next memory cliff once the 8-hour
+nemesis histories include steady-state scale-profile events. Verification:
+`pnpm typecheck`, `git diff --check`, and a streaming summary smoke over the
+current pulled validation directory.

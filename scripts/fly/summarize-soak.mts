@@ -1,5 +1,7 @@
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { createInterface } from "node:readline";
 
 interface CliOptions {
   readonly soakDir: string;
@@ -150,7 +152,6 @@ async function summarizeCase(
   historyPath: string,
   resultPath: string | undefined,
 ): Promise<CaseSummary> {
-  const raw = await readFile(historyPath, "utf8");
   const placementCounts = new Map<string, number>();
   const phasesStarted: string[] = [];
   const phasesCompleted: string[] = [];
@@ -163,14 +164,13 @@ async function summarizeCase(
   let firstEventAt: string | undefined;
   let lastEventAt: string | undefined;
 
-  for (const [index, line] of raw.split(/\r?\n/).entries()) {
-    if (line.trim().length === 0) continue;
+  for await (const { line, lineNumber } of readNonEmptyLines(historyPath)) {
     let event: HistoryEvent;
     try {
       event = JSON.parse(line) as HistoryEvent;
     } catch (err) {
       parseErrors.push(
-        `${relative(root, historyPath)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`,
+        `${relative(root, historyPath)}:${lineNumber}: ${err instanceof Error ? err.message : String(err)}`,
       );
       continue;
     }
@@ -269,22 +269,20 @@ async function readScenarioResult(
 async function summarizeMonitor(root: string, path: string | undefined): Promise<MonitorSummary | undefined> {
   if (!path) return undefined;
   if (path.endsWith(".tsv")) return summarizeTsvMonitor(root, path);
-  const raw = await readFile(path, "utf8");
   const parseErrors: string[] = [];
   let snapshots = 0;
   let firstSnapshotAt: string | undefined;
   let lastSnapshotAt: string | undefined;
   let lastSnapshot: Record<string, unknown> | undefined;
 
-  for (const [index, line] of raw.split(/\r?\n/).entries()) {
-    if (line.trim().length === 0) continue;
+  for await (const { line, lineNumber } of readNonEmptyLines(path)) {
     let snapshot: Record<string, unknown>;
     try {
       const parsed = JSON.parse(line) as unknown;
       if (!isRecord(parsed)) throw new Error("monitor line must be a JSON object");
       snapshot = parsed;
     } catch (err) {
-      parseErrors.push(`${relative(root, path)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`);
+      parseErrors.push(`${relative(root, path)}:${lineNumber}: ${err instanceof Error ? err.message : String(err)}`);
       continue;
     }
     snapshots += 1;
@@ -314,15 +312,13 @@ async function summarizeMonitor(root: string, path: string | undefined): Promise
 }
 
 async function summarizeTsvMonitor(root: string, path: string): Promise<MonitorSummary> {
-  const raw = await readFile(path, "utf8");
   const parseErrors: string[] = [];
   let snapshots = 0;
   let firstSnapshotAt: string | undefined;
   let lastSnapshotAt: string | undefined;
   let lastSnapshot: Readonly<Record<string, string>> | undefined;
 
-  for (const [index, line] of raw.split(/\r?\n/).entries()) {
-    if (line.trim().length === 0) continue;
+  for await (const { line, lineNumber } of readNonEmptyLines(path)) {
     try {
       const snapshot = parseMonitorTsvLine(line);
       snapshots += 1;
@@ -331,7 +327,7 @@ async function summarizeTsvMonitor(root: string, path: string): Promise<MonitorS
       if (timestamp) lastSnapshotAt = timestamp;
       lastSnapshot = snapshot;
     } catch (err) {
-      parseErrors.push(`${relative(root, path)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`);
+      parseErrors.push(`${relative(root, path)}:${lineNumber}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -510,6 +506,24 @@ async function listFiles(root: string): Promise<readonly string[]> {
     }
   }
   return files;
+}
+
+async function* readNonEmptyLines(
+  path: string,
+): AsyncGenerator<{ readonly line: string; readonly lineNumber: number }> {
+  const input = createReadStream(path, { encoding: "utf8" });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  let lineNumber = 0;
+  try {
+    for await (const line of lines) {
+      lineNumber += 1;
+      if (line.trim().length === 0) continue;
+      yield { line, lineNumber };
+    }
+  } finally {
+    lines.close();
+    input.destroy();
+  }
 }
 
 async function readOptionalText(path: string): Promise<string | undefined> {
