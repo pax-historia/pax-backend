@@ -22,10 +22,7 @@ find "$buffer_dir" -maxdepth 1 -type f \( -name '*.jsonl' -o -name '*.jsonl.gz' 
 total="$(awk '{ sum += $2 } END { print sum + 0 }' "$tmp")"
 (( total <= max_bytes )) && exit 0
 
-while IFS= read -r line && (( total > max_bytes )); do
-  size="$(awk '{ print $2 }' <<<"$line")"
-  file="${line#* * }"
-  file="${file#* }"
+while read -r _ size file && (( total > max_bytes )); do
   [[ -n "$size" && "$size" =~ ^[0-9]+$ && -n "$file" ]] || continue
   if rm -f -- "$file"; then
     total=$((total - size))
