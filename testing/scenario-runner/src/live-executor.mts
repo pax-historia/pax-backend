@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -410,13 +410,18 @@ async function requestPlacement(
   playerId: string,
 ): Promise<PlacementResponse> {
   const placementUrl = `${ctx.routerUrl}/placement`;
+  const traceId = randomBytes(16).toString("hex");
   const placementResult = await fetchJsonMaybe(placementUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      traceparent: `00-${traceId}-0000000000000001-01`,
+    },
     body: JSON.stringify({
       gameId,
       playerId,
       runId: ctx.input.runId,
+      traceId,
     }),
   });
   if (placementResult.status !== 200) {
