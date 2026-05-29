@@ -58,3 +58,18 @@ includes `sessionId` and `playerId` when exactly one open recipient is sent, and
 `c.log.emit` is recorded as `event: "log.emit"` with the original bundle payload
 nested. Verification for this slice: `pnpm typecheck`, `git diff --check`, and
 `pnpm smoke` all passed against the local stack.
+
+## 2026-05-29 03:46 PDT
+
+Dependency audit pass is clean. `pnpm audit` reported no known
+vulnerabilities. `cargo audit` is installed; the root invocation failed because
+this repo does not have a root `Cargo.lock`, so the active Rust surface was
+audited directly with:
+
+```sh
+cargo audit --file orchestration/placement-router/Cargo.lock
+```
+
+That scan loaded the RustSec advisory DB, scanned 197 crate dependencies, and
+reported no advisories. Vendored Rivet lockfiles were not audited or edited as
+part of this phase, matching the standing `vendor/rivet/` constraint.
