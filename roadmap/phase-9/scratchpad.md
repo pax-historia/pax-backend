@@ -327,3 +327,32 @@ W3C trace context into the router, built and pushed driver image
 and updated only the stopped driver machine `d895e95fe09768` to that image.
 The active driver machine `1854539b257768` remains on the topology-proof image
 until the run finishes.
+
+## 2026-05-29 06:36 PDT
+
+Task 6 is complete. The topology run exited `0` after both Phase 9 cases passed.
+Final local artifacts were pulled from driver machine `1854539b257768` into
+`var/phase-9/topology/ivm-20260529T122658Z`, and the full summary gate passed
+with `summary.gates_ok=true`.
+
+Final topology proof:
+
+- run dir: `/data/phase-9/topology/ivm-20260529T122658Z`
+- local summary: `var/phase-9/topology/ivm-20260529T122658Z/summary.final.json`
+- scale rung: `100g-3shards-30m-topology`
+- cases: `no-faults` and `shard-death-every-5m`
+- run exit code: `0`
+- both case result files present and passed
+- each case placed 100 games across the same three shards:
+  `shard-fly-iad-1=34`, `shard-fly-iad-2=33`, `shard-fly-iad-3=33`
+- no-fault `send-json`: 1,770,276 ms
+- shard-death `send-json`: 1,770,280 ms
+- shard-death injected six drain cycles and recorded six matching
+  replacement-ready events during the hold
+- both cases completed `seed-fixtures`, `open-sessions`, `send-json`,
+  `close-sessions`, and `expect-history-events`
+- both cases closed all 100 sessions normally with code `1000` and reason
+  `scenarioComplete`
+- no workload phase failures, no workload session errors, no history parse
+  errors, no capacity warnings, no budget rejects, and no failing scenario
+  oracles
