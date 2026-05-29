@@ -26,10 +26,19 @@ import type {
   BrokerWakeInput,
 } from "./index.mjs";
 
+export interface RedisBrokerDirectoryOptions {
+  readonly flyMachineId?: string;
+  readonly wsPath?: string;
+}
+
 export class RedisBrokerDirectory {
-  constructor(private readonly redis: Redis) {}
+  constructor(
+    private readonly redis: Redis,
+    private readonly options: RedisBrokerDirectoryOptions = {},
+  ) {}
 
   async publishCapacity(row: BrokerCapacityRow): Promise<void> {
+    const flyMachineId = this.options.flyMachineId ?? process.env["FLY_MACHINE_ID"];
     const registration: ShardRegistration = {
       shardId: row.shardId,
       url: row.url,
@@ -41,7 +50,10 @@ export class RedisBrokerDirectory {
       currentGameCount: row.currentGameCount,
       maxGames: row.maxGames,
       lastSeenAt: row.lastSeenAt,
-      broker: { wsPath: "/gateway" },
+      broker: {
+        wsPath: this.options.wsPath ?? "/gateway",
+        flyMachineId,
+      },
     };
     await this.redis.set(
       `${SHARD_REGISTRY_KEY_PREFIX}${row.shardId}`,

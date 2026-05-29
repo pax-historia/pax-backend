@@ -1,33 +1,23 @@
 // orchestration/placement-router — substrate placement, no WS data path.
 //
 // HTTP endpoints:
-//   GET /health                       -> {status, version}
-//   GET /games/:id/placement?userId=  -> { shardUrl, webSocketUrl, placementToken,
+//   GET  /health                      -> {status, version}
+//   POST /placement                   -> { shardUrl, webSocketUrl, placementToken,
 //                                          expiresAt, shardId, serverTimings }
+//   GET  /games/:id/placement?userId= -> legacy scenario-runner shim.
 //
-// Algorithm (smoke-grade port of pax-sharded-spike/orchestration/router-placement,
-// with all 50k-game scale gymnastics stripped):
+// Algorithm:
 //
 //   1. Read games:<id> from Redis -> get bundleName
 //   2. Read bundles:<bundleName> from Redis -> get runtimeContractRequired
-//   3. SCAN shards:* from Redis -> all shard rows
-//   4. Filter: healthy && acceptingWakes && lastSeenAt within 30s &&
-//              runtimeContractsSupported contains runtimeContractRequired
-//      (README guarantee #16 — the new bit vs pax-sharded-spike)
-//   5. Score = effectiveLoad*0.45 + activeGames*0.35 + cpu*0.15 + wakeRate*0.05
-//      (same weights as pax-sharded-spike/orchestration/router-placement/src/placement.rs)
-//   6. Sign HS256 JWT { gameId, shardId, userId, bundleName, runId, traceId, exp } with PAX_JWT_SECRET
-//   7. Build webSocketUrl using the shard's recorded rivet { namespace, actorName,
-//      runnerName, adminTokenHint } and the gateway URL pattern from the
-//      rocks-physics smoke harness.
-//   8. Return JSON.
-//
-// Skipped vs the production pax-sharded-spike router:
-//   - No active-game directory stickiness (smoke is a single game).
-//   - No atomic SET NX + Lua claim (no contention).
-//   - No recent-wakes accounting.
-//   - No PUT /actors call (we use Rivet's getOrCreate URL pattern so no
-//     pre-creation step is needed).
+//   3. Read active_games:<id> for sticky placement, then SCAN shards:*.
+//   4. Filter Broker shard rows by health, acceptingWakes, capacity, freshness,
+//      and runtimeContractsSupported (guarantee #16).
+//   5. Prefer a still-eligible active-game shard; otherwise score eligible rows.
+//   6. Claim active_games:<id> with a generation fence for the chosen Broker.
+//   7. Sign HS256 JWT { gameId, shardId, playerId, runId, traceId, exp }.
+//   8. Build a direct Broker WebSocket URL with Fly machine pin hints.
+//   9. Return JSON.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -37,10 +27,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Json as AxumJson, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use opentelemetry::global;
@@ -60,6 +50,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHARD_FRESHNESS_MS: u64 = 30_000;
+const ACTIVE_GAME_TTL_SECONDS: u64 = 3_600;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -88,13 +79,13 @@ impl Config {
             placement_token_ttl_secs: env::var("PAX_PLACEMENT_TOKEN_TTL_SECONDS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(120),
+                .unwrap_or(300),
         })
     }
 }
 
 // ---------------------------------------------------------------------------
-// Redis row shapes (must match what the parent-actor writes)
+// Redis row shapes (must match what Brokers and the control plane write)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -127,6 +118,7 @@ struct ShardRow {
     #[serde(rename = "shardId")]
     shard_id: String,
     url: String,
+    status: String,
     healthy: bool,
     #[serde(rename = "acceptingWakes")]
     accepting_wakes: bool,
@@ -134,24 +126,43 @@ struct ShardRow {
     runtime_contracts_supported: [u32; 2],
     #[serde(rename = "activeGames", default)]
     active_games: u32,
+    #[serde(rename = "currentGameCount", default)]
+    current_game_count: Option<u32>,
+    #[serde(rename = "maxGames", default)]
+    max_games: Option<u32>,
     #[serde(rename = "cpuPct", default)]
     cpu_pct: f64,
     #[serde(rename = "recentWakeRate", default)]
     recent_wake_rate: u32,
     #[serde(rename = "lastSeenAt")]
     last_seen_at: u64,
-    rivet: ShardRivetInfo,
+    #[serde(default)]
+    broker: Option<ShardBrokerInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct ShardRivetInfo {
-    namespace: String,
-    #[serde(rename = "runnerName")]
-    runner_name: String,
-    #[serde(rename = "actorName")]
-    actor_name: String,
-    #[serde(rename = "adminTokenHint")]
-    admin_token_hint: String,
+struct ShardBrokerInfo {
+    #[serde(rename = "flyMachineId", default)]
+    fly_machine_id: Option<String>,
+    #[serde(rename = "wsPath", default)]
+    ws_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ActiveGamePlacement {
+    #[serde(rename = "gameId")]
+    game_id: String,
+    #[serde(rename = "shardId")]
+    shard_id: String,
+    #[serde(rename = "placedAt")]
+    placed_at: u64,
+    #[serde(rename = "refreshedAt")]
+    refreshed_at: u64,
+    generation: u64,
+    #[serde(rename = "brokerId", skip_serializing_if = "Option::is_none")]
+    broker_id: Option<String>,
+    #[serde(rename = "flyMachineId", skip_serializing_if = "Option::is_none")]
+    fly_machine_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +191,9 @@ struct PlacementResponse {
     run_id: String,
     #[serde(rename = "traceId")]
     trace_id: String,
+    generation: u64,
+    #[serde(rename = "flyMachineId", skip_serializing_if = "Option::is_none")]
+    fly_machine_id: Option<String>,
     #[serde(rename = "bundleName")]
     bundle_name: String,
     #[serde(rename = "serverTimings")]
@@ -188,18 +202,24 @@ struct PlacementResponse {
 
 #[derive(Debug, Serialize)]
 struct PlacementClaims {
+    iss: String,
+    aud: String,
+    sub: String,
+    iat: u64,
+    jti: String,
     #[serde(rename = "gameId")]
     game_id: String,
     #[serde(rename = "shardId")]
     shard_id: String,
-    #[serde(rename = "userId")]
-    user_id: String,
+    #[serde(rename = "playerId")]
+    player_id: String,
     #[serde(rename = "bundleName")]
     bundle_name: String,
     #[serde(rename = "runId")]
-    run_id: String,
+    run_id: Option<String>,
     #[serde(rename = "traceId")]
-    trace_id: String,
+    trace_id: Option<String>,
+    passthrough: serde_json::Value,
     exp: u64,
 }
 
@@ -207,6 +227,22 @@ struct PlacementClaims {
 struct PlacementQuery {
     #[serde(rename = "userId", default)]
     user_id: Option<String>,
+    #[serde(rename = "runId", default)]
+    run_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlacementRequest {
+    #[serde(rename = "gameId")]
+    game_id: String,
+    #[serde(rename = "playerId")]
+    player_id: String,
+    #[serde(rename = "runId", default)]
+    run_id: Option<String>,
+    #[serde(rename = "traceId", default)]
+    trace_id: Option<String>,
+    #[serde(default)]
+    passthrough: Option<serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +251,8 @@ struct PlacementQuery {
 
 #[derive(Debug, thiserror::Error)]
 enum PlacementError {
+    #[error("placement request is malformed: {0}")]
+    Malformed(String),
     #[error("game {0} not found")]
     GameNotFound(String),
     #[error("bundle {0} not found")]
@@ -222,7 +260,12 @@ enum PlacementError {
     #[error("no eligible shards for runtime contract {required} (saw {seen} shard(s) total)")]
     NoEligibleShards { required: u32, seen: usize },
     #[error("contract out of range: bundle requires {required}, no shard supports it")]
-    ContractOutOfRange { required: u32 },
+    ContractOutOfRange {
+        required: u32,
+        eligible_ranges: Vec<[u32; 2]>,
+    },
+    #[error("directory unavailable")]
+    DirectoryUnavailable(#[source] anyhow::Error),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -230,6 +273,7 @@ enum PlacementError {
 impl IntoResponse for PlacementError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
+            PlacementError::Malformed(_) => (StatusCode::BAD_REQUEST, "placementRequestMalformed"),
             PlacementError::GameNotFound(_) => (StatusCode::NOT_FOUND, "gameNotFound"),
             PlacementError::BundleNotFound(_) => (StatusCode::NOT_FOUND, "bundleNotFound"),
             PlacementError::NoEligibleShards { .. } => {
@@ -238,6 +282,9 @@ impl IntoResponse for PlacementError {
             PlacementError::ContractOutOfRange { .. } => {
                 (StatusCode::CONFLICT, "contractOutOfRange")
             }
+            PlacementError::DirectoryUnavailable(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "directoryUnavailable")
+            }
             PlacementError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let detail = match &self {
@@ -245,8 +292,12 @@ impl IntoResponse for PlacementError {
                 "required": required,
                 "seen": seen,
             }),
-            PlacementError::ContractOutOfRange { required } => serde_json::json!({
+            PlacementError::ContractOutOfRange {
+                required,
+                eligible_ranges,
+            } => serde_json::json!({
                 "required": required,
+                "eligibleRanges": eligible_ranges,
             }),
             _ => serde_json::json!({}),
         };
@@ -318,19 +369,50 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn placement(
+async fn placement_get(
     State(state): State<AppState>,
     Path(game_id): Path<String>,
     Query(q): Query<PlacementQuery>,
     headers: HeaderMap,
 ) -> Result<Json<PlacementResponse>, PlacementError> {
+    let request = PlacementRequest {
+        game_id,
+        player_id: q.user_id.unwrap_or_else(|| "anon".to_string()),
+        run_id: q.run_id,
+        trace_id: None,
+        passthrough: None,
+    };
+    placement_with_span(state, request, headers).await
+}
+
+async fn placement_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumJson(request): AxumJson<PlacementRequest>,
+) -> Result<Json<PlacementResponse>, PlacementError> {
+    placement_with_span(state, request, headers).await
+}
+
+async fn placement_with_span(
+    state: AppState,
+    request: PlacementRequest,
+    headers: HeaderMap,
+) -> Result<Json<PlacementResponse>, PlacementError> {
+    if request.game_id.trim().is_empty() {
+        return Err(PlacementError::Malformed("gameId is required".to_string()));
+    }
+    if request.player_id.trim().is_empty() {
+        return Err(PlacementError::Malformed(
+            "playerId is required".to_string(),
+        ));
+    }
     let parent_context = global::get_text_map_propagator(|propagator| {
         propagator.extract(&HeaderExtractor(&headers))
     });
     let span = tracing::info_span!(
         "router.placement",
         otel.kind = "server",
-        game_id = %game_id,
+        game_id = %request.game_id,
         user_id = tracing::field::Empty,
         trace_id = tracing::field::Empty,
         run_id = tracing::field::Empty,
@@ -339,17 +421,18 @@ async fn placement(
         shard_id = tracing::field::Empty,
     );
     let _ = span.set_parent(parent_context);
-    placement_inner(state, game_id, q, headers)
+    placement_inner(state, request, headers)
         .instrument(span)
         .await
 }
 
 async fn placement_inner(
     state: AppState,
-    game_id: String,
-    q: PlacementQuery,
+    request: PlacementRequest,
     headers: HeaderMap,
 ) -> Result<Json<PlacementResponse>, PlacementError> {
+    let game_id = request.game_id.trim().to_string();
+    let player_id = request.player_id.trim().to_string();
     let mut timings = BTreeMap::new();
     let t0 = std::time::Instant::now();
     state
@@ -361,13 +444,17 @@ async fn placement_inner(
         .redis
         .get_multiplexed_async_connection()
         .await
-        .context("redis connect")?;
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!("redis connect: {err}"))
+        })?;
 
     // 1. Game record
     let game_raw: Option<String> = conn
         .get(format!("games:{}", game_id))
         .await
-        .context("redis games get")?;
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!("redis games get: {err}"))
+        })?;
     let game_raw = game_raw.ok_or_else(|| PlacementError::GameNotFound(game_id.clone()))?;
     let game: GameRecord = serde_json::from_str(&game_raw).context("games:* json parse")?;
     timings.insert("gameLookupMs".to_string(), t0.elapsed().as_millis());
@@ -377,16 +464,21 @@ async fn placement_inner(
     let bundle_raw: Option<String> = conn
         .get(format!("bundles:{}", game.bundle_name))
         .await
-        .context("redis bundles get")?;
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!("redis bundles get: {err}"))
+        })?;
     let bundle_raw =
         bundle_raw.ok_or_else(|| PlacementError::BundleNotFound(game.bundle_name.clone()))?;
     let bundle: BundleRecord = serde_json::from_str(&bundle_raw).context("bundles:* json parse")?;
     timings.insert("bundleLookupMs".to_string(), t1.elapsed().as_millis());
 
-    // 3. SCAN shards:*
+    // 3. Active-game directory + Broker shard table.
     let t2 = std::time::Instant::now();
-    let shards = fetch_shards(&mut conn).await?;
-    timings.insert("shardScanMs".to_string(), t2.elapsed().as_millis());
+    let active_game = fetch_active_game(&mut conn, &game_id).await?;
+    let shards = fetch_shards(&mut conn)
+        .await
+        .map_err(PlacementError::DirectoryUnavailable)?;
+    timings.insert("directoryLookupMs".to_string(), t2.elapsed().as_millis());
 
     // 4. Filter — README guarantee #16
     let required = bundle.manifest.runtime_contract_required;
@@ -395,12 +487,7 @@ async fn placement_inner(
     let now_ms = now_ms();
     let eligible: Vec<&ShardRow> = shards
         .iter()
-        .filter(|s| {
-            let contract_ok = s.runtime_contracts_supported[0] <= required
-                && required <= s.runtime_contracts_supported[1];
-            let fresh = now_ms.saturating_sub(s.last_seen_at) <= SHARD_FRESHNESS_MS;
-            s.healthy && s.accepting_wakes && fresh && contract_ok
-        })
+        .filter(|s| shard_is_eligible(s, required, now_ms))
         .collect();
 
     if eligible.is_empty() {
@@ -417,7 +504,13 @@ async fn placement_inner(
                 .metrics
                 .placement_contract_rejected_total
                 .fetch_add(1, Ordering::Relaxed);
-            return Err(PlacementError::ContractOutOfRange { required });
+            return Err(PlacementError::ContractOutOfRange {
+                required,
+                eligible_ranges: shards
+                    .iter()
+                    .map(|s| s.runtime_contracts_supported)
+                    .collect(),
+            });
         }
         state
             .metrics
@@ -429,47 +522,57 @@ async fn placement_inner(
         });
     }
 
-    // 5. Score (cold-shard wins).
-    let target_games_per_shard = 100.0_f64;
-    let mut best: Option<(f64, &ShardRow)> = None;
-    for s in &eligible {
-        let effective_load = (s.active_games as f64 / target_games_per_shard).clamp(0.0, 2.0);
-        let active_games_score = (s.active_games as f64 / target_games_per_shard).clamp(0.0, 2.0);
-        let cpu = (s.cpu_pct / 100.0).clamp(0.0, 1.0);
-        let wake_rate = (s.recent_wake_rate as f64 / 50.0).clamp(0.0, 2.0);
-        let score =
-            effective_load * 0.45 + active_games_score * 0.35 + cpu * 0.15 + wake_rate * 0.05;
-        match &best {
-            None => best = Some((score, s)),
-            Some((b, _)) if score < *b => best = Some((score, s)),
-            _ => {}
-        }
-    }
-    let (_score, picked) = best.expect("eligible non-empty checked above");
+    // 5. Prefer a live active-game shard, otherwise score the Broker rows.
+    let sticky = active_game.as_ref().and_then(|active| {
+        eligible
+            .iter()
+            .copied()
+            .find(|shard| shard.shard_id == active.shard_id)
+    });
+    let picked = sticky.unwrap_or_else(|| pick_best_shard(&eligible));
 
-    // 6. Sign JWT
+    // 6. Claim/refresh the active-game directory entry before signing.
+    let t5 = std::time::Instant::now();
+    let placement = claim_active_game(&mut conn, &game_id, picked, active_game.as_ref()).await?;
+    let picked = shards
+        .iter()
+        .find(|shard| shard.shard_id == placement.shard_id)
+        .unwrap_or(picked);
+    Span::current().record("shard_id", tracing::field::display(&picked.shard_id));
+    timings.insert("claimMs".to_string(), t5.elapsed().as_millis());
+
+    // 7. Sign JWT
     let t6 = std::time::Instant::now();
-    let run_id = format!("run_{}_{}", now_ms, uuid::Uuid::new_v4().simple());
-    let trace_id = trace_id_from_headers(&headers)
+    let run_id = request
+        .run_id
+        .unwrap_or_else(|| format!("run_{}_{}", now_ms, uuid::Uuid::new_v4().simple()));
+    let trace_id = request
+        .trace_id
+        .or_else(|| trace_id_from_headers(&headers))
         .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-    let user_id = q.user_id.unwrap_or_else(|| "anon".to_string());
     let span = Span::current();
     span.record("trace_id", tracing::field::display(&trace_id));
     span.record("run_id", tracing::field::display(&run_id));
-    span.record("user_id", tracing::field::display(&user_id));
+    span.record("user_id", tracing::field::display(&player_id));
     span.record("shard_id", tracing::field::display(&picked.shard_id));
+    let issued_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let claims = PlacementClaims {
+        iss: "pax-backend-router".to_string(),
+        aud: "pax-backend-shards".to_string(),
+        sub: player_id.clone(),
+        iat: issued_at,
+        jti: uuid::Uuid::new_v4().to_string(),
         game_id: game_id.clone(),
         shard_id: picked.shard_id.clone(),
-        user_id: user_id.clone(),
+        player_id: player_id.clone(),
         bundle_name: game.bundle_name.clone(),
-        run_id: run_id.clone(),
-        trace_id: trace_id.clone(),
-        exp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            + state.cfg.placement_token_ttl_secs,
+        run_id: Some(run_id.clone()),
+        trace_id: Some(trace_id.clone()),
+        passthrough: request.passthrough.unwrap_or_else(|| serde_json::json!({})),
+        exp: issued_at + state.cfg.placement_token_ttl_secs,
     };
     let token = encode(
         &Header::new(jsonwebtoken::Algorithm::HS256),
@@ -479,10 +582,8 @@ async fn placement_inner(
     .context("jwt encode")?;
     timings.insert("jwtSignMs".to_string(), t6.elapsed().as_millis());
 
-    // 7. webSocketUrl
-    let admin_token =
-        env::var(&picked.rivet.admin_token_hint).unwrap_or_else(|_| "dev".to_string());
-    let ws_url = build_ws_url(picked, &game_id, &token, &admin_token, &user_id);
+    // 8. Direct Broker webSocketUrl.
+    let ws_url = build_ws_url(picked, &game_id, &token, &player_id);
 
     timings.insert("totalMs".to_string(), t0.elapsed().as_millis());
     state
@@ -501,6 +602,8 @@ async fn placement_inner(
         expires_at: claims.exp,
         run_id,
         trace_id,
+        generation: placement.generation,
+        fly_machine_id: placement.fly_machine_id,
         bundle_name: game.bundle_name,
         server_timings: timings,
     }))
@@ -540,6 +643,25 @@ impl Extractor for HeaderExtractor<'_> {
     }
 }
 
+async fn fetch_active_game(
+    conn: &mut redis::aio::MultiplexedConnection,
+    game_id: &str,
+) -> Result<Option<ActiveGamePlacement>, PlacementError> {
+    let raw: Option<String> = conn
+        .get(format!("active_games:{}", game_id))
+        .await
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!("redis active game get: {err}"))
+        })?;
+    match raw {
+        Some(value) => serde_json::from_str(&value)
+            .map(Some)
+            .context("active_games:* json parse")
+            .map_err(PlacementError::Internal),
+        None => Ok(None),
+    }
+}
+
 async fn fetch_shards(conn: &mut redis::aio::MultiplexedConnection) -> Result<Vec<ShardRow>> {
     // SCAN cursor over shards:*
     let mut cursor: u64 = 0;
@@ -575,32 +697,157 @@ async fn fetch_shards(conn: &mut redis::aio::MultiplexedConnection) -> Result<Ve
     Ok(out)
 }
 
-fn build_ws_url(
-    shard: &ShardRow,
+async fn claim_active_game(
+    conn: &mut redis::aio::MultiplexedConnection,
     game_id: &str,
-    placement_token: &str,
-    admin_token: &str,
-    user_id: &str,
-) -> String {
+    shard: &ShardRow,
+    existing: Option<&ActiveGamePlacement>,
+) -> Result<ActiveGamePlacement, PlacementError> {
+    let now = now_ms();
+    let existing_was_absent = existing.is_none();
+    let same_shard_existing = existing.filter(|placement| placement.shard_id == shard.shard_id);
+    let placement = ActiveGamePlacement {
+        game_id: game_id.to_string(),
+        shard_id: shard.shard_id.clone(),
+        placed_at: same_shard_existing
+            .map(|placement| placement.placed_at)
+            .unwrap_or(now),
+        refreshed_at: now,
+        generation: same_shard_existing
+            .map(|placement| placement.generation)
+            .unwrap_or(now),
+        broker_id: Some(shard.shard_id.clone()),
+        fly_machine_id: shard
+            .broker
+            .as_ref()
+            .and_then(|broker| broker.fly_machine_id.clone()),
+    };
+    let key = format!("active_games:{}", game_id);
+    let body = serde_json::to_string(&placement).context("active game placement encode")?;
+    let set_mode = if same_shard_existing.is_some() {
+        "XX"
+    } else {
+        "NX"
+    };
+    let result: Option<String> = redis::cmd("SET")
+        .arg(&key)
+        .arg(&body)
+        .arg("EX")
+        .arg(ACTIVE_GAME_TTL_SECONDS)
+        .arg(set_mode)
+        .query_async(conn)
+        .await
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!("redis active game claim: {err}"))
+        })?;
+    if result.as_deref() == Some("OK") {
+        return Ok(placement);
+    }
+
+    let existing = fetch_active_game(conn, game_id).await?;
+    if let Some(existing) = existing {
+        if existing.shard_id == shard.shard_id || existing_was_absent {
+            return Ok(existing);
+        }
+    }
+
+    let _: Option<String> = redis::cmd("SET")
+        .arg(&key)
+        .arg(&body)
+        .arg("EX")
+        .arg(ACTIVE_GAME_TTL_SECONDS)
+        .arg("XX")
+        .query_async(conn)
+        .await
+        .map_err(|err| {
+            PlacementError::DirectoryUnavailable(anyhow::anyhow!(
+                "redis active game supersede: {err}"
+            ))
+        })?;
+    Ok(placement)
+}
+
+fn shard_is_eligible(shard: &ShardRow, required_contract: u32, now_ms: u64) -> bool {
+    let contract_ok = shard.runtime_contracts_supported[0] <= required_contract
+        && required_contract <= shard.runtime_contracts_supported[1];
+    let fresh = now_ms.saturating_sub(shard.last_seen_at) <= SHARD_FRESHNESS_MS;
+    let healthy_status = shard.status == "healthy";
+    shard.healthy
+        && healthy_status
+        && shard.accepting_wakes
+        && fresh
+        && contract_ok
+        && shard_has_capacity(shard)
+}
+
+fn shard_has_capacity(shard: &ShardRow) -> bool {
+    match shard.max_games {
+        Some(max_games) => shard_game_count(shard) < max_games,
+        None => true,
+    }
+}
+
+fn shard_game_count(shard: &ShardRow) -> u32 {
+    shard.current_game_count.unwrap_or(shard.active_games)
+}
+
+fn pick_best_shard<'a>(eligible: &[&'a ShardRow]) -> &'a ShardRow {
+    let target_games_per_shard = 100.0_f64;
+    let mut best: Option<(f64, &'a ShardRow)> = None;
+    for shard in eligible {
+        let game_count = shard_game_count(shard) as f64;
+        let max_games = shard.max_games.unwrap_or(100).max(1) as f64;
+        let effective_load = (game_count / max_games).clamp(0.0, 2.0);
+        let active_games_score = (game_count / target_games_per_shard).clamp(0.0, 2.0);
+        let cpu = (shard.cpu_pct / 100.0).clamp(0.0, 1.0);
+        let wake_rate = (shard.recent_wake_rate as f64 / 50.0).clamp(0.0, 2.0);
+        let score =
+            effective_load * 0.45 + active_games_score * 0.35 + cpu * 0.15 + wake_rate * 0.05;
+        match &best {
+            None => best = Some((score, shard)),
+            Some((best_score, _)) if score < *best_score => best = Some((score, shard)),
+            _ => {}
+        }
+    }
+    best.map(|(_, shard)| shard)
+        .expect("eligible shard list must be non-empty")
+}
+
+fn build_ws_url(shard: &ShardRow, game_id: &str, placement_token: &str, player_id: &str) -> String {
     let base = shard
         .url
         .replacen("http://", "ws://", 1)
         .replacen("https://", "wss://", 1);
-    let path = format!("/gateway/{}", url_encode(&shard.rivet.actor_name));
-    let qs = [
-        ("rvt-namespace", shard.rivet.namespace.as_str()),
-        ("rvt-method", "getOrCreate"),
-        ("rvt-runner", shard.rivet.runner_name.as_str()),
-        ("rvt-key", game_id),
-        ("rvt-crash-policy", "sleep"),
-        ("rvt-token", admin_token),
-        ("placementToken", placement_token),
-        ("userId", user_id),
-    ]
-    .iter()
-    .map(|(k, v)| format!("{}={}", k, url_encode(v)))
-    .collect::<Vec<_>>()
-    .join("&");
+    let path = shard
+        .broker
+        .as_ref()
+        .and_then(|broker| broker.ws_path.as_deref())
+        .filter(|path| !path.is_empty())
+        .unwrap_or("/gateway");
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    let mut params = vec![
+        ("placementToken".to_string(), placement_token.to_string()),
+        ("gameId".to_string(), game_id.to_string()),
+        ("playerId".to_string(), player_id.to_string()),
+    ];
+    if let Some(machine_id) = shard
+        .broker
+        .as_ref()
+        .and_then(|broker| broker.fly_machine_id.as_deref())
+        .filter(|value| !value.is_empty())
+    {
+        params.push(("fly-prefer-instance-id".to_string(), machine_id.to_string()));
+        params.push(("fly-force-instance-id".to_string(), machine_id.to_string()));
+    }
+    let qs = params
+        .iter()
+        .map(|(key, value)| format!("{}={}", key, url_encode(value)))
+        .collect::<Vec<_>>()
+        .join("&");
     format!("{}{}?{}", base, path, qs)
 }
 
@@ -655,7 +902,8 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
-        .route("/games/:game_id/placement", get(placement))
+        .route("/placement", post(placement_post))
+        .route("/games/:game_id/placement", get(placement_get))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(cfg.bind)

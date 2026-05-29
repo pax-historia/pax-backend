@@ -771,12 +771,16 @@ async function triggerHostEventWake(
   config: ControlPlaneConfig,
   gameId: string,
 ): Promise<void> {
-  const placementUrl = new URL(
-    `/games/${encodeURIComponent(gameId)}/placement`,
-    config.routerUrl,
-  );
-  placementUrl.searchParams.set("userId", "__pax_host_event__");
-  const placementResponse = await fetch(placementUrl);
+  const placementUrl = new URL("/placement", config.routerUrl);
+  const placementResponse = await fetch(placementUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      gameId,
+      playerId: "__pax_host_event__",
+      passthrough: { internalWake: "hostEvent" },
+    }),
+  });
   if (!placementResponse.ok) {
     throw new HttpError(503, "hostEventWakePlacementFailed", {
       gameId,
@@ -791,16 +795,16 @@ async function triggerHostEventWake(
       detail: "placement response missing webSocketUrl",
     });
   }
-  await openWakeWebSocket(placement.webSocketUrl, gameId);
+  await openWakeWebSocket(placement.webSocketUrl);
   appendControlHistory(config, "onHostEvent.wakeRequested", {
     gameId,
     placementUrl: placementUrl.toString(),
   });
 }
 
-function openWakeWebSocket(webSocketUrl: string, gameId: string): Promise<void> {
+function openWakeWebSocket(webSocketUrl: string): Promise<void> {
   return new Promise<void>((resolveWake, rejectWake) => {
-    const ws = new WebSocket(webSocketUrl, [...rivetProtocols(gameId)]);
+    const ws = new WebSocket(webSocketUrl);
     let settled = false;
     const timeout = setTimeout(() => {
       if (settled) return;
@@ -832,14 +836,6 @@ function openWakeWebSocket(webSocketUrl: string, gameId: string): Promise<void> 
       rejectWake(err);
     });
   });
-}
-
-function rivetProtocols(gameId: string): readonly string[] {
-  return [
-    "rivet",
-    "rivet_encoding.json",
-    `rivet_conn_params.${encodeURIComponent(JSON.stringify({ name: gameId }))}`,
-  ];
 }
 
 async function handleShardsCollection(

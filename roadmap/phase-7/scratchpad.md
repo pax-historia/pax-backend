@@ -167,3 +167,22 @@ without giving the Runner direct credentials, network, storage, or filesystem
 adapters. A small bridge-envelope timeout metadata field now carries the
 Broker-selected handler deadline across process IPC without changing bundle
 payloads.
+
+## 2026-05-29 02:33 PDT
+
+Started the router/control integration task by replacing the placement
+router's old Rivet URL construction path. The router now accepts
+`POST /placement`, reads Broker-style shard rows, filters by health,
+accepting-wakes, freshness, capacity, and runtime contract range, prefers an
+eligible active-game shard, claims/refreshed `active_games:<gameId>` with a
+generation token, signs Broker-readable JWT claims with `playerId`, and returns
+direct Broker websocket URLs with Fly machine pin hints from `broker.flyMachineId`.
+The legacy `GET /games/:id/placement` path remains as a compatibility shim for
+callers that have not moved yet.
+
+The Broker Redis directory now publishes `broker.wsPath` plus
+`broker.flyMachineId` from `FLY_MACHINE_ID`, and the control-plane
+host-event wake trigger calls the new `POST /placement` shape without Rivet
+subprotocols. This does not finish host-event delivery yet; the next slice
+needs to connect queued host events to the active Broker and tighten the
+Broker/control admin wake/drain path.
