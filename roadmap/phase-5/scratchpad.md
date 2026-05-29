@@ -709,3 +709,19 @@ current validation directory successfully. Also fixed
 older `kind: "scenario-result"` shape. Verification: `pnpm typecheck`,
 `git diff --check`, and a local streaming summary over the pulled validation
 artifacts.
+
+## 2026-05-29 01:31 PDT
+
+Phase 5 is now superseded by the Broker/Runner pivot described in the updated
+`docs-next/` and roadmap. Stopped the in-flight short validation at
+`/data/phase-5/validation/ivm-v1scale-20260529T063808Z` after preserving the
+clean one-hour no-fault result and the partial shard-death ramp evidence. The
+final pulled local summary at
+`var/phase-5/validation/ivm-v1scale-20260529T063808Z/validation-summary.stopped.json`
+has `gates_ok=true`: the no-fault case passed with 1000 normal closes, while
+the stopped shard-death case had reached 784 placements across all 10 shards
+with no failures, session errors, capacity warnings, or budget rejects.
+
+Stopped all Fly machines in `pax-backend-shards`, `pax-backend-control`, and
+`pax-backend-driver` after the artifact pull, leaving the old Rivet runtime
+path at zero running compute for the Phase 6 pause-and-pivot.

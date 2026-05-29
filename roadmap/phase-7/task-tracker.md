@@ -1,6 +1,6 @@
 # Phase 7 — Runtime rewrite (code only)
 
-> Status: `to_do` · Directive and exit signal: [README](../README.md)
+> Status: `in_progress` · Directive and exit signal: [README](../README.md)
 
 ## Tasks
 
@@ -8,5 +8,5 @@ Each row is a unit of work — big enough to be a task, not an entire major proj
 
 | # | Task | Progress |
 |---|---|---|
-| 1 | **Surface audit** — Re-read this phase's directive/exit signal and the [`docs-next/`](../../docs-next/) pages and code surfaces it touches (`runtime/`, `shared/ipc-protocol`, `sdk/`, `orchestration/`, `testing/oracles-lib`, `examples/bundles/historia-default`, `fly.shards.toml`, `vendor/rivet`). Expand this placeholder into a concrete task list. | `to_do` |
+| 1 | **Surface audit** — Re-read this phase's directive/exit signal and the [`docs-next/`](../../docs-next/) pages and code surfaces it touches (`runtime/`, `shared/ipc-protocol`, `sdk/`, `orchestration/`, `testing/oracles-lib`, `examples/bundles/historia-default`, `fly.shards.toml`, `vendor/rivet`). Expand this placeholder into a concrete task list. | `in_progress` |
 | 2 | **Phase verification** — Re-read this phase's directive and exit signal in the [README](../README.md). Walk every `docs-next/` page and code path the phase touches; confirm each maps to production-shaped code, every package typechecks, and no `applySyncPromise` / Rivet runtime dependency / process-per-game model remains. If anything is missing, add rows above this one and rerun. | `to_do` |

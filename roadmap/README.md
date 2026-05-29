@@ -17,8 +17,8 @@ Per-phase notes live in `phase-N/task-tracker.md` (table of tasks with short pro
 | 3 — historia-default port       | `complete`   | [phase-3/task-tracker.md](phase-3/task-tracker.md)   | [phase-3/scratchpad.md](phase-3/scratchpad.md)   |
 | 4 — Adversarial correctness     | `complete`   | [phase-4/task-tracker.md](phase-4/task-tracker.md)   | [phase-4/scratchpad.md](phase-4/scratchpad.md)   |
 | 5 — Scale climb to v1           | `superseded` | [phase-5/task-tracker.md](phase-5/task-tracker.md)   | [phase-5/scratchpad.md](phase-5/scratchpad.md)   |
-| 6 — Pause and pivot             | `to_do`      | [phase-6/task-tracker.md](phase-6/task-tracker.md)   | [phase-6/scratchpad.md](phase-6/scratchpad.md)   |
-| 7 — Runtime rewrite (code only) | `to_do`      | [phase-7/task-tracker.md](phase-7/task-tracker.md)   | [phase-7/scratchpad.md](phase-7/scratchpad.md)   |
+| 6 — Pause and pivot             | `complete`   | [phase-6/task-tracker.md](phase-6/task-tracker.md)   | [phase-6/scratchpad.md](phase-6/scratchpad.md)   |
+| 7 — Runtime rewrite (code only) | `in_progress` | [phase-7/task-tracker.md](phase-7/task-tracker.md)   | [phase-7/scratchpad.md](phase-7/scratchpad.md)   |
 | 8 — Local build + smoke         | `to_do`      | [phase-8/task-tracker.md](phase-8/task-tracker.md)   | [phase-8/scratchpad.md](phase-8/scratchpad.md)   |
 | 9 — Fly topology proof          | `to_do`      | [phase-9/task-tracker.md](phase-9/task-tracker.md)   | [phase-9/scratchpad.md](phase-9/scratchpad.md)   |
 | 10 — Adversarial correctness    | `to_do`      | [phase-10/task-tracker.md](phase-10/task-tracker.md) | [phase-10/scratchpad.md](phase-10/scratchpad.md) |
