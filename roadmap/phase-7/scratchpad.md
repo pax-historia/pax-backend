@@ -210,3 +210,18 @@ acceptance after an operator clears drain, and the control plane calls
 admin drain endpoints mutate the shard drain flag. Shard views now prefer
 `currentGameCount` when present so Broker capacity rows and drain-completion
 logic report the same count.
+
+## 2026-05-29 02:39 PDT
+
+Closed the router/control/gateway integration task with a schema cleanup pass.
+The primary `ShardRegistration` and `ActiveGamePlacement` protocol rows no
+longer carry optional Rivet routing or actor fields; the legacy parent-actor
+keeps its old Rivet registration extension locally so it can continue to
+typecheck until the packaging task removes it from the shipped runtime path.
+
+The active Phase 7 router/control/Broker/Gateway surfaces now use Broker shard
+rows, Broker admin drain/host-event delivery, active-game generation claims,
+and Broker-readable JWT claims. Remaining old-runtime references found by
+audit are in scenario-runner/oracle/metrics compatibility areas that belong to
+the later tests/scenarios task, plus the old parent-actor package that belongs
+to the packaging removal task.

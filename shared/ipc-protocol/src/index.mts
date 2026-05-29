@@ -657,14 +657,6 @@ export interface ShardBrokerInfo {
   readonly wsPath?: string;
 }
 
-export interface ShardRivetInfo {
-  readonly namespace: string;
-  readonly runnerName: string;
-  readonly actorName: string;
-  /** Env var name on the consumer side that holds the engine admin token. */
-  readonly adminTokenHint: string;
-}
-
 export interface ShardRegistration {
   readonly shardId: string;
   readonly url: string;
@@ -679,8 +671,6 @@ export interface ShardRegistration {
   readonly recentWakeRate?: number;
   readonly lastSeenAt: number;
   readonly broker?: ShardBrokerInfo;
-  /** Legacy Rivet routing metadata, removed from the new runtime path later in Phase 7. */
-  readonly rivet?: ShardRivetInfo;
 }
 
 export interface ActiveGamePlacement {
@@ -691,8 +681,6 @@ export interface ActiveGamePlacement {
   readonly generation: number;
   readonly brokerId?: string;
   readonly flyMachineId?: string;
-  /** Legacy Rivet actor id, removed from the new runtime path later in Phase 7. */
-  readonly actorId?: string;
 }
 
 export interface BundleManifest {

@@ -572,7 +572,14 @@ async function registerShard(): Promise<void> {
       ? "drained"
       : "draining"
     : "healthy";
-  const payload: ShardRegistration = {
+  const payload: ShardRegistration & {
+    readonly rivet: {
+      readonly namespace: string;
+      readonly runnerName: string;
+      readonly actorName: string;
+      readonly adminTokenHint: string;
+    };
+  } = {
     shardId: SHARD_ID,
     url: SHARD_PUBLIC_URL,
     status,
