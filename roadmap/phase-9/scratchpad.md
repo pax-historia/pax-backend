@@ -55,3 +55,26 @@ Fly-Replay handoff for wrong-shard WS upgrade requests and make the router
 return the public shard app hostname for Fly proof URLs. Private `.internal`
 Broker URLs are still useful for admin-to-Broker calls but do not validate the
 public Fly-proxy WS path required by the Phase 9 exit signal.
+
+## 2026-05-29 04:17 PDT
+
+Implemented the Fly-Replay transport shape before deploy:
+
+- `ShardBrokerInfo` now has optional `publicUrl`. Broker shard rows keep
+  `url` as the private/admin Broker URL and add `broker.publicUrl` for public
+  client WebSocket placement.
+- The placement router builds `webSocketUrl` from `broker.publicUrl` when
+  present and no longer appends instance-routing query params.
+- Broker upgrade handling now checks a signed placement token before calling
+  `wss.handleUpgrade`. If the token targets another shard and Redis
+  `active_games:<gameId>` has that shard's `flyMachineId`, the non-target
+  Broker responds with `Fly-Replay: instance=<machine>` and does not negotiate
+  the WebSocket upgrade.
+- `scripts/fly/scale-shards.sh` now sets each machine's private
+  `PAX_SHARD_PUBLIC_URL` for admin calls and public
+  `PAX_SHARD_PUBLIC_WS_URL=https://pax-backend-shards.fly.dev` for placement.
+
+Verification so far: `cargo fmt --check`, `cargo check --manifest-path
+orchestration/placement-router/Cargo.toml`, `pnpm typecheck`,
+`git diff --check`, and local `pnpm smoke` all passed. The Phase 9 task remains
+open until deployed Fly machines prove the public URL and replay handoff.

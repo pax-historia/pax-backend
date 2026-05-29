@@ -30,6 +30,7 @@ import type {
 
 export interface RedisBrokerDirectoryOptions {
   readonly flyMachineId?: string;
+  readonly publicUrl?: string;
   readonly wsPath?: string;
 }
 
@@ -55,6 +56,7 @@ export class RedisBrokerDirectory {
       broker: {
         wsPath: this.options.wsPath ?? "/gateway",
         flyMachineId,
+        publicUrl: this.options.publicUrl,
       },
     };
     await this.redis.set(
@@ -101,6 +103,10 @@ export class RedisBrokerDirectory {
     if (!existing) return;
     if (generation !== undefined && existing.generation !== generation) return;
     await this.redis.del(key);
+  }
+
+  async lookupActiveGame(gameId: string): Promise<ActiveGamePlacement | undefined> {
+    return await getJson<ActiveGamePlacement>(this.redis, `${ACTIVE_GAMES_KEY_PREFIX}${gameId}`);
   }
 }
 

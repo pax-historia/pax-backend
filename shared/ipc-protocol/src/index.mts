@@ -654,6 +654,7 @@ export type RunnerToBrokerEnvelope =
 
 export interface ShardBrokerInfo {
   readonly flyMachineId?: string;
+  readonly publicUrl?: string;
   readonly wsPath?: string;
 }
 

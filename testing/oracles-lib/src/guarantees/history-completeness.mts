@@ -51,6 +51,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "failedBundleName",
   ],
   "connection.refused": ["reason"],
+  "connection.replay": ["gameId", "playerId", "tokenShardId", "flyMachineId"],
   "game.deleted": ["gameId"],
   "game.released": ["gameId", "runnerId", "reason"],
   "game.woke": ["gameId", "runnerId", "bundleName", "bundleCompatTag"],

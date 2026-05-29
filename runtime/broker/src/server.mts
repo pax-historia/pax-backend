@@ -88,6 +88,7 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
       history: new JsonlHistoryWriter(env["PAX_HISTORY_PATH"] ?? "var/history.jsonl"),
       directory: new RedisBrokerDirectory(redis, {
         flyMachineId: env["FLY_MACHINE_ID"],
+        publicUrl: env["PAX_SHARD_PUBLIC_WS_URL"],
         wsPath,
       }),
       allowedPlayers: new RedisAllowedPlayers(redis),
@@ -107,11 +108,33 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      void broker!.acceptWebSocket(ws, req.url ?? "/").catch((err) => {
-        logger.warn({ err }, "websocket accept failed");
-        ws.close(1011, "broker accept failed");
+    void (async () => {
+      if (!req.headers["fly-replay-failed"]) {
+        const replay = await broker!.resolveWebSocketReplay(req.url ?? "/");
+        if (replay) {
+          logger.info(replay, "websocket replaying to target Fly machine");
+          socket.end(
+            [
+              "HTTP/1.1 307 Temporary Redirect",
+              `Fly-Replay: instance=${replay.flyMachineId}`,
+              "Connection: close",
+              "Content-Length: 0",
+              "",
+              "",
+            ].join("\r\n"),
+          );
+          return;
+        }
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        void broker!.acceptWebSocket(ws, req.url ?? "/").catch((err) => {
+          logger.warn({ err }, "websocket accept failed");
+          ws.close(1011, "broker accept failed");
+        });
       });
+    })().catch((err) => {
+      logger.warn({ err }, "websocket replay check failed");
+      socket.destroy();
     });
   });
 

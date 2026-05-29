@@ -305,6 +305,18 @@ WS handshake refused.
 | `playerId?` | from JWT, if parseable |
 | `reason` | `'notAllowed' \| 'wrongGame' \| 'wrongShard' \| 'gameDeleted'` |
 
+### `connection.replay`
+
+Fly WS upgrade request landed on a non-target Broker, which returned
+`Fly-Replay` before negotiating the upgrade.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `playerId` | |
+| `tokenShardId` | target shard from the placement JWT |
+| `flyMachineId` | target Fly machine id used in the replay header |
+
 ## Player I/O events
 
 ### `onPlayerMessage`

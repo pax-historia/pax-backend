@@ -34,6 +34,12 @@ query-string parameter. The JWT travels in the query string (not a header)
 because browser WebSocket APIs do not generally support custom request
 headers.
 
+On Fly, the URL uses the public shard app hostname. If Fly Proxy first
+delivers the upgrade request to a Broker whose `shardId` differs from the
+signed JWT's target shard, that Broker returns a `Fly-Replay:
+instance=<target-machine>` response before negotiating the WebSocket
+upgrade. The target Broker then handles the upgrade and verifies the JWT.
+
 ## JWT verification
 
 The Broker on the receiving shard:

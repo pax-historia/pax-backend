@@ -80,7 +80,7 @@ Content-Type: application/json
 
 | Field | Notes |
 |---|---|
-| `webSocketUrl` | The fully-qualified WS endpoint on the chosen shard. It already includes `placementToken` and the Fly machine-routing parameters (so the Fly proxy can pin the socket to the target machine) in the query string |
+| `webSocketUrl` | The fully-qualified WS endpoint for the shard app. It includes `placementToken`; on Fly, the receiving Broker uses `Fly-Replay` before WS upgrade if the proxy initially lands on a non-target machine |
 | `placementToken` | HS256-signed substrate JWT. Default TTL 5 minutes from `iat`. See [`jwt-claims.md`](jwt-claims.md) for the full claim set |
 
 The JWT contains the chosen `shardId`; the Broker on the receiving shard

@@ -16,7 +16,8 @@
 //   5. Prefer a still-eligible active-game shard; otherwise score eligible rows.
 //   6. Claim active_games:<id> with a generation fence for the chosen Broker.
 //   7. Sign HS256 JWT { gameId, shardId, playerId, runId, traceId, exp }.
-//   8. Build a direct Broker WebSocket URL with Fly machine pin hints.
+//   8. Build a Broker WebSocket URL. On Fly, wrong-shard Brokers use
+//      Fly-Replay before WS upgrade to pin the socket to the target machine.
 //   9. Return JSON.
 
 use std::collections::BTreeMap;
@@ -144,6 +145,8 @@ struct ShardRow {
 struct ShardBrokerInfo {
     #[serde(rename = "flyMachineId", default)]
     fly_machine_id: Option<String>,
+    #[serde(rename = "publicUrl", default)]
+    public_url: Option<String>,
     #[serde(rename = "wsPath", default)]
     ws_path: Option<String>,
 }
@@ -582,7 +585,7 @@ async fn placement_inner(
     .context("jwt encode")?;
     timings.insert("jwtSignMs".to_string(), t6.elapsed().as_millis());
 
-    // 8. Direct Broker webSocketUrl.
+    // 8. Broker webSocketUrl.
     let ws_url = build_ws_url(picked, &game_id, &token, &player_id);
 
     timings.insert("totalMs".to_string(), t0.elapsed().as_millis());
@@ -814,8 +817,12 @@ fn pick_best_shard<'a>(eligible: &[&'a ShardRow]) -> &'a ShardRow {
 }
 
 fn build_ws_url(shard: &ShardRow, game_id: &str, placement_token: &str, player_id: &str) -> String {
-    let base = shard
-        .url
+    let base_source = shard
+        .broker
+        .as_ref()
+        .and_then(|broker| broker.public_url.as_deref())
+        .unwrap_or(&shard.url);
+    let base = base_source
         .replacen("http://", "ws://", 1)
         .replacen("https://", "wss://", 1);
     let path = shard
@@ -829,20 +836,11 @@ fn build_ws_url(shard: &ShardRow, game_id: &str, placement_token: &str, player_i
     } else {
         format!("/{path}")
     };
-    let mut params = vec![
+    let params = vec![
         ("placementToken".to_string(), placement_token.to_string()),
         ("gameId".to_string(), game_id.to_string()),
         ("playerId".to_string(), player_id.to_string()),
     ];
-    if let Some(machine_id) = shard
-        .broker
-        .as_ref()
-        .and_then(|broker| broker.fly_machine_id.as_deref())
-        .filter(|value| !value.is_empty())
-    {
-        params.push(("fly-prefer-instance-id".to_string(), machine_id.to_string()));
-        params.push(("fly-force-instance-id".to_string(), machine_id.to_string()));
-    }
     let qs = params
         .iter()
         .map(|(key, value)| format!("{}={}", key, url_encode(value)))

@@ -17,6 +17,7 @@ import {
   type ApiGatewayInvokeResult,
   type ApiInvokeRequest,
   type ApiInvokeResponse,
+  type ActiveGamePlacement,
   type BlobGetIpcPayload,
   type BlobListIpcPayload,
   type BlobPutIpcPayload,
@@ -99,6 +100,7 @@ export interface BrokerDependencies {
     removeShard(shardId: string): Promise<void>;
     claimActiveGame?(input: BrokerActiveGameClaim): Promise<void>;
     releaseActiveGame?(gameId: string, generation?: number): Promise<void>;
+    lookupActiveGame?(gameId: string): Promise<ActiveGamePlacement | undefined>;
   };
   readonly allowedPlayers: {
     has(gameId: string, playerId: string): Promise<boolean>;
@@ -160,6 +162,12 @@ export interface BrokerHealthSnapshot {
   readonly activeGames: number;
   readonly connectedSessions: number;
   readonly capacity: BrokerCapacityRow;
+}
+
+export interface BrokerWebSocketReplay {
+  readonly gameId: string;
+  readonly targetShardId: string;
+  readonly flyMachineId: string;
 }
 
 interface PlacementClaims extends JwtPayload {
@@ -624,6 +632,45 @@ export class Broker {
     const game = this.games.get(gameId) ?? await this.ensureGameForConnection(gameId);
     if (!game) return 0;
     return await this.deliverQueuedHostEvents(game);
+  }
+
+  async resolveWebSocketReplay(rawUrl: string | URL): Promise<BrokerWebSocketReplay | undefined> {
+    this.ensureStarted();
+    if (!this.deps.directory.lookupActiveGame) return undefined;
+    const url = typeof rawUrl === "string" ? new URL(rawUrl, this.config.publicUrl) : rawUrl;
+    const token = url.searchParams.get("placementToken") ?? url.searchParams.get("token");
+    if (!token) return undefined;
+
+    let claims: VerifiedPlacementClaims;
+    try {
+      claims = this.verifyPlacementToken(token);
+    } catch {
+      return undefined;
+    }
+    if (claims.shardId === this.config.shardId) return undefined;
+
+    const active = await this.deps.directory.lookupActiveGame(claims.gameId);
+    const flyMachineId = active?.flyMachineId;
+    if (
+      active?.shardId !== claims.shardId ||
+      typeof flyMachineId !== "string" ||
+      !isSafeFlyMachineId(flyMachineId)
+    ) {
+      return undefined;
+    }
+    await this.writeHistory({
+      event: "connection.replay",
+      gameId: claims.gameId,
+      playerId: claims.playerId,
+      tokenShardId: claims.shardId,
+      shardId: this.config.shardId,
+      flyMachineId,
+    });
+    return {
+      gameId: claims.gameId,
+      targetShardId: claims.shardId,
+      flyMachineId,
+    };
   }
 
   snapshotCapacity(): BrokerCapacityRow {
@@ -1683,6 +1730,10 @@ function sumMapValues(values: ReadonlyMap<string, number>): number {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function isSafeFlyMachineId(value: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(value);
 }
 
 export * from "./adapters.mjs";
