@@ -37,6 +37,13 @@ export interface MetricsChannel {
 export interface LifecycleChannel {
   /** Voluntary shutdown signal. The substrate may sleep this game soon. */
   requestSleep(): void;
+  /**
+   * Opt into a server-driven tick loop while the game is awake. The substrate
+   * invokes `onTick` roughly every `intervalMs` (clamped to a floor) and stops
+   * when the game sleeps. Call again to change the cadence; idempotent at the
+   * same interval. Re-arm in `onWake` since ticking stops across sleep.
+   */
+  requestTick(intervalMs: number): void;
 }
 
 export interface PlayersChannel {

@@ -255,7 +255,10 @@ function isolateBootstrapSource(): string {
       },
       log: { emit: (payload) => __pax_emit("log.emit", __pax_safe_json(payload)) },
       metrics: { emit: (payload) => __pax_emit("metrics.emit", __pax_safe_json(payload)) },
-      lifecycle: { requestSleep: () => __pax_emit("lifecycle.requestSleep", {}) },
+      lifecycle: {
+        requestSleep: () => __pax_emit("lifecycle.requestSleep", {}),
+        requestTick: (intervalMs) => __pax_emit("lifecycle.requestTick", { intervalMs }),
+      },
       api: {
         invoke: async (kind, args, options = {}) => __pax_unwrap_response(
           await __pax_request("api.invoke", {

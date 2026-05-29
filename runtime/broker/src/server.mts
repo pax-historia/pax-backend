@@ -92,6 +92,27 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
         env["PAX_STATE_CHECKPOINT_INTERVAL_MS"] ?? "0",
         0,
       ),
+      tickMinIntervalMs: parsePositiveInteger(env["PAX_TICK_MIN_INTERVAL_MS"] ?? "15", 15),
+      budgets: {
+        cpuMsPerTick: parsePositiveInteger(
+          env["PAX_CPU_MS_PER_TICK_LIMIT"] ?? env["PAX_CPU_MS_PER_TICK"] ?? "1000",
+          1_000,
+        ),
+        memoryBytes: parsePositiveInteger(
+          env["PAX_MEMORY_BYTES_LIMIT"] ??
+            String(parsePositiveInteger(env["PAX_RUNNER_MEMORY_LIMIT_MB"] ?? "256", 256) * 1024 * 1024),
+          256 * 1024 * 1024,
+        ),
+        bandwidthBytesPerSec: parsePositiveInteger(
+          env["PAX_WS_BANDWIDTH_BYTES_PER_SEC"] ?? "65536",
+          65536,
+        ),
+        wsMessagesPerSec: parsePositiveInteger(env["PAX_WS_MESSAGES_PER_SEC"] ?? "50", 50),
+        stateBytes: parsePositiveInteger(env["PAX_STATE_BYTES_LIMIT"] ?? "131072", 131_072),
+        blobBytes: parsePositiveInteger(env["PAX_BLOB_BYTES_LIMIT"] ?? String(100 * 1024 * 1024), 100 * 1024 * 1024),
+        blobKeys: parsePositiveInteger(env["PAX_BLOB_KEYS_LIMIT"] ?? "1024", 1_024),
+        apiInvocationsPerMin: parsePositiveInteger(env["PAX_API_INVOCATIONS_PER_MIN"] ?? "60", 60),
+      },
     },
     {
       runners,

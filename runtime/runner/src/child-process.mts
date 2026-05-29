@@ -758,7 +758,8 @@ function isRuntimeHandler(type: string): type is RuntimeHandlerName {
     || type === BROKER_TO_RUNNER.onPlayerDisconnect
     || type === BROKER_TO_RUNNER.onPlayerMessage
     || type === BROKER_TO_RUNNER.onCapacityWarning
-    || type === BROKER_TO_RUNNER.onHostEvent;
+    || type === BROKER_TO_RUNNER.onHostEvent
+    || type === BROKER_TO_RUNNER.onTick;
 }
 
 function isBrokerResponseEnvelope(envelope: BrokerToRunnerEnvelope): boolean {

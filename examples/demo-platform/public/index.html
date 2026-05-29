@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pax cube room</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f1a; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e5e7eb; }
+    #c { position: fixed; inset: 0; display: block; }
+    #hud { position: fixed; top: 12px; left: 12px; padding: 10px 14px; background: rgba(17, 24, 39, 0.72); backdrop-filter: blur(8px); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; font-size: 13px; line-height: 1.5; pointer-events: none; }
+    #hud b { color: #fff; }
+    #perf { position: fixed; top: 12px; right: 12px; min-width: 310px; padding: 10px 12px; white-space: pre; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(8px); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; color: #bfdbfe; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pointer-events: none; }
+    #pill { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: #22c55e; color: #04210f; font-weight: 700; text-align: center; }
+    #status { color: #fbbf24; }
+    #tools { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+    button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.25); background: #1f2937; color: #e5e7eb; cursor: pointer; }
+    button:hover { background: #374151; }
+    #gate { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #1e293b, #0b0f1a); z-index: 10; }
+    #card { width: min(92vw, 420px); padding: 28px; background: rgba(15,23,42,0.9); border: 1px solid rgba(148,163,184,0.2); border-radius: 18px; text-align: center; }
+    #card h1 { margin: 0 0 6px; font-size: 24px; }
+    #card p { margin: 0 0 18px; color: #94a3b8; font-size: 14px; }
+    #card input { width: 100%; padding: 12px 14px; margin-bottom: 12px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.25); background: #0f172a; color: #fff; font: inherit; }
+    #card button { width: 100%; padding: 12px; background: #6366f1; border-color: #6366f1; color: #fff; font-size: 15px; }
+    #card button:hover { background: #4f46e5; }
+    #err { color: #f87171; font-size: 13px; min-height: 18px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud" class="hidden">
+    <div>room <b id="room"></b> · players <span id="pill">0</span></div>
+    <div>you are <b id="me"></b></div>
+    <div>click a cube to throw it · drag to look · scroll to zoom</div>
+    <div id="status"></div>
+  </div>
+  <div id="perf" class="hidden"></div>
+
+  <div id="tools" class="hidden">
+    <button id="shove">shove everything</button>
+    <button id="reset">reset cubes</button>
+  </div>
+
+  <div id="gate">
+    <div id="card">
+      <h1>cube room</h1>
+      <p>a server-authoritative Rapier physics sandbox running on the pax substrate. join and throw cubes around with friends.</p>
+      <input id="name" placeholder="your name (optional)" maxlength="16" autocomplete="off" />
+      <button id="join">join the room</button>
+      <div id="err"></div>
+    </div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

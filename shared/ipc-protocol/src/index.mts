@@ -115,6 +115,7 @@ export const BROKER_TO_RUNNER = Object.freeze({
   onPlayerMessage: "onPlayerMessage",
   onCapacityWarning: "onCapacityWarning",
   onHostEvent: "onHostEvent",
+  onTick: "onTick",
 } as const);
 
 export const RUNNER_TO_BROKER = Object.freeze({
@@ -136,6 +137,7 @@ export const RUNNER_TO_BROKER = Object.freeze({
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",
+  lifecycleRequestTick: "lifecycle.requestTick",
   lifecycleSleepComplete: "lifecycle.sleepComplete",
   handlerComplete: "handler.complete",
   handlerError: "handler.error",
@@ -240,6 +242,13 @@ export interface OnHostEventPayload {
   readonly deliveryAttempts?: number;
 }
 
+export interface OnTickPayload {
+  /** Per-game monotonic tick counter, starting at 0 on the first tick. */
+  readonly tickSeq: number;
+  /** The interval the loop is currently scheduled at, in milliseconds. */
+  readonly intervalMs: number;
+}
+
 export interface HostEventRecord {
   readonly gameId: string;
   readonly eventId: string;
@@ -294,7 +303,8 @@ export type RuntimeHandlerName =
   | "onPlayerDisconnect"
   | "onPlayerMessage"
   | "onCapacityWarning"
-  | "onHostEvent";
+  | "onHostEvent"
+  | "onTick";
 
 export interface RunnerReadyPayload {
   readonly runnerId: string;
@@ -599,6 +609,11 @@ export interface LifecycleSleepCompletePayload {
   readonly deadline: number;
 }
 
+export interface LifecycleRequestTickPayload {
+  /** Desired tick interval in milliseconds; the Broker clamps to a floor. */
+  readonly intervalMs: number;
+}
+
 // ----- Primary discriminated unions: Broker <-> Runner ------------------
 
 export type BrokerToRunnerEnvelope =
@@ -622,7 +637,8 @@ export type BrokerToRunnerEnvelope =
   | BridgeEnvelope<"onPlayerDisconnect", OnPlayerDisconnectPayload>
   | BridgeEnvelope<"onPlayerMessage", OnPlayerMessagePayload>
   | BridgeEnvelope<"onCapacityWarning", OnCapacityWarningPayload>
-  | BridgeEnvelope<"onHostEvent", OnHostEventPayload>;
+  | BridgeEnvelope<"onHostEvent", OnHostEventPayload>
+  | BridgeEnvelope<"onTick", OnTickPayload>;
 
 export type RunnerToBrokerEnvelope =
   | RunnerControlEnvelope<"runner.ready", RunnerReadyPayload>
@@ -643,6 +659,7 @@ export type RunnerToBrokerEnvelope =
   | BridgeEnvelope<"log.emit", LogEmitPayload>
   | BridgeEnvelope<"metrics.emit", MetricsEmitPayload>
   | BridgeEnvelope<"lifecycle.requestSleep", Record<string, never>>
+  | BridgeEnvelope<"lifecycle.requestTick", LifecycleRequestTickPayload>
   | BridgeEnvelope<"lifecycle.sleepComplete", LifecycleSleepCompletePayload>
   | BridgeEnvelope<"handler.complete", HandlerCompletePayload>
   | BridgeEnvelope<"handler.error", HandlerErrorPayload>
@@ -770,7 +787,8 @@ export type ParentToChildEnvelope =
   | IpcEnvelope<"onPlayerDisconnect", OnPlayerDisconnectPayload>
   | IpcEnvelope<"onPlayerMessage", OnPlayerMessagePayload>
   | IpcEnvelope<"onCapacityWarning", OnCapacityWarningPayload>
-  | IpcEnvelope<"onHostEvent", OnHostEventPayload>;
+  | IpcEnvelope<"onHostEvent", OnHostEventPayload>
+  | IpcEnvelope<"onTick", OnTickPayload>;
 
 export type ChildToParentEnvelope =
   | IpcEnvelope<"ready", { bundleName: string; bundleCompatTag: string; runId: string | null; gameId: string }>
@@ -790,6 +808,7 @@ export type ChildToParentEnvelope =
   | IpcEnvelope<"log.emit", LogEmitPayload>
   | IpcEnvelope<"metrics.emit", MetricsEmitPayload>
   | IpcEnvelope<"lifecycle.requestSleep", Record<string, never>>
+  | IpcEnvelope<"lifecycle.requestTick", LifecycleRequestTickPayload>
   | IpcEnvelope<"lifecycle.sleepComplete", LifecycleSleepCompletePayload>
   | IpcEnvelope<"child.fatal", ChildFatalPayload>
   | IpcEnvelope<"child.handlerError", ChildHandlerErrorPayload>
@@ -817,6 +836,7 @@ export const PARENT_TO_CHILD = Object.freeze({
   onPlayerMessage: "onPlayerMessage",
   onCapacityWarning: "onCapacityWarning",
   onHostEvent: "onHostEvent",
+  onTick: "onTick",
 } as const);
 
 export const CHILD_TO_PARENT = Object.freeze({
@@ -837,6 +857,7 @@ export const CHILD_TO_PARENT = Object.freeze({
   logEmit: "log.emit",
   metricsEmit: "metrics.emit",
   lifecycleRequestSleep: "lifecycle.requestSleep",
+  lifecycleRequestTick: "lifecycle.requestTick",
   lifecycleSleepComplete: "lifecycle.sleepComplete",
 } as const);
 

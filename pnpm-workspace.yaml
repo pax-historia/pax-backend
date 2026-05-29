@@ -12,6 +12,7 @@ packages:
   - "sdk/bundle-tools"
   - "examples/bundles/*"
   - "examples/url-services/*"
+  - "examples/demo-platform"
   - "testing/oracles-lib"
   - "testing/scenario-runner"
   - "testing/smoke-bot"

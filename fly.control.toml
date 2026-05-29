@@ -48,6 +48,35 @@ kill_timeout = "30s"
     method = "GET"
     path = "/health"
 
+# Public demo platform (cube room). Distinct external ports so it does not
+# disturb the placement router on 80/443.
+[[services]]
+  protocol = "tcp"
+  internal_port = 8088
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 2000
+    soft_limit = 1500
+
+  [[services.ports]]
+    port = 8080
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 8443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
 [checks.control_plane]
   type = "http"
   port = 9070

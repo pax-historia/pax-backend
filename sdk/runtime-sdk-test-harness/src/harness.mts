@@ -90,6 +90,9 @@ export function createRuntimeSdkHarness(
       requestSleep: () => {
         logs.push({ event: "harness.lifecycle.requestSleep" });
       },
+      requestTick: (intervalMs: number) => {
+        logs.push({ event: "harness.lifecycle.requestTick", intervalMs });
+      },
     },
     api: {
       invoke: async (kind, args, invokeOptions = {}) => {

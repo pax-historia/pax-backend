@@ -15,6 +15,8 @@ export PAX_API_GATEWAY_BASE_URL="${PAX_API_GATEWAY_BASE_URL:-http://127.0.0.1:90
 export PAX_HISTORY_PATH="${PAX_HISTORY_PATH:-/data/history/history.jsonl}"
 export PAX_API_WIRE_RECORDS_PATH="${PAX_API_WIRE_RECORDS_PATH:-/data/api-invoke-records.jsonl}"
 export PAX_LOCAL_ENGINE_ADMIN_TOKEN="${PAX_LOCAL_ENGINE_ADMIN_TOKEN:-dev}"
+export PAX_DEMO_BIND="${PAX_DEMO_BIND:-[::]:8088}"
+export PAX_CONTROL_URL="${PAX_CONTROL_URL:-http://127.0.0.1:9070}"
 export PAX_SERVICE_NAME="${PAX_SERVICE_NAME:-pax-backend-control}"
 export PAX_ZONE="${PAX_ZONE:-orchestration}"
 export VECTOR_DATA_DIR="${VECTOR_DATA_DIR:-/data/vector}"
@@ -58,6 +60,8 @@ start_service "control-plane" node "$APP_ROOT/node_modules/tsx/dist/cli.mjs" \
   "$APP_ROOT/orchestration/control-plane/src/app.mts"
 start_service "api-gateway" node "$APP_ROOT/node_modules/tsx/dist/cli.mjs" \
   "$APP_ROOT/orchestration/api-gateway/src/app.mts"
+start_service "demo-platform" node "$APP_ROOT/node_modules/tsx/dist/cli.mjs" \
+  "$APP_ROOT/examples/demo-platform/src/server.mts"
 
 set +e
 wait -n "${pids[@]}"

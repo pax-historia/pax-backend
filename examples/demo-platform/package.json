@@ -1,0 +1,11 @@
+{
+  "name": "@pax-backend/demo-platform",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.mts",
+    "setup": "tsx src/server.mts --setup",
+    "check-types": "tsc --noEmit"
+  }
+}

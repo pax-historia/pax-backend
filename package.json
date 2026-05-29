@@ -6,6 +6,8 @@
   "packageManager": "pnpm@10.29.3",
   "scripts": {
     "smoke": "tsx testing/smoke-bot/src/smoke.mts",
+    "fanout": "tsx testing/smoke-bot/src/fanout.mts",
+    "history:summary": "tsx testing/smoke-bot/src/history-summary.mts",
     "typecheck": "tsc -b --pretty",
     "local:up": "./scripts/dev/local-up.sh",
     "local:down": "./scripts/dev/local-down.sh",

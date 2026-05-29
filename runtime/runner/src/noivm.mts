@@ -1,3 +1,5 @@
+import { webcrypto } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import vm from "node:vm";
 
 import type {
@@ -31,6 +33,13 @@ interface PaxGlobal {
   __pax_bundle?: BundleDefinition | null;
   c?: SubstrateContext;
   console?: Console;
+  // Standard web globals that WebAssembly toolchains (wasm-bindgen, getrandom,
+  // emscripten) bind at instantiate time. A bare vm context only exposes
+  // ECMAScript built-ins, so WASM-bearing bundles need these injected.
+  crypto?: unknown;
+  performance?: unknown;
+  TextEncoder?: unknown;
+  TextDecoder?: unknown;
 }
 
 export class NoIvmRunnerProcess implements RunnerProcess {
@@ -53,10 +62,14 @@ export class NoIvmRunnerProcess implements RunnerProcess {
       },
       c,
       console: consoleProxy(input.gameId, this.bridge),
+      crypto: webcrypto,
+      performance,
+      TextEncoder,
+      TextDecoder,
     };
     const context = vm.createContext(sandbox, {
       name: `pax-noivm-${input.gameId}`,
-      codeGeneration: { strings: true, wasm: false },
+      codeGeneration: { strings: true, wasm: true },
     });
     const script = new vm.Script(input.bundleSource, {
       filename: `${input.bundleName}.bundle.js`,
@@ -203,6 +216,9 @@ function makeContext(assignment: RunnerAssignment, bridge: BrokerBridge): Substr
     lifecycle: {
       requestSleep: () => {
         void bridge.emit(assignment.gameId, "lifecycle.requestSleep", {});
+      },
+      requestTick: (intervalMs: number) => {
+        void bridge.emit(assignment.gameId, "lifecycle.requestTick", { intervalMs });
       },
     },
     api: {

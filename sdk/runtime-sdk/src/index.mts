@@ -33,6 +33,7 @@ export type {
   OnPlayerDisconnectPayload,
   OnPlayerMessagePayload,
   OnSleepPayload,
+  OnTickPayload,
   OnWakePayload,
 } from "./lifecycle.mjs";
 export {

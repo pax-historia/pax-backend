@@ -6,6 +6,8 @@
   "main": "./src/smoke.mts",
   "scripts": {
     "smoke": "tsx src/smoke.mts",
+    "fanout": "tsx src/fanout.mts",
+    "history:summary": "tsx src/history-summary.mts",
     "build": "tsc -b",
     "check-types": "tsc --noEmit"
   },

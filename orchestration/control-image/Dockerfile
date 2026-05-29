@@ -53,7 +53,9 @@ RUN --mount=type=cache,target=/pnpm/store \
   && pnpm --filter @pax-backend/node-telemetry build \
   && pnpm --filter @pax-backend/url-services build \
   && pnpm --filter @pax-backend/control-plane build \
-  && pnpm --filter @pax-backend/api-gateway build
+  && pnpm --filter @pax-backend/api-gateway build \
+  && pnpm --filter @pax-backend/runtime-sdk build \
+  && ./scripts/build/build-bundles.sh cube-sandbox
 
 FROM timberio/vector:0.55.0-debian AS vector
 
@@ -79,6 +81,6 @@ COPY --chown=node:node --from=app-builder /app /app
 COPY --chown=node:node --chmod=0755 orchestration/control-image/entrypoint.sh /app/orchestration/control-image/entrypoint.sh
 RUN chmod 0755 /app/scripts/observability/start-vector.sh /app/scripts/observability/prune-local-buffer.sh
 
-EXPOSE 4317 4318 8686 9070 9080 9081
+EXPOSE 4317 4318 8088 8686 9070 9080 9081
 USER node
 ENTRYPOINT ["tini", "--", "/app/orchestration/control-image/entrypoint.sh"]

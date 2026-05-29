@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { mkdir, open, readFile, type FileHandle } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
@@ -173,13 +173,27 @@ export class HttpApiGatewayClient {
 
 export class JsonlHistoryWriter {
   private paxSeq = 0;
+  private handlePromise: Promise<FileHandle> | undefined;
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly path: string) {}
 
   async write(event: Record<string, unknown>): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
-    this.paxSeq += 1;
-    await appendFile(this.path, `${JSON.stringify({ pax_seq: this.paxSeq, ...event })}\n`, "utf8");
+    const write = this.writeChain.then(async () => {
+      const handle = await this.openHandle();
+      this.paxSeq += 1;
+      await handle.appendFile(`${JSON.stringify({ pax_seq: this.paxSeq, ...event })}\n`, "utf8");
+    });
+    this.writeChain = write.catch(() => undefined);
+    return await write;
+  }
+
+  private async openHandle(): Promise<FileHandle> {
+    this.handlePromise ??= (async () => {
+      await mkdir(dirname(this.path), { recursive: true });
+      return await open(this.path, "a");
+    })();
+    return await this.handlePromise;
   }
 }
 

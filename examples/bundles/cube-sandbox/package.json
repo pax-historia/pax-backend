@@ -1,0 +1,15 @@
+{
+  "name": "@pax-backend/bundle-cube-sandbox",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/bundle.js",
+  "scripts": {
+    "build": "../../../scripts/build/build-bundles.sh cube-sandbox",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "@pax-backend/runtime-sdk": "workspace:*"
+  }
+}

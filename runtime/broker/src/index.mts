@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { performance } from "node:perf_hooks";
 
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { Logger } from "pino";
@@ -31,6 +32,7 @@ import {
   type StorageWriteResponse,
   type WakeErrorClass,
   type WakeReason,
+  type WsSendError,
   type WsSendPayload,
   type WsSendResponse,
   type WsTarget,
@@ -76,6 +78,8 @@ export interface BrokerConfig {
   readonly maxInboundFrameBytes?: number;
   readonly capacityHeartbeatMs?: number;
   readonly checkpointIntervalMs?: number;
+  /** Floor for bundle-requested tick intervals (ms). Defaults to 15. */
+  readonly tickMinIntervalMs?: number;
 }
 
 export interface BrokerWakeInput {
@@ -220,6 +224,11 @@ interface BrokerGame {
   readonly budgets: GameBudgetState;
   sleepTimer?: NodeJS.Timeout;
   currentDispatch?: DispatchContext;
+  tickTimer?: NodeJS.Timeout;
+  tickIntervalMs?: number;
+  tickNextDeadlineMs?: number;
+  tickSeq?: number;
+  tickRunning?: boolean;
 }
 
 interface GameBudgetState {
@@ -242,6 +251,7 @@ export class Broker {
   private readonly wakingGames = new Map<string, Promise<void>>();
   private readonly checkpointTimers = new Map<string, NodeJS.Timeout>();
   private readonly budgetLimits: BrokerBudgetLimits;
+  private readonly wsSendMetrics = new WsSendMetrics();
   private capacityHeartbeat?: NodeJS.Timeout;
 
   constructor(
@@ -314,6 +324,7 @@ export class Broker {
     this.games.delete(gameId);
     this.clearSleepTimer(game, reason);
     this.cancelCheckpointTimer(gameId);
+    this.cancelTickTimer(game);
     this.closeSessions(game, reason);
     await game.runner.release(gameId);
     await this.deps.directory.releaseActiveGame?.(gameId, game.generation);
@@ -737,6 +748,9 @@ export class Broker {
           this.deps.logger?.warn({ err, gameId: game.gameId }, "requested sleep failed");
         });
         return;
+      case RUNNER_TO_BROKER.lifecycleRequestTick:
+        this.scheduleTick(game, envelope.payload.intervalMs);
+        return;
       case RUNNER_TO_BROKER.lifecycleSleepComplete:
         await this.writeHistory({
           event: "lifecycle.sleepComplete",
@@ -895,6 +909,7 @@ export class Broker {
       "# HELP pax_broker_budget_consumed_ratio Max current budget usage ratio by budget.",
       "# TYPE pax_broker_budget_consumed_ratio gauge",
       ...budgetRatioLines(budgetSnapshots),
+      ...this.wsSendMetrics.prometheusLines(),
       "",
     ];
     return lines.join("\n");
@@ -1092,6 +1107,7 @@ export class Broker {
     if (!this.games.delete(game.gameId)) return undefined;
     this.clearSleepTimer(game, reason);
     this.cancelCheckpointTimer(game.gameId);
+    this.cancelTickTimer(game);
     this.closeSessions(game, reason);
     const response = await this.flushState(game, "state.flush.plannedTransition", undefined, "sleep");
     await game.runner.release(game.gameId);
@@ -1113,6 +1129,7 @@ export class Broker {
     this.games.delete(game.gameId);
     this.clearSleepTimer(game, "supersededByCheckpointConflict");
     this.cancelCheckpointTimer(game.gameId);
+    this.cancelTickTimer(game);
     this.closeSessions(game, "supersededByCheckpointConflict");
     await game.runner.release(game.gameId);
     await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
@@ -1133,6 +1150,7 @@ export class Broker {
     this.games.delete(gameId);
     this.clearSleepTimer(game, "runnerCrash");
     this.cancelCheckpointTimer(gameId);
+    this.cancelTickTimer(game);
     this.closeSessions(game, "runnerCrash");
     await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
     await this.writeHistory({
@@ -1450,42 +1468,50 @@ export class Broker {
   }
 
   private async handleWsSend(game: BrokerGame, payload: WsSendPayload, requestId?: string): Promise<WsSendResponse> {
-    const serialized = trySerializeWsBody(payload.body);
-    if (!serialized.ok) {
-      const response = serialized.response;
+    const started = performance.now();
+    const framePlan = prepareWsFramePlan(payload.body);
+    if (!framePlan.ok) {
+      const response = framePlan.response;
+      this.wsSendMetrics.recordRejected(response.error);
       await this.writeHistory({
         event: "ws.send.rejected",
         gameId: game.gameId,
         requestId,
         target: payload.target,
-        error: response.ok ? "serializationFailed" : response.error,
+        error: response.error,
       });
       return response;
     }
     const targets = resolveWsSendTargets(payload.target, [...game.sessions.values()]);
     if (!targets.ok) {
       const response = targets.response;
+      this.wsSendMetrics.recordRejected(response.error);
       await this.writeHistory({
         event: "ws.send.rejected",
         gameId: game.gameId,
         requestId,
         target: payload.target,
-        error: response.ok ? "targetInvalid" : response.error,
-        detail: response.ok ? undefined : response.detail,
+        error: response.error,
+        detail: response.detail,
       });
       return response;
     }
 
-    const frames = targets.sessions.map((session) => ({
-      session,
-      serialized: JSON.stringify(wsFrameForSend(payload.body, session.sessionId)),
-    }));
+    const frames = targets.sessions.map((session) => {
+      const serialized = framePlan.serialize(session.sessionId);
+      return {
+        session,
+        serialized,
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    });
     const bytes = frames.reduce(
-      (total, frame) => total + Buffer.byteLength(frame.serialized, "utf8"),
+      (total, frame) => total + frame.bytes,
       0,
     );
     const now = this.now();
     if (game.budgets.wsBytes.sum(now) + bytes > this.budgetLimits.bandwidthBytesPerSec) {
+      this.wsSendMetrics.recordRejected("bandwidthExceeded");
       await this.writeHistory({
         event: "ws.send.rejected",
         gameId: game.gameId,
@@ -1497,6 +1523,7 @@ export class Broker {
       return { ok: false, error: "bandwidthExceeded", detail: { limit: this.budgetLimits.bandwidthBytesPerSec } };
     }
     if (game.budgets.wsMessages.sum(now) + 1 > this.budgetLimits.wsMessagesPerSec) {
+      this.wsSendMetrics.recordRejected("rateExceeded");
       await this.writeHistory({
         event: "ws.send.rejected",
         gameId: game.gameId,
@@ -1511,12 +1538,16 @@ export class Broker {
     game.budgets.wsMessages.add(1, now);
 
     let sent = 0;
+    let sentBytes = 0;
+    const bufferedAmounts: number[] = [];
     const sentSessions: BrokerSession[] = [];
-    for (const { session, serialized: frame } of frames) {
+    for (const { session, serialized: frame, bytes: frameBytes } of frames) {
       if (session.ws.readyState !== WebSocket.OPEN) continue;
       session.ws.send(frame);
+      bufferedAmounts.push(session.ws.bufferedAmount);
       sentSessions.push(session);
       sent += 1;
+      sentBytes += frameBytes;
     }
     const singleRecipient =
       sentSessions.length === 1
@@ -1528,10 +1559,16 @@ export class Broker {
       requestId,
       target: payload.target,
       recipientCount: sent,
-      bytes,
+      bytes: sentBytes,
       ...singleRecipient,
     });
-    return { ok: true, sent, bytes };
+    this.wsSendMetrics.recordSent({
+      durationMs: performance.now() - started,
+      recipients: sent,
+      bytes: sentBytes,
+      maxBufferedAmount: maxNumber(bufferedAmounts),
+    });
+    return { ok: true, sent, bytes: sentBytes };
   }
 
   private async playersAllowed(
@@ -1815,6 +1852,62 @@ export class Broker {
     this.checkpointTimers.delete(gameId);
   }
 
+  // A bundle opts into a server-driven loop via c.lifecycle.requestTick(ms).
+  // The loop only runs while the game is awake and resident: it is single-flight
+  // (never re-armed until the previous onTick resolves) and is torn down at every
+  // place a game leaves this Broker (sleep, release, crash, supersede).
+  private scheduleTick(game: BrokerGame, intervalMs: number): void {
+    const floorMs = this.config.tickMinIntervalMs ?? 15;
+    const requested = Number.isFinite(intervalMs) ? Math.floor(intervalMs) : floorMs;
+    game.tickIntervalMs = Math.max(floorMs, requested);
+    game.tickNextDeadlineMs ??= this.now() + game.tickIntervalMs;
+    // Idempotent: if a loop is already armed or in flight, the next re-arm picks
+    // up the updated interval; don't stack timers.
+    if (game.tickTimer || game.tickRunning) return;
+    this.armTick(game);
+  }
+
+  private armTick(game: BrokerGame): void {
+    const interval = game.tickIntervalMs;
+    if (interval === undefined) return;
+    const deadline = game.tickNextDeadlineMs ?? this.now() + interval;
+    game.tickNextDeadlineMs = deadline;
+    const delay = Math.max(0, deadline - this.now());
+    const timer = setTimeout(() => {
+      game.tickTimer = undefined;
+      if (this.games.get(game.gameId) !== game || game.tickIntervalMs === undefined) return;
+      game.tickRunning = true;
+      const tickSeq = game.tickSeq ?? 0;
+      game.tickSeq = tickSeq + 1;
+      void this.invokeGameHandler(game, "onTick", { tickSeq, intervalMs: interval })
+        .catch((err: unknown) => {
+          this.deps.logger?.warn?.({ err, gameId: game.gameId }, "tick handler failed");
+        })
+        .finally(() => {
+          game.tickRunning = false;
+          if (this.games.get(game.gameId) === game && game.tickIntervalMs !== undefined) {
+            const nextInterval = game.tickIntervalMs;
+            let nextDeadline = (game.tickNextDeadlineMs ?? this.now()) + nextInterval;
+            const now = this.now();
+            while (nextDeadline <= now) nextDeadline += nextInterval;
+            game.tickNextDeadlineMs = nextDeadline;
+            this.armTick(game);
+          }
+        });
+    }, delay);
+    timer.unref();
+    game.tickTimer = timer;
+  }
+
+  private cancelTickTimer(game: BrokerGame): void {
+    game.tickIntervalMs = undefined;
+    game.tickNextDeadlineMs = undefined;
+    if (game.tickTimer) {
+      clearTimeout(game.tickTimer);
+      game.tickTimer = undefined;
+    }
+  }
+
   private async writeHistory(event: Record<string, unknown>): Promise<void> {
     await this.deps.history.write({
       ts: new Date(this.now()).toISOString(),
@@ -1941,6 +2034,98 @@ function escapePromLabel(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
 }
 
+interface WsSendMetricSample {
+  readonly durationMs: number;
+  readonly recipients: number;
+  readonly bytes: number;
+  readonly maxBufferedAmount: number;
+}
+
+class WsSendMetrics {
+  private sentCount = 0;
+  private durationSecondsSum = 0;
+  private bytesSum = 0;
+  private recipientsSum = 0;
+  private readonly rejected = new Map<WsSendError, number>();
+  private readonly durationMs = new NumericSampleWindow(2_000);
+  private readonly recipients = new NumericSampleWindow(2_000);
+  private readonly bytes = new NumericSampleWindow(2_000);
+  private readonly bufferedAmount = new NumericSampleWindow(2_000);
+
+  recordSent(sample: WsSendMetricSample): void {
+    this.sentCount += 1;
+    this.durationSecondsSum += sample.durationMs / 1_000;
+    this.bytesSum += sample.bytes;
+    this.recipientsSum += sample.recipients;
+    this.durationMs.add(sample.durationMs);
+    this.recipients.add(sample.recipients);
+    this.bytes.add(sample.bytes);
+    this.bufferedAmount.add(sample.maxBufferedAmount);
+  }
+
+  recordRejected(error: WsSendError): void {
+    this.rejected.set(error, (this.rejected.get(error) ?? 0) + 1);
+  }
+
+  prometheusLines(): readonly string[] {
+    const lines = [
+      "# HELP pax_broker_ws_send_total Accepted outbound ws.send calls.",
+      "# TYPE pax_broker_ws_send_total counter",
+      `pax_broker_ws_send_total ${this.sentCount}`,
+      "# HELP pax_broker_ws_send_rejected_total Rejected outbound ws.send calls by typed error.",
+      "# TYPE pax_broker_ws_send_rejected_total counter",
+      ...[...this.rejected.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([error, count]) => `pax_broker_ws_send_rejected_total{error="${escapePromLabel(error)}"} ${count}`),
+      "# HELP pax_broker_ws_send_duration_seconds_sum Total accepted ws.send handling duration.",
+      "# TYPE pax_broker_ws_send_duration_seconds_sum counter",
+      `pax_broker_ws_send_duration_seconds_sum ${this.durationSecondsSum}`,
+      "# HELP pax_broker_ws_send_bytes_total Total outbound WebSocket payload bytes accepted by the Broker.",
+      "# TYPE pax_broker_ws_send_bytes_total counter",
+      `pax_broker_ws_send_bytes_total ${this.bytesSum}`,
+      "# HELP pax_broker_ws_send_recipients_total Total WebSocket recipients accepted by the Broker.",
+      "# TYPE pax_broker_ws_send_recipients_total counter",
+      `pax_broker_ws_send_recipients_total ${this.recipientsSum}`,
+      "# HELP pax_broker_ws_send_duration_seconds Recent ws.send handling duration quantiles.",
+      "# TYPE pax_broker_ws_send_duration_seconds gauge",
+      `pax_broker_ws_send_duration_seconds{quantile="0.50"} ${this.durationMs.quantile(0.5) / 1_000}`,
+      `pax_broker_ws_send_duration_seconds{quantile="0.95"} ${this.durationMs.quantile(0.95) / 1_000}`,
+      "# HELP pax_broker_ws_send_recipients Recent ws.send recipient count quantiles.",
+      "# TYPE pax_broker_ws_send_recipients gauge",
+      `pax_broker_ws_send_recipients{quantile="0.50"} ${this.recipients.quantile(0.5)}`,
+      `pax_broker_ws_send_recipients{quantile="0.95"} ${this.recipients.quantile(0.95)}`,
+      "# HELP pax_broker_ws_send_bytes Recent ws.send outbound byte count quantiles.",
+      "# TYPE pax_broker_ws_send_bytes gauge",
+      `pax_broker_ws_send_bytes{quantile="0.50"} ${this.bytes.quantile(0.5)}`,
+      `pax_broker_ws_send_bytes{quantile="0.95"} ${this.bytes.quantile(0.95)}`,
+      "# HELP pax_broker_ws_buffered_amount_bytes Recent post-send WebSocket bufferedAmount quantiles.",
+      "# TYPE pax_broker_ws_buffered_amount_bytes gauge",
+      `pax_broker_ws_buffered_amount_bytes{quantile="0.50"} ${this.bufferedAmount.quantile(0.5)}`,
+      `pax_broker_ws_buffered_amount_bytes{quantile="0.95"} ${this.bufferedAmount.quantile(0.95)}`,
+    ];
+    return lines;
+  }
+}
+
+class NumericSampleWindow {
+  private readonly samples: number[] = [];
+
+  constructor(private readonly maxSamples: number) {}
+
+  add(value: number): void {
+    if (!Number.isFinite(value)) return;
+    this.samples.push(value);
+    if (this.samples.length > this.maxSamples) this.samples.shift();
+  }
+
+  quantile(q: number): number {
+    if (this.samples.length === 0) return 0;
+    const sorted = [...this.samples].sort((left, right) => left - right);
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
+    return sorted[index] ?? 0;
+  }
+}
+
 class SlidingWindowCounter {
   private readonly samples: { readonly at: number; readonly value: number }[] = [];
 
@@ -2021,44 +2206,51 @@ function rawDataToString(data: RawData): string {
   return Buffer.from(new Uint8Array(data)).toString("utf8");
 }
 
-function trySerializeWsBody(
-  body: unknown,
-): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly response: WsSendResponse } {
+type WsFramePlan =
+  | { readonly ok: true; serialize(sessionId: string): string }
+  | { readonly ok: false; readonly response: Extract<WsSendResponse, { readonly ok: false }> };
+
+function prepareWsFramePlan(body: unknown): WsFramePlan {
   try {
-    const text = JSON.stringify(body);
-    if (typeof text !== "string") {
+    if (isRecord(body)) {
+      const parts: string[] = [];
+      for (const [key, value] of Object.entries(body)) {
+        if (key === "sessionId") continue;
+        const encoded = JSON.stringify(value);
+        if (encoded === undefined) continue;
+        parts.push(`${JSON.stringify(key)}:${encoded}`);
+      }
+      const prefix = parts.length > 0 ? `{${parts.join(",")},"sessionId":` : `{"sessionId":`;
       return {
-        ok: false,
-        response: { ok: false, error: "serializationFailed", detail: { message: "body is not JSON-serializable" } },
+        ok: true,
+        serialize: (sessionId: string) => `${prefix}${JSON.stringify(sessionId)}}`,
       };
     }
-    return { ok: true, text };
-  } catch (err) {
+
+    const encodedBody = JSON.stringify(body);
+    if (typeof encodedBody !== "string") {
+      return serializationFailed("body is not JSON-serializable");
+    }
     return {
-      ok: false,
-      response: {
-        ok: false,
-        error: "serializationFailed",
-        detail: { message: err instanceof Error ? err.message : String(err) },
-      },
+      ok: true,
+      serialize: (sessionId: string) =>
+        `{"type":"message","sessionId":${JSON.stringify(sessionId)},"body":${encodedBody}}`,
     };
+  } catch (err) {
+    return serializationFailed(err instanceof Error ? err.message : String(err));
   }
 }
 
-function wsFrameForSend(body: unknown, sessionId: string): unknown {
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return { ...(body as Record<string, unknown>), sessionId };
-  }
+function serializationFailed(message: string): Extract<WsFramePlan, { readonly ok: false }> {
   return {
-    type: "message",
-    sessionId,
-    body,
+    ok: false,
+    response: { ok: false, error: "serializationFailed", detail: { message } },
   };
 }
 
 type WsTargetResolution =
   | { readonly ok: true; readonly sessions: readonly BrokerSession[] }
-  | { readonly ok: false; readonly response: WsSendResponse };
+  | { readonly ok: false; readonly response: Extract<WsSendResponse, { readonly ok: false }> };
 
 function resolveWsSendTargets(target: WsTarget, sessions: readonly BrokerSession[]): WsTargetResolution {
   if (target === "all") return { ok: true, sessions };
@@ -2096,6 +2288,10 @@ function sumMapValues(values: ReadonlyMap<string, number>): number {
   let total = 0;
   for (const value of values.values()) total += value;
   return total;
+}
+
+function maxNumber(values: readonly number[]): number {
+  return values.length === 0 ? 0 : Math.max(...values);
 }
 
 function stringOrNull(value: unknown): string | null {
