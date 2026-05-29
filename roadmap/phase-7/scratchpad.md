@@ -290,3 +290,17 @@ references to them, Rivet package overrides, and obsolete `build:engine` /
 `build:vendor-ts` helpers. Fly shard scaling and bootstrap no longer provision
 or normalize the old RocksDB volume/Rivet env path; shard machines normalize
 Broker port 7700 and `PAX_RUNNER_KIND`.
+
+## 2026-05-29 03:10 PDT
+
+Closed Phase 7 verification. Re-read the directive and exit signal, walked the
+docs-next architecture surfaces against active code paths, and reran the
+forbidden-residue scan over active runtime/build/test paths. The only remaining
+mentions of Rivet/process-per-game/applySyncPromise are historical rationale or
+anti-examples inside `docs-next/why` and `docs-next/subsystems/runner.md`, not
+active runtime code.
+
+Verification commands passed: `pnpm typecheck`, `cargo check --manifest-path
+orchestration/placement-router/Cargo.toml`, `bash -n` over changed dev/test/Fly
+scripts, and `git diff --check`. Marked Phase 7 `complete` and opened Phase 8
+as `in_progress`.

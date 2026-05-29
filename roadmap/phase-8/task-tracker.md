@@ -1,6 +1,6 @@
 # Phase 8 — Local build + smoke
 
-> Status: `to_do` · Directive and exit signal: [README](../README.md)
+> Status: `in_progress` · Directive and exit signal: [README](../README.md)
 
 ## Tasks
 

@@ -7,3 +7,10 @@ Design decisions belong here especially. If the desired final shape in [`docs-ne
 Format suggestion: a `## YYYY-MM-DD HH:MM` heading per entry, followed by prose covering what was done, what worked, what didn't, and any design decisions. Not enforced; pick whatever shape keeps the log readable.
 
 ---
+
+## 2026-05-29 03:10 PDT
+
+Opened Phase 8 after Phase 7 verification passed. The next task is the local
+build/smoke surface audit: check the current build matrix, local stack scripts,
+smoke bot, and audit commands before trying to run `pnpm smoke` on the new
+Broker/Runner runtime.
