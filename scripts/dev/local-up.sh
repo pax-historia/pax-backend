@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# scripts/dev/local-up.sh — start the full local substrate stack on this Mac.
+# scripts/dev/local-up.sh — start the local Broker/Runner substrate stack.
 #
 # Brings up:
 #   1. Local Redis (Docker container, single-port mapping)
-#   2. rivet-engine (cached binary from scripts/build/build-engine.sh)
-#   3. control-plane Node process
-#   4. api-gateway Node process
-#   5. parent-actor Node process
-#   6. placement-router Rust binary
+#   2. control-plane Node process
+#   3. api-gateway Node process
+#   4. Broker Node process with a child-process Runner pool
+#   5. placement-router Rust binary
 #
-# Run scripts/dev/local-down.sh to stop everything (kills processes,
-# removes Redis container). Logs land under ./var/local-up/<service>.log.
+# Run scripts/dev/local-down.sh to stop everything. Logs land under
+# ./var/local-up/<service>.log.
 
 set -euo pipefail
 
@@ -25,6 +24,21 @@ ok()   { printf "    \033[32m✓\033[0m %s\n" "$*"; }
 warn() { printf "    \033[33m!\033[0m %s\n" "$*"; }
 err()  { printf "    \033[31m✗\033[0m %s\n" "$*"; exit 1; }
 
+wait_http() {
+  local label="$1"
+  local url="$2"
+  local log_path="$3"
+  local attempts="${4:-20}"
+  for i in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      ok "$label responding"
+      return
+    fi
+    sleep 0.5
+  done
+  err "$label did not become ready; see $log_path"
+}
+
 # ---------------------------------------------------------------------------
 # Prereqs
 # ---------------------------------------------------------------------------
@@ -33,14 +47,6 @@ command -v docker >/dev/null 2>&1 || err "docker not installed"
 command -v node   >/dev/null 2>&1 || err "node not installed"
 command -v pnpm   >/dev/null 2>&1 || err "pnpm not installed (npm i -g pnpm)"
 
-# Engine binary present?
-ENGINE_BIN="$REPO_ROOT/.cache/rivet-engine/rivet-engine"
-if [[ ! -x "$ENGINE_BIN" ]]; then
-  err "rivet-engine not built. Run: ./scripts/build/build-engine.sh"
-fi
-ok "rivet-engine: $(readlink "$ENGINE_BIN" 2>/dev/null || echo "$ENGINE_BIN")"
-
-# Router binary present?
 ROUTER_BIN="$REPO_ROOT/.cache/router/router"
 ROUTER_DIR="$REPO_ROOT/orchestration/placement-router"
 if [[ ! -x "$ROUTER_BIN" ]]; then
@@ -53,24 +59,12 @@ elif find "$ROUTER_DIR/src" "$ROUTER_DIR/Cargo.toml" "$ROUTER_DIR/Cargo.lock" \
 fi
 ok "router: $ROUTER_BIN"
 
-# Node deps installed?
-if [[ ! -d "$REPO_ROOT/node_modules/.pnpm/isolated-vm@5.0.4" ]]; then
-  warn "node_modules incomplete; running pnpm install"
+if [[ ! -d "$REPO_ROOT/node_modules/.pnpm" ]]; then
+  warn "node_modules missing; running pnpm install"
   (cd "$REPO_ROOT" && pnpm install)
 fi
 ok "pnpm install: ok"
 
-# Vendor TS dist built? (engine-runner + protocol + virtual-websocket)
-VWS_DIST="$REPO_ROOT/vendor/rivet/shared/typescript/virtual-websocket/dist/mod.js"
-ER_DIST="$REPO_ROOT/vendor/rivet/rivetkit-typescript/packages/engine-runner/dist/mod.js"
-ERP_DIST="$REPO_ROOT/vendor/rivet/rivetkit-typescript/packages/engine-runner-protocol/dist/index.js"
-if [[ ! -f "$VWS_DIST" || ! -f "$ER_DIST" || ! -f "$ERP_DIST" ]]; then
-  warn "vendor rivetkit TS dist missing; running scripts/build/build-vendor-ts.sh"
-  "$REPO_ROOT/scripts/build/build-vendor-ts.sh"
-fi
-ok "vendor rivetkit TS dist: ok"
-
-# Creator bundles built? (hello-ws-echo → dist/bundle.js)
 HELLO_BUNDLE_DIST="$REPO_ROOT/examples/bundles/hello-ws-echo/dist/bundle.js"
 if [[ ! -f "$HELLO_BUNDLE_DIST" || "${PAX_FORCE_BUNDLE_REBUILD:-0}" == "1" ]]; then
   warn "hello-ws-echo bundle not built; running scripts/build/build-bundles.sh"
@@ -79,7 +73,7 @@ fi
 ok "creator bundles: ok"
 
 # ---------------------------------------------------------------------------
-# Redis (Docker)
+# Redis
 # ---------------------------------------------------------------------------
 say "Redis"
 if docker ps --format '{{.Names}}' | grep -q '^pax-redis$'; then
@@ -91,44 +85,14 @@ else
   docker run -d --name pax-redis --rm -p 6379:6379 redis:7-alpine >/dev/null
   ok "started pax-redis (6379)"
 fi
-# Wait for ping
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in $(seq 1 10); do
   if docker exec pax-redis redis-cli ping 2>/dev/null | grep -q PONG; then
     ok "redis PONG"
     break
   fi
   sleep 0.3
-done
-
-# ---------------------------------------------------------------------------
-# Engine
-# ---------------------------------------------------------------------------
-say "rivet-engine"
-ENGINE_LOG="$LOG_DIR/engine.log"
-ENGINE_PIDFILE="$PID_DIR/engine.pid"
-if [[ -f "$ENGINE_PIDFILE" ]] && kill -0 "$(cat "$ENGINE_PIDFILE")" 2>/dev/null; then
-  ok "engine already running (pid $(cat "$ENGINE_PIDFILE"))"
-else
-  : > "$ENGINE_LOG"
-  ( cd "$REPO_ROOT" && \
-    ENGINE_BINARY="$ENGINE_BIN" \
-    RIVET_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
-    nohup ./node_modules/.bin/tsx scripts/dev/spawn-engine.mts \
-      >"$ENGINE_LOG" 2>&1 & echo $! > "$ENGINE_PIDFILE" )
-  ok "engine pid $(cat "$ENGINE_PIDFILE") (log: $ENGINE_LOG)"
-fi
-
-# Wait for engine HTTP ready
-say "Wait for engine HTTP"
-for i in $(seq 1 90); do
-  if curl -fsS -H "authorization: Bearer dev" \
-       "http://127.0.0.1:6420/datacenters" >/dev/null 2>&1; then
-    ok "engine /datacenters responding"
-    break
-  fi
-  sleep 1
-  if (( i == 90 )); then
-    err "engine did not become ready in 90s; see $ENGINE_LOG"
+  if (( i == 10 )); then
+    err "redis did not respond to PING"
   fi
 done
 
@@ -150,16 +114,7 @@ else
       >"$CONTROL_LOG" 2>&1 & echo $! > "$CONTROL_PIDFILE" )
   ok "control-plane pid $(cat "$CONTROL_PIDFILE") (log: $CONTROL_LOG)"
 fi
-for i in $(seq 1 20); do
-  if curl -fsS http://127.0.0.1:9070/health >/dev/null 2>&1; then
-    ok "control-plane /health responding"
-    break
-  fi
-  sleep 0.5
-  if (( i == 20 )); then
-    err "control-plane did not become ready in 10s; see $CONTROL_LOG"
-  fi
-done
+wait_http "control-plane /health" "http://127.0.0.1:9070/health" "$CONTROL_LOG"
 
 # ---------------------------------------------------------------------------
 # API gateway
@@ -179,40 +134,37 @@ else
       >"$GATEWAY_LOG" 2>&1 & echo $! > "$GATEWAY_PIDFILE" )
   ok "api-gateway pid $(cat "$GATEWAY_PIDFILE") (log: $GATEWAY_LOG)"
 fi
-for i in $(seq 1 20); do
-  if curl -fsS http://127.0.0.1:9081/health >/dev/null 2>&1; then
-    ok "api-gateway /health responding"
-    break
-  fi
-  sleep 0.5
-  if (( i == 20 )); then
-    err "api-gateway did not become ready in 10s; see $GATEWAY_LOG"
-  fi
-done
+wait_http "api-gateway /health" "http://127.0.0.1:9081/health" "$GATEWAY_LOG"
 
 # ---------------------------------------------------------------------------
-# Parent actor
+# Broker + Runner pool
 # ---------------------------------------------------------------------------
-say "parent-actor"
-PARENT_LOG="$LOG_DIR/parent.log"
-PARENT_PIDFILE="$PID_DIR/parent.pid"
-if [[ -f "$PARENT_PIDFILE" ]] && kill -0 "$(cat "$PARENT_PIDFILE")" 2>/dev/null; then
-  ok "parent already running (pid $(cat "$PARENT_PIDFILE"))"
+say "broker"
+BROKER_LOG="$LOG_DIR/broker.log"
+BROKER_PIDFILE="$PID_DIR/broker.pid"
+if [[ -f "$BROKER_PIDFILE" ]] && kill -0 "$(cat "$BROKER_PIDFILE")" 2>/dev/null; then
+  ok "broker already running (pid $(cat "$BROKER_PIDFILE"))"
 else
-  : > "$PARENT_LOG"
+  : > "$BROKER_LOG"
   ( cd "$REPO_ROOT" && \
     REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}" \
     PAX_JWT_SECRET="${PAX_JWT_SECRET:-local-dev-secret}" \
     PAX_API_GATEWAY_URL="${PAX_API_GATEWAY_URL:-http://127.0.0.1:9081/invoke}" \
+    PAX_BROKER_BIND="${PAX_BROKER_BIND:-127.0.0.1:7700}" \
+    PAX_SHARD_PUBLIC_URL="${PAX_SHARD_PUBLIC_URL:-http://127.0.0.1:7700}" \
     PAX_SHARD_ID="${PAX_SHARD_ID:-shard-local}" \
-    PAX_LOCAL_ENGINE_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
-    RIVET_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
-    nohup ./node_modules/.bin/tsx runtime/parent-actor/src/parent.mts \
-      >"$PARENT_LOG" 2>&1 & echo $! > "$PARENT_PIDFILE" )
-  ok "parent pid $(cat "$PARENT_PIDFILE") (log: $PARENT_LOG)"
+    PAX_HISTORY_PATH="${PAX_HISTORY_PATH:-$REPO_ROOT/var/history.jsonl}" \
+    PAX_LOCAL_TIGRIS_DIR="${PAX_LOCAL_TIGRIS_DIR:-$REPO_ROOT/var/tigris-local}" \
+    PAX_RUNNER_KIND="${PAX_RUNNER_KIND:-noivm}" \
+    PAX_RUNNER_PROCESS_COUNT="${PAX_RUNNER_PROCESS_COUNT:-1}" \
+    PAX_RUNNER_CHILD_MODULE="${PAX_RUNNER_CHILD_MODULE:-$REPO_ROOT/runtime/runner/src/child-process.mts}" \
+    PAX_RUNNER_CHILD_EXEC_ARGV="${PAX_RUNNER_CHILD_EXEC_ARGV:---import tsx}" \
+    nohup ./node_modules/.bin/tsx runtime/broker/src/server.mts \
+      >"$BROKER_LOG" 2>&1 & echo $! > "$BROKER_PIDFILE" )
+  ok "broker pid $(cat "$BROKER_PIDFILE") (log: $BROKER_LOG)"
 fi
+wait_http "broker /healthz" "http://127.0.0.1:7700/healthz" "$BROKER_LOG"
 
-# Wait for parent ready (registered in Redis)
 say "Wait for shard registration"
 for i in $(seq 1 30); do
   if docker exec pax-redis redis-cli EXISTS "shards:${PAX_SHARD_ID:-shard-local}" 2>/dev/null | grep -q '^1$'; then
@@ -221,7 +173,7 @@ for i in $(seq 1 30); do
   fi
   sleep 1
   if (( i == 30 )); then
-    err "shard did not register in 30s; see $PARENT_LOG"
+    err "shard did not register in 30s; see $BROKER_LOG"
   fi
 done
 
@@ -238,32 +190,18 @@ else
   ( cd "$REPO_ROOT" && \
     REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}" \
     PAX_JWT_SECRET="${PAX_JWT_SECRET:-local-dev-secret}" \
-    PAX_LOCAL_ENGINE_ADMIN_TOKEN="${RIVET_ADMIN_TOKEN:-dev}" \
     RUST_LOG="${RUST_LOG:-info}" \
     nohup "$ROUTER_BIN" \
       >"$ROUTER_LOG" 2>&1 & echo $! > "$ROUTER_PIDFILE" )
   ok "router pid $(cat "$ROUTER_PIDFILE") (log: $ROUTER_LOG)"
 fi
-for i in $(seq 1 20); do
-  if curl -fsS http://127.0.0.1:9080/health >/dev/null 2>&1; then
-    ok "router /health responding"
-    break
-  fi
-  sleep 0.5
-  if (( i == 20 )); then
-    err "router did not become ready in 10s; see $ROUTER_LOG"
-  fi
-done
+wait_http "router /health" "http://127.0.0.1:9080/health" "$ROUTER_LOG"
 
-# ---------------------------------------------------------------------------
-# Done
-# ---------------------------------------------------------------------------
 say "Local stack up"
 ok "redis:         redis://127.0.0.1:6379"
-ok "engine:        http://127.0.0.1:6420 (admin token: ${RIVET_ADMIN_TOKEN:-dev})"
 ok "control-plane: http://127.0.0.1:9070"
 ok "api-gateway:   http://127.0.0.1:9081"
-ok "parent-actor:  pid $(cat "$PARENT_PIDFILE") -> shards:${PAX_SHARD_ID:-shard-local}"
+ok "broker:        http://127.0.0.1:7700 -> shards:${PAX_SHARD_ID:-shard-local}"
 ok "router:        http://127.0.0.1:9080"
 ok "logs:          $LOG_DIR/"
 echo

@@ -239,3 +239,12 @@ TypeScript build step. It builds the shared protocol, runtime SDK, state-store,
 Runner, Broker, and bundles, then the shard image entrypoint starts Vector plus
 the Broker server directly. The next packaging slice is to move the local dev
 scripts and Fly env/TOML off parent/Rivet naming.
+
+## 2026-05-29 02:45 PDT
+
+Moved the local dev stack onto Broker/Runner. `scripts/dev/local-up.sh` now
+starts Redis, control-plane, API gateway, the Broker runtime server with a
+child-process Runner pool, and the placement router. It no longer checks for,
+builds, or starts `rivet-engine`, vendor Rivet TypeScript, or `parent-actor`.
+`local-down.sh` now stops Broker and Runner child processes instead of the old
+engine/parent processes. Both scripts pass `bash -n`.
