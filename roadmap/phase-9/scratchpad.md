@@ -280,3 +280,32 @@ Fresh detached run:
 Initial status line at `20260529T122658Z` showed the run alive with zero
 failures; the no-fault case had started placement and reached 13 placements by
 the first spot check.
+
+## 2026-05-29 06:01 PDT
+
+Task 5 is complete. The patched topology run at
+`/data/phase-9/topology/ivm-20260529T122658Z` wrote a passing no-fault result
+before advancing into the shard-death case.
+
+No-fault evidence:
+
+- result:
+  `100g-3shards-30m-topology/ivm-chat-steady-state-100g-3shards-30m-topology-no-faults.result.json`
+- history:
+  `100g-3shards-30m-topology/ivm-chat-steady-state-100g-3shards-30m-topology-no-faults.history.jsonl`
+- 100 placements across all three Phase 9 shards:
+  `shard-fly-iad-1=34`, `shard-fly-iad-2=33`, `shard-fly-iad-3=33`
+- all workload phases completed:
+  `seed-fixtures`, `open-sessions`, `send-json`, `close-sessions`, and
+  `expect-history-events`
+- `send-json` held for 1,770,276 ms, which covers the intended 30-minute
+  topology window with the existing ceil/count behavior
+- all 100 sessions closed normally with code `1000` and reason
+  `scenarioComplete`
+- no workload phase failures, no workload session errors, no history parse
+  errors, and all scenario oracles passed
+
+The same run is still active for Task 6. It started
+`shard-death-every-5m` immediately after the no-fault result and had already
+placed early games evenly across the three shards at the first post-advance
+artifact pull.
