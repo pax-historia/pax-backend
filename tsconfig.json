@@ -16,6 +16,7 @@
     { "path": "./testing/scenario-runner" },
     { "path": "./testing/smoke-bot" },
     { "path": "./examples/bundles/budget-edge-probe" },
+    { "path": "./examples/bundles/checkpoint-skew-probe" },
     { "path": "./examples/bundles/hello-ai-call" },
     { "path": "./examples/bundles/hello-blob-rw" },
     { "path": "./examples/bundles/hello-multifeature" },

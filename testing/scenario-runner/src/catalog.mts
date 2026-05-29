@@ -402,6 +402,12 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requirePositiveNumber(value["cycles"], path, `${prefix}.cycles`);
       requireNonNegativeNumber(value["idleMsBetweenCycles"], path, `${prefix}.idleMsBetweenCycles`);
       return normalized;
+    case "evict-games":
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      if (value["reason"] !== undefined) {
+        requireString(value["reason"], path, `${prefix}.reason`);
+      }
+      return normalized;
     case "await-nemesis":
       requireOneOf(value["action"], path, `${prefix}.action`, [
         "kill-shard",

@@ -7,6 +7,7 @@ const GUARANTEE = 8;
 export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
   const pendingRestarts = new Map<string, HistoryEvent>();
+  const gameIdsInSlice = historyGameIds(history);
   let observed = 0;
 
   for (const event of history) {
@@ -78,6 +79,7 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
       }
       for (const gameId of affected) {
         if (typeof gameId === "string" && gameId.length > 0) {
+          if (gameIdsInSlice.size > 0 && !gameIdsInSlice.has(gameId)) continue;
           pendingRestarts.set(`broker:${gameId}`, event);
         }
       }
@@ -143,4 +145,13 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
   }
 
   return result(ORACLE, GUARANTEE, history, Math.max(observed, history.length), findings);
+}
+
+function historyGameIds(history: readonly HistoryEvent[]): ReadonlySet<string> {
+  return new Set(
+    history.flatMap((event) => {
+      const gameId = stringField(event, "gameId");
+      return gameId ? [gameId] : [];
+    }),
+  );
 }

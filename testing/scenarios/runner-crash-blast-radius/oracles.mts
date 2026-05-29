@@ -2,6 +2,7 @@ import type { HistoryEvent, Oracle, OracleFinding } from "@pax-backend/oracles-l
 
 const runnerCrashOracle: Oracle = (history) => {
   const findings: OracleFinding[] = [];
+  const gameIdsInSlice = historyGameIds(history);
   const crash = history.find((event) => event.event === "runner.crash");
   if (!crash) {
     findings.push({
@@ -32,6 +33,7 @@ const runnerCrashOracle: Oracle = (history) => {
     }
     for (const gameId of Array.isArray(affected) ? affected : []) {
       if (typeof gameId !== "string") continue;
+      if (gameIdsInSlice.size > 0 && !gameIdsInSlice.has(gameId)) continue;
       if (!history.some((event) => event.event === "isolate.restart" && event["gameId"] === gameId)) {
         findings.push({
           code: "missing-restart",
@@ -69,4 +71,13 @@ function requireEvent(
   findings: OracleFinding[],
 ): void {
   if (!history.some(predicate)) findings.push({ code, message });
+}
+
+function historyGameIds(history: readonly HistoryEvent[]): ReadonlySet<string> {
+  return new Set(
+    history.flatMap((event) => {
+      const gameId = event["gameId"];
+      return typeof gameId === "string" && gameId.length > 0 ? [gameId] : [];
+    }),
+  );
 }

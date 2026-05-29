@@ -65,6 +65,7 @@ interface ScenarioSession {
   readonly gameId: string;
   readonly playerId: string;
   readonly sessionId: string;
+  readonly shardUrl: string;
   readonly ws: WebSocket;
 }
 
@@ -218,6 +219,9 @@ async function executePhase(
       return;
     case "sleep-wake":
       await sleepWake(ctx, phase.cycles, phase.idleMsBetweenCycles);
+      return;
+    case "evict-games":
+      await evictGames(ctx, phase.targetGameCount, phase.reason ?? "scenarioEvict");
       return;
     case "close-sessions":
       await closeAllSessions(ctx, phase.reason);
@@ -403,6 +407,7 @@ async function openOneSession(
     gameId,
     playerId,
     sessionId: ready.sessionId,
+    shardUrl: placement.shardUrl,
     ws,
   };
 }
@@ -829,6 +834,69 @@ async function sleepWake(
       sessions: ctx.sessions.length,
     });
   }
+}
+
+async function evictGames(
+  ctx: LiveExecutorContext,
+  targetGameCount: number,
+  reason: string,
+): Promise<void> {
+  const targets = new Set(targetGameIds(ctx.workload, targetGameCount));
+  const sessions = ctx.sessions.splice(0);
+  const retained: ScenarioSession[] = [];
+  const closing: Promise<void>[] = [];
+  const shardUrlByGame = new Map<string, string>();
+
+  for (const session of sessions) {
+    if (!targets.has(session.gameId)) {
+      retained.push(session);
+      continue;
+    }
+    shardUrlByGame.set(session.gameId, session.shardUrl);
+    closing.push(waitForSessionClosed(session));
+  }
+  ctx.sessions.push(...retained);
+
+  for (const gameId of targets) {
+    const shardUrl = shardUrlByGame.get(gameId) ?? await firstShardUrl(ctx);
+    await requestJson(`${trimTrailingSlash(shardUrl)}/admin/games/${encodeURIComponent(gameId)}/evict`, {
+      method: "POST",
+    });
+    ctx.historyWriter.append("workload.game.evicted", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      reason,
+      shardUrl,
+    });
+  }
+
+  await Promise.all(closing);
+}
+
+async function waitForSessionClosed(session: ScenarioSession): Promise<void> {
+  if (
+    session.ws.readyState === WebSocket.CLOSED ||
+    session.ws.readyState === WebSocket.CLOSING
+  ) {
+    return;
+  }
+  await new Promise<void>((resolveClose) => {
+    const timeout = setTimeout(resolveClose, 2_000);
+    session.ws.once("close", () => {
+      clearTimeout(timeout);
+      resolveClose();
+    });
+  });
+}
+
+async function firstShardUrl(ctx: LiveExecutorContext): Promise<string> {
+  const body = await requestJson<{ readonly shards?: readonly { readonly url?: string }[] }>(
+    `${ctx.controlPlaneUrl}/admin/shards`,
+  );
+  const url = body.shards?.find((shard) => typeof shard.url === "string")?.url;
+  if (!url) throw new Error("evict-games could not find a shard URL");
+  return url;
 }
 
 async function closeAllSessions(ctx: LiveExecutorContext, reason: string): Promise<void> {

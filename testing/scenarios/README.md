@@ -8,6 +8,7 @@ for the broader rules about the `testing/` zone (kind-folders,
 |---|---|
 | `api-partition-adversarial/` | URL-service/API provider partition under active traffic. Asserts `mock-ai.v1` failures are typed `providerError`/`statusCode=0` wire records and recover after the nemesis restores the registration. |
 | `chat-steady-state/` | The baseline load shape from `pax-spike-fly` (chat-like games, steady connect/disconnect/message churn). Regression guard. |
+| `checkpoint-durability-consistency/` | Interval checkpoint, unplanned Runner-crash, and planned-eviction state/blob marker proof. Asserts consistent snapshots, bounded unplanned loss, and zero planned-transition loss. |
 | `compromised-bundle-adversarial/` | Hostile creator bundle behavior. Asserts a bundle cannot silently send to a missing player target and instead receives a typed `targetNotConnected` refusal. |
 | `compute-stress/` | Compute-budget edge probe. **No business-plane resources** — forces CPU timeout, websocket rate and bandwidth rejection, state/blob cap rejection, and API rate limiting. |
 | `jwt-adversarial/` | Tampered, expired, and misrouted placement JWT handshakes. Asserts invalid tokens are refused, wrong-game tokens are recorded as typed refusals, and no session opens. |

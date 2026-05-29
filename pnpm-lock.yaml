@@ -33,6 +33,12 @@ importers:
         specifier: workspace:*
         version: link:../../../sdk/runtime-sdk
 
+  examples/bundles/checkpoint-skew-probe:
+    dependencies:
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../../sdk/runtime-sdk
+
   examples/bundles/hello-ai-call:
     dependencies:
       '@pax-backend/runtime-sdk':

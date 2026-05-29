@@ -128,3 +128,41 @@ Verification:
 - `PAX_RUNNER_PROCESS_COUNT=2 PAX_RUNNER_MAX_ASSIGNED_GAMES=1 PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=runner-crash-blast-radius PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
 
 The strict K run recorded `maxAssignedGames: 1` and exactly one affected game.
+
+## 2026-05-29 07:44 PDT
+
+Completed Task 3's checkpoint-window proof. The Broker now supports an optional
+interval checkpoint timer (`PAX_STATE_CHECKPOINT_INTERVAL_MS`, defaulted to
+`1000` in the local stack) that schedules `state.checkpoint` after successful
+dirty state/blob operations and cancels cleanly on explicit flushes, planned
+release, and Runner-crash removal. `state.write`, `blob.put`, `state.flush`,
+`state.flush.plannedTransition`, and `state.checkpoint` now carry enough
+success/sequence metadata for durability oracles to reason about checkpoint
+progress.
+
+Added `examples/bundles/checkpoint-skew-probe`, which writes matching markers
+into `c.state` and a blob key, emits probe markers from `onWake` and
+`onPlayerMessage`, and can deliberately leave a dirty marker unflushed. The new
+`checkpoint-durability-consistency` scenario uses that bundle to prove four
+cases in one path: an explicit committed marker, an interval-checkpointed marker
+that survives a Runner crash, an unplanned dirty marker that rolls back to the
+last checkpoint after a Runner crash, and a planned dirty marker that survives
+admin eviction through `state.flush.plannedTransition`.
+
+The scenario-runner now has a planned `evict-games` workload phase, using the
+session's placed shard URL to call the Broker admin eviction hook and wait for
+target sessions to close. While running the all-nemesis matrix, the shared
+`crash-blast-radius` oracle was tightened for scenario-sliced histories: a
+Runner crash may report idle games left over from earlier nemesis runs, so the
+oracle keeps the full K-bound check but only requires `isolate.restart` for
+affected games present in the current history slice.
+
+Verification:
+
+- `pnpm typecheck`
+- `pnpm build:bundles`
+- `git diff --check`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_SCENARIO_SUITE_RUNTIMES=ivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_SCENARIO_SUITE_RUNTIMES=ivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`

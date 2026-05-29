@@ -157,6 +157,11 @@ export type ScenarioWorkloadPhase =
       readonly idleMsBetweenCycles: number;
     }
   | {
+      readonly type: "evict-games";
+      readonly targetGameCount: number;
+      readonly reason?: string;
+    }
+  | {
       readonly type: "await-nemesis";
       readonly action: "kill-shard" | "api-kind-partition" | "crash-runner";
       readonly minimumOccurrences: number;
