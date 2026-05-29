@@ -122,3 +122,18 @@ configured horizon, and an orphan reaper can sweep unreferenced objects when the
 underlying store supports listing. The package also has memory, local-file, and
 S3/Tigris-compatible `StateObjectStore` adapters with conditional put conflict
 surface.
+
+## 2026-05-29 02:12 PDT
+
+Started the credential-less Runner pool task with the no-ivm conformance
+Runner. `NoIvmRunnerProcess` now hosts many games in one process using one
+Node `vm` context per game, installs a frozen async `c.*` object, and forwards
+every substrate capability through a `BrokerBridge` instead of holding any
+credential or network/storage adapter directly. It emits `isolate.ready`,
+handler complete/error events, console/log/metrics/lifecycle events, and Runner
+telemetry after handler execution.
+
+This no-ivm implementation is not a security boundary, but it is the contract
+drift detector for the same async bridge the isolated-vm Runner will use. The
+next slice is the production isolated-vm Runner and then the process-level IPC
+wrapper.

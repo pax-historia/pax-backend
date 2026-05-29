@@ -16,6 +16,7 @@ export type {
 
 export interface BrokerBridge {
   request(gameId: string, channel: string, payload: unknown): Promise<unknown>;
+  emit(gameId: string, channel: string, payload: unknown): void | Promise<void>;
   emitTelemetry(telemetry: RunnerTelemetry): void;
 }
 
@@ -68,3 +69,5 @@ export class RunnerPool {
     return [...this.runners].sort((left, right) => left.assignedGames.size - right.assignedGames.size)[0]!;
   }
 }
+
+export * from "./noivm.mjs";
