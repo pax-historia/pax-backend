@@ -400,3 +400,7 @@ The next 15-minute checkpoint stayed green. Monitor snapshots 27, 28, and 29 lan
 ## 2026-05-28 20:32 PDT
 
 The `03:30Z` 15-minute checkpoint stayed green. Monitor snapshots 30, 31, and 32 landed at `2026-05-29T03:20:35.301Z`, `2026-05-29T03:25:35.334Z`, and `2026-05-29T03:30:35.457Z`. All three showed the run alive with no `exit.code`, no-faults in `send-json`, 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported 32 clean monitor snapshots and `gates_ok=true`, putting the retry roughly 129 minutes into the 1000-game no-faults hold.
+
+## 2026-05-28 20:47 PDT
+
+The `03:45Z` 15-minute checkpoint stayed green. Monitor snapshots 33, 34, and 35 landed at `2026-05-29T03:35:35.511Z`, `2026-05-29T03:40:35.545Z`, and `2026-05-29T03:45:35.603Z`. All three showed the run alive with no `exit.code`, no-faults in `send-json`, 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported 35 clean monitor snapshots and `gates_ok=true`, putting the retry roughly 144 minutes into the 1000-game no-faults hold.
