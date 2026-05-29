@@ -28,6 +28,7 @@ case_prefix="${RUNTIME}-${SCENARIO_ID}-${RUNG_ID}"
 expected_case_ids="${case_prefix}-no-faults,${case_prefix}-shard-death-every-5m,${case_prefix}-api-kind-partition-burst"
 expected_phases="seed-fixtures,open-sessions,send-json,close-sessions,expect-history-events"
 expected_min_case_duration_ms=28800000
+expected_min_hold_duration_ms=28700000
 
 pnpm exec tsx scripts/fly/summarize-soak.mts \
   --soak-dir "$SOAK_DIR" \
@@ -37,6 +38,7 @@ pnpm exec tsx scripts/fly/summarize-soak.mts \
   --expect-target-games 1000 \
   --expect-placement-shards 10 \
   --expect-min-case-duration-ms "$expected_min_case_duration_ms" \
+  --expect-min-phase-duration-ms "send-json=$expected_min_hold_duration_ms" \
   --expect-completed-phases "$expected_phases" \
   --expect-exit-code 0 \
   --require-results

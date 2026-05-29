@@ -9,6 +9,7 @@ interface CliOptions {
   readonly expectTargetGames?: number;
   readonly expectPlacementShards?: number;
   readonly expectMinCaseDurationMs?: number;
+  readonly expectMinPhaseDurationMs: Readonly<Record<string, number>>;
   readonly expectCompletedPhases: readonly string[];
   readonly expectExitCode?: string;
   readonly requireResults: boolean;
@@ -19,6 +20,7 @@ interface HistoryEvent {
   readonly ts?: unknown;
   readonly phaseType?: unknown;
   readonly phaseIndex?: unknown;
+  readonly durationMs?: unknown;
   readonly placedShardId?: unknown;
   readonly shardId?: unknown;
   readonly error?: unknown;
@@ -35,6 +37,7 @@ interface CaseSummary {
   readonly observed_placement_shards: number;
   readonly phases_started: readonly string[];
   readonly phases_completed: readonly string[];
+  readonly completed_phase_durations_ms: Readonly<Record<string, readonly number[]>>;
   readonly error_events: readonly string[];
   readonly first_event_at?: string;
   readonly last_event_at?: string;
@@ -143,6 +146,7 @@ async function summarizeCase(
   const placementCounts = new Map<string, number>();
   const phasesStarted: string[] = [];
   const phasesCompleted: string[] = [];
+  const completedPhaseDurations = new Map<string, number[]>();
   const parseErrors: string[] = [];
   const errorEvents: string[] = [];
   let historyEvents = 0;
@@ -173,7 +177,15 @@ async function summarizeCase(
       phasesStarted.push(phaseLabel(event));
     }
     if (event.event === "workload.phase.completed") {
-      phasesCompleted.push(phaseLabel(event));
+      const label = phaseLabel(event);
+      phasesCompleted.push(label);
+      const durationMs = numberValue(event.durationMs);
+      if (durationMs !== undefined) {
+        const phase = phaseName(label);
+        const durations = completedPhaseDurations.get(phase) ?? [];
+        durations.push(durationMs);
+        completedPhaseDurations.set(phase, durations);
+      }
     }
     if (String(event.event ?? "").includes("error") || event.error !== undefined) {
       errorEvents.push(`${String(event.event ?? "unknown")}: ${stringValue(event.error) ?? ""}`.trim());
@@ -195,6 +207,9 @@ async function summarizeCase(
     observed_placement_shards: placementCounts.size,
     phases_started: phasesStarted,
     phases_completed: phasesCompleted,
+    completed_phase_durations_ms: Object.fromEntries(
+      Array.from(completedPhaseDurations.entries()).sort(([left], [right]) => left.localeCompare(right)),
+    ),
     error_events: errorEvents,
     first_event_at: firstEventAt,
     last_event_at: lastEventAt,
@@ -334,6 +349,17 @@ function gateFailuresFor(
         );
       }
     }
+    for (const [phase, expectedDurationMs] of Object.entries(options.expectMinPhaseDurationMs)) {
+      const observedDurations = entry.completed_phase_durations_ms[phase] ?? [];
+      const observedMax = observedDurations.length > 0 ? Math.max(...observedDurations) : undefined;
+      if (observedMax === undefined) {
+        failures.push(`${entry.case_id} missing completed ${phase} duration`);
+      } else if (observedMax < expectedDurationMs) {
+        failures.push(
+          `${entry.case_id} expected completed ${phase} duration at least ${expectedDurationMs}ms, saw ${observedMax}ms`,
+        );
+      }
+    }
     if (options.expectCompletedPhases.length > 0) {
       const completed = new Set(entry.phases_completed.map(phaseName));
       const missing = options.expectCompletedPhases.filter((phase) => !completed.has(phase));
@@ -410,6 +436,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
     expectTargetGames: positiveIntOption(values, "expect-target-games"),
     expectPlacementShards: positiveIntOption(values, "expect-placement-shards"),
     expectMinCaseDurationMs: positiveIntOption(values, "expect-min-case-duration-ms"),
+    expectMinPhaseDurationMs: phaseDurationOption(values, "expect-min-phase-duration-ms"),
     expectCompletedPhases: stringListOption(values, "expect-completed-phases"),
     expectExitCode: stringOption(values, "expect-exit-code"),
     requireResults: values.get("require-results") === true,
@@ -452,6 +479,25 @@ function stringListOption(values: ReadonlyMap<string, string | true>, key: strin
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+function phaseDurationOption(
+  values: ReadonlyMap<string, string | true>,
+  key: string,
+): Readonly<Record<string, number>> {
+  const result: Record<string, number> = {};
+  for (const entry of stringListOption(values, key)) {
+    const [phase, rawDuration, extra] = entry.split("=");
+    if (!phase || !rawDuration || extra !== undefined) {
+      throw new Error(`--${key} entries must use phase=milliseconds`);
+    }
+    const durationMs = Number.parseInt(rawDuration, 10);
+    if (!Number.isInteger(durationMs) || durationMs < 1) {
+      throw new Error(`--${key} duration for ${phase} must be a positive integer`);
+    }
+    result[phase] = durationMs;
+  }
+  return result;
 }
 
 function stringValue(value: unknown): string | undefined {
