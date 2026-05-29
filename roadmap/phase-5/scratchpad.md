@@ -510,3 +510,22 @@ zero workload failures, zero runner-side session closes, zero
 `onCapacityWarning.sent` events, and all 10 shards healthy and accepting wakes
 with 98-102 active games each. The scenario-runner Node process was still about
 179 MB RSS, so the driver-side reservoir cap is not showing early heap growth.
+
+## 2026-05-28 22:42 PDT
+
+Added a lightweight remote monitor for
+`/data/phase-5/validation/ivm-v1scale-20260529T045623Z`; it appends five-minute
+status lines to `monitor/status.tsv` and preserves matching `/admin/shards`
+snapshots. The first monitor line at `20260529T053952Z` had the runner alive,
+1000 placements, zero failures, zero closes, zero capacity warnings, and zero
+budget rejects. Pulled the validation directory locally to
+`var/phase-5/validation/ivm-v1scale-20260529T045623Z` and summarized it with
+`scripts/fly/summarize-soak.mts`; the partial summary is green with one
+in-progress no-fault case, 1000 placements, all 10 placement shards, no parse
+errors, and no failing/error cases.
+
+Because runner history does not include shard-local parent events until archive
+collection, checked `/data/history/history.jsonl` directly on all 10 shard
+machines for the current run prefix. Every shard reported
+`onCapacityWarning.sent=0` and `compute.budget.rejected=0`, which is the direct
+target-density evidence for the child-RSS fix during the no-fault hold.
