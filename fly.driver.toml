@@ -9,7 +9,7 @@ kill_timeout = "30s"
 [env]
   NODE_ENV = "production"
   PAX_ENVIRONMENT = "production"
-  PAX_OBSERVABILITY = "buffer"
+  PAX_OBSERVABILITY = "on"
   PAX_VECTOR_PROFILE = "driver"
   PAX_CONTROL_URL = "https://pax-backend-control.fly.dev"
   PAX_ROUTER_URL = "https://pax-backend-control.fly.dev"
