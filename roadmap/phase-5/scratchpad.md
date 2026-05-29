@@ -542,3 +542,13 @@ last shard count and active games. Verification: `git diff --check`,
 `var/phase-5/validation/ivm-v1scale-20260529T045623Z` showing two monitor
 snapshots, 10 shards, 1000 active games, zero failures, zero closes, zero
 capacity warnings, and zero budget rejects.
+
+## 2026-05-28 22:51 PDT
+
+Third remote monitor line for the post-fix validation landed at
+`20260529T054952Z`, about 24 minutes into the no-fault `send-json` hold. The
+line stayed clean: runner alive, no `exit.code`, 1000 placements, zero workload
+failures, zero runner-side session closes, zero capacity warnings, and zero
+budget rejects. The simultaneous registry check still had 10 healthy accepting
+shards and exactly 1000 active games with the same 98-102 per-shard
+distribution.
