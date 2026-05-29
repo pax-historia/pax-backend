@@ -260,3 +260,7 @@ Launched the next heartbeat `ivm` retry at `/data/phase-5/soak/ivm-20260529T0019
 ## 2026-05-28 17:21 PDT
 
 Added session-close distributions to `scripts/fly/summarize-soak.mts` so failure summaries include close counts by WebSocket code and reason prefix instead of requiring ad hoc parsing. Verification against the failed `ivm-20260528T222045Z` artifacts now reports 1000 closes split as code 1000=900, 1006=66, 1011=34, with reason prefixes `scenarioRunnerAbort`=900, `core.internal_error`=18, `guard.websocket_service_timeout`=16, and `<empty>`=66. `git diff --check` and `pnpm typecheck` passed.
+
+## 2026-05-28 17:26 PDT
+
+Second monitor snapshot for the fresh retry landed at `2026-05-29T00:24:43.871Z`. The run remained alive with no `exit.code`, zero workload failures/session closes/session errors, and 10 healthy accepting shards. The monitor saw 172 placements and 170 active games during `open-sessions`; the subsequent local pull caught the ramp at 217 placements across all 10 shards, still with no session closes and `gates_ok=true` for the non-final default gates.
