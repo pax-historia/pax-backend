@@ -132,3 +132,62 @@ Bootstrap and deploy health are complete for the Phase 9 Fly topology:
   `0.0.0.0:7700`, updated the live shard machines, and verified public
   `https://pax-backend-shards.fly.dev/healthz` returns healthy Broker capacity
   with private per-machine admin URLs.
+
+## 2026-05-29 04:31 PDT
+
+Fly-proxy WebSocket routing proof is complete.
+
+The proof harness at `scripts/fly/prove-ws-routing.mts` seeds a one-off game
+through the control-plane admin API, asks the public placement router for a
+socket URL, checks the three shard machines with forced health requests, opens a
+normal public WS, then opens a second WS forced to a non-target machine. The
+second request validates that the non-target Broker emits `connection.replay`
+and the client still receives `ready` from the target Broker.
+
+Evidence from the final proof in `var/phase-9/ws-routing-proof.json`:
+
+- game: `phase9-ws-mpquhwsj`
+- trace: `b540aa83108b4a4589ea628f243f6b45`
+- target shard: `shard-fly-iad-1`
+- target machine: `185906da630218`
+- forced non-target machine: `781245db5e5908`
+- websocket host/path: `pax-backend-shards.fly.dev` / `/gateway`
+- placement token present: true
+- instance query params present: false
+- normal WS ready: true
+- forced wrong-machine replay ready: true
+
+Shard image for the final proof:
+`registry.fly.io/pax-backend-shards:deployment-runner-handlers-20260529043314`.
+Machine list after deployment showed exactly three no-volume machines, all on
+that image and all with checks passing.
+
+Shard history confirms the path: machine `781245db5e5908` emitted
+`connection.replay` to target Fly machine `185906da630218`, and target machine
+`185906da630218` opened both sessions under the same trace ID.
+
+Implementation adjustment from the first failed proof: synthetic
+`fly-force-instance-id` / `fly-prefer-instance-id` headers used by the proof
+must not survive the replay. The Broker now uses Fly's replay JSON format to
+delete those headers when present, while production browser connections still
+use the plain `Fly-Replay: instance=<machine>` response because browsers do not
+set either header. Broker active-game refreshes also preserve `flyMachineId` so
+subsequent wrong-machine arrivals remain replayable.
+
+Operational note: running plain `fly deploy` against the shard app created two
+unwanted Fly Launch `app` machines because the real Phase 9 shard machines are
+explicit Machines-config instances. Destroyed those temporary machines and
+updated the three intended machines directly. Future shard image refreshes
+should build/push the image separately, then run `fly machine update` for:
+`185906da630218`, `781245db5e5908`, and `d8d04d6b232e38`.
+
+One substrate issue surfaced before the 100-game proof: a bundle that omits a
+lifecycle handler (for example `onSleep`) caused the child runner wrapper to
+wait forever because the in-process Runner returned without emitting
+`handler.complete`. The fix is committed separately so missing optional
+handlers complete as no-ops in both `ivm` and `noivm` runners.
+
+The final deployed proof also validated that fix after the 60-second idle
+sleep grace: target machine `185906da630218` recorded `onSleep.sent`,
+`handler.complete` for `onSleep` in 0.24ms, `state.flush.plannedTransition`,
+and `game.released` with `checkpointOk=true` for `phase9-ws-mpquhwsj`.
