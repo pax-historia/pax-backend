@@ -2393,7 +2393,7 @@ async function handleApiInvoke(
     return;
   }
   const triggeringSession =
-    payload.triggeringSessionId === null
+    payload.triggeringSessionId == null
       ? undefined
       : inst.sessions.get(payload.triggeringSessionId);
   recordApiInvokeUsage(inst);

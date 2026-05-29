@@ -1,27 +1,16 @@
-export type RunnerKind = "ivm" | "noivm";
+import type {
+  RunnerAssignment,
+  RunnerInvoke,
+  RunnerKind,
+  RunnerTelemetry,
+} from "@pax-backend/ipc-protocol";
 
-export interface RunnerAssignment {
-  readonly gameId: string;
-  readonly bundleName: string;
-  readonly bundleSource: string;
-  readonly runtimeContractRequired: number;
-  readonly testSeed?: string;
-}
-
-export interface RunnerInvoke {
-  readonly gameId: string;
-  readonly handler: string;
-  readonly payload: unknown;
-  readonly timeoutMs: number;
-}
-
-export interface RunnerTelemetry {
-  readonly gameId: string;
-  readonly runnerId: string;
-  readonly memoryBytes: number;
-  readonly cpuMs: number;
-  readonly isolateCount: number;
-}
+export type {
+  RunnerAssignment,
+  RunnerInvoke,
+  RunnerKind,
+  RunnerTelemetry,
+} from "@pax-backend/ipc-protocol";
 
 export interface BrokerBridge {
   request(gameId: string, channel: string, payload: unknown): Promise<unknown>;

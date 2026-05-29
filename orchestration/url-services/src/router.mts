@@ -60,7 +60,7 @@ export async function handleReferenceService(
     {
       kind: service.kindName,
       game_id: request.context.gameId,
-      run_id: request.context.runId,
+      run_id: request.context.runId ?? undefined,
       bundle_name: request.context.bundleName,
       bundle_compat_tag: request.context.bundleCompatTag,
     },

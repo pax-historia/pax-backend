@@ -68,7 +68,7 @@ export class ApiGateway {
         kind: input.kind,
         mode: input.replayMode === true ? "replay" : this.#defaultMode,
         game_id: input.gameId,
-        run_id: input.runId,
+        run_id: input.runId ?? undefined,
         bundle_name: input.bundleName,
         bundle_compat_tag: input.bundleCompatTag,
       },

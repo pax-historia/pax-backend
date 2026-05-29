@@ -41,3 +41,20 @@ invoke, release, telemetry, and pool contracts. The Broker package owns the
 capacity row shape and the first shard lifecycle/wake boundary. Follow-up tasks
 will replace the skeletal contracts with the async IPC protocol, actual Broker
 session handling, and Runner implementations.
+
+## 2026-05-29 01:51 PDT
+
+Reworked `@pax-backend/ipc-protocol` around the new Broker/Runner bridge
+described in `docs-next/reference/ipc-protocol.md`. The primary exports are now
+`BridgeEnvelope`, `BrokerToRunnerEnvelope`, `RunnerToBrokerEnvelope`,
+`BROKER_TO_RUNNER`, and `RUNNER_TO_BROKER`, with request IDs on async
+request/response channels and `gameId` on game-scoped messages so the Broker can
+enforce Runner assignment.
+
+The package also now carries assignment grants, `assign`/`release`, Runner
+readiness, isolate readiness, handler telemetry, isolate counters, fatal-error
+payloads, and the state/blob/ws/api/lifecycle channels as one contract. The old
+`ParentToChildEnvelope`/`ChildToParentEnvelope` names remain as temporary
+compatibility aliases so the pre-Broker runtime packages keep typechecking while
+their dedicated Phase 7 tasks replace the implementation. A few gateway and URL
+service call sites were adjusted for docs-next's `runId: null` production shape.

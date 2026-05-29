@@ -51,7 +51,7 @@ export function buildGatewayEnvelope(
       "x-gateway-game-id": input.gameId,
       "x-gateway-kind": input.kind,
       "x-gateway-mode": mode,
-      "x-gateway-run-id": input.runId,
+      ...(input.runId === null ? {} : { "x-gateway-run-id": input.runId }),
       ...(traceId
         ? {
             traceparent: `00-${traceId}-${spanIdFromRequestId(requestId)}-01`,

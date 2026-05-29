@@ -61,7 +61,12 @@ export class Broker {
     readonly gameId: string;
     readonly bundleName: string;
     readonly bundleSource: string;
+    readonly bundleCompatTag: string;
     readonly runtimeContractRequired: number;
+    readonly runId?: string | null;
+    readonly memoryLimitMb?: number;
+    readonly handlerTimeoutMs?: number;
+    readonly testSeed?: number | string;
   }): Promise<void> {
     this.ensureStarted();
     await this.deps.stateStore.openSession({ gameId: input.gameId });
@@ -69,7 +74,12 @@ export class Broker {
       gameId: input.gameId,
       bundleName: input.bundleName,
       bundleSource: input.bundleSource,
+      bundleCompatTag: input.bundleCompatTag,
       runtimeContractRequired: input.runtimeContractRequired,
+      runId: input.runId ?? null,
+      memoryLimitMb: input.memoryLimitMb ?? 256,
+      handlerTimeoutMs: input.handlerTimeoutMs ?? 1_000,
+      testSeed: input.testSeed,
     });
     this.activeGames.add(input.gameId);
     await this.deps.history.write({
