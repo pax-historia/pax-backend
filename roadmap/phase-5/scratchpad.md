@@ -552,3 +552,14 @@ failures, zero runner-side session closes, zero capacity warnings, and zero
 budget rejects. The simultaneous registry check still had 10 healthy accepting
 shards and exactly 1000 active games with the same 98-102 per-shard
 distribution.
+
+## 2026-05-28 23:10 PDT
+
+Refreshed the local copy of
+`/data/phase-5/validation/ivm-v1scale-20260529T045623Z` while the no-fault
+hold continued. The partial validation summary now covers six remote monitor
+snapshots through `20260529T060452Z`: wrapper alive, 1000 placements across all
+10 shards, 1000 active games in the latest shard snapshot, zero workload
+failures, zero runner-side session closes, zero capacity warnings, zero budget
+rejects, and no history or monitor parse errors. This is still short
+target-density validation, not the 24-hour exit soak.
