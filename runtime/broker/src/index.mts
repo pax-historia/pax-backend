@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { Logger } from "pino";
@@ -147,6 +148,15 @@ export interface BrokerCapacityRow {
   readonly lastSeenAt: number;
 }
 
+export interface BrokerHealthSnapshot {
+  readonly shardId: string;
+  readonly started: boolean;
+  readonly acceptingWakes: boolean;
+  readonly activeGames: number;
+  readonly connectedSessions: number;
+  readonly capacity: BrokerCapacityRow;
+}
+
 interface PlacementClaims extends JwtPayload {
   readonly gameId?: unknown;
   readonly playerId?: unknown;
@@ -231,6 +241,21 @@ export class Broker {
     await this.deps.runners.stop();
     await this.deps.directory.removeShard(this.config.shardId);
     this.started = false;
+  }
+
+  async requestDrain(reason = "admin"): Promise<void> {
+    this.acceptingWakes = false;
+    await this.publishCapacity();
+    await this.writeHistory({ event: "broker.drain.started", reason });
+    await Promise.all([...this.games.values()].map((game) => this.sleepGame(game, "shardEvicted")));
+    await this.writeHistory({ event: "broker.drain.completed", reason });
+  }
+
+  async evictGame(gameId: string, reason: OnSleepPayload["reason"] = "evicted"): Promise<boolean> {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    await this.sleepGame(game, reason);
+    return true;
   }
 
   async wakeGame(input: BrokerWakeInput): Promise<void> {
@@ -551,6 +576,42 @@ export class Broker {
     };
   }
 
+  healthSnapshot(): BrokerHealthSnapshot {
+    return {
+      shardId: this.config.shardId,
+      started: this.started,
+      acceptingWakes: this.acceptingWakes,
+      activeGames: this.games.size,
+      connectedSessions: [...this.games.values()].reduce((total, game) => total + game.sessions.size, 0),
+      capacity: this.snapshotCapacity(),
+    };
+  }
+
+  metricsText(): string {
+    const capacity = this.snapshotCapacity();
+    const connectedSessions = [...this.games.values()].reduce((total, game) => total + game.sessions.size, 0);
+    const budgetSnapshots = [...this.games.values()].map((game) => this.computeBudgetSnapshot(game));
+    const lines = [
+      "# HELP pax_broker_active_games Active games on this Broker.",
+      "# TYPE pax_broker_active_games gauge",
+      `pax_broker_active_games ${this.games.size}`,
+      "# HELP pax_broker_connected_sessions Connected websocket sessions on this Broker.",
+      "# TYPE pax_broker_connected_sessions gauge",
+      `pax_broker_connected_sessions ${connectedSessions}`,
+      "# HELP pax_broker_accepting_wakes Whether this Broker is accepting new wakes.",
+      "# TYPE pax_broker_accepting_wakes gauge",
+      `pax_broker_accepting_wakes ${capacity.acceptingWakes ? 1 : 0}`,
+      "# HELP pax_broker_capacity_max_games Configured active-game capacity.",
+      "# TYPE pax_broker_capacity_max_games gauge",
+      `pax_broker_capacity_max_games ${capacity.maxGames}`,
+      "# HELP pax_broker_budget_consumed_ratio Max current budget usage ratio by budget.",
+      "# TYPE pax_broker_budget_consumed_ratio gauge",
+      ...budgetRatioLines(budgetSnapshots),
+      "",
+    ];
+    return lines.join("\n");
+  }
+
   private async ensureGameForConnection(gameId: string): Promise<BrokerGame | undefined> {
     const existing = this.games.get(gameId);
     if (existing) return existing;
@@ -665,6 +726,7 @@ export class Broker {
   private async releaseGame(game: BrokerGame, reason: string): Promise<void> {
     if (!this.games.delete(game.gameId)) return;
     this.clearSleepTimer(game);
+    this.closeSessions(game, reason);
     const response = await this.flushState(game, "state.flush.plannedTransition");
     await game.runner.release(game.gameId);
     await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
@@ -676,6 +738,18 @@ export class Broker {
       checkpointOk: response.ok,
     });
     await this.publishCapacity();
+  }
+
+  private closeSessions(game: BrokerGame, reason: string): void {
+    for (const session of game.sessions.values()) {
+      this.sendJson(session.ws, {
+        type: "disconnect",
+        sessionId: session.sessionId,
+        reason,
+      });
+      session.ws.close(1001, reason);
+    }
+    game.sessions.clear();
   }
 
   private async invokeGameHandler(
@@ -1012,6 +1086,80 @@ export class Broker {
   private ensureStarted(): void {
     if (!this.started) throw new Error("broker is not started");
   }
+}
+
+export function createBrokerAdminServer(broker: Broker): Server {
+  return createServer((req, res) => {
+    void handleBrokerAdminRequest(broker, req, res).catch((err) => {
+      writeJson(res, 500, {
+        error: "brokerAdminError",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      });
+    });
+  });
+}
+
+async function handleBrokerAdminRequest(
+  broker: Broker,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const method = req.method ?? "GET";
+  const url = new URL(req.url ?? "/", "http://broker.internal");
+  if (method === "GET" && url.pathname === "/healthz") {
+    writeJson(res, 200, broker.healthSnapshot());
+    return;
+  }
+  if (method === "GET" && url.pathname === "/readyz") {
+    const health = broker.healthSnapshot();
+    writeJson(res, health.started && health.acceptingWakes ? 200 : 503, health);
+    return;
+  }
+  if (method === "GET" && url.pathname === "/metrics") {
+    writeText(res, 200, broker.metricsText(), "text/plain; version=0.0.4; charset=utf-8");
+    return;
+  }
+  if (method === "POST" && url.pathname === "/admin/drain") {
+    await broker.requestDrain("admin-http");
+    writeJson(res, 202, broker.healthSnapshot());
+    return;
+  }
+  const evictMatch = /^\/admin\/games\/([^/]+)\/evict$/.exec(url.pathname);
+  if (method === "POST" && evictMatch) {
+    const evicted = await broker.evictGame(decodeURIComponent(evictMatch[1]!));
+    writeJson(res, evicted ? 202 : 404, evicted ? { ok: true } : { error: "gameNotFound" });
+    return;
+  }
+  writeJson(res, 404, { error: "notFound" });
+}
+
+function writeJson(res: ServerResponse, statusCode: number, body: unknown): void {
+  writeText(res, statusCode, `${JSON.stringify(body)}\n`, "application/json; charset=utf-8");
+}
+
+function writeText(res: ServerResponse, statusCode: number, body: string, contentType: string): void {
+  res.writeHead(statusCode, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+function budgetRatioLines(snapshots: readonly ComputeBudgetSnapshot[]): readonly string[] {
+  const maxRatioByBudget = new Map<string, number>();
+  for (const snapshot of snapshots) {
+    for (const [budget, usage] of Object.entries(snapshot)) {
+      const ratio = usage.limit > 0 ? usage.currentUsage / usage.limit : 0;
+      maxRatioByBudget.set(budget, Math.max(maxRatioByBudget.get(budget) ?? 0, ratio));
+    }
+  }
+  return [...maxRatioByBudget.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([budget, ratio]) => `pax_broker_budget_consumed_ratio{budget="${escapePromLabel(budget)}"} ${ratio}`);
+}
+
+function escapePromLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
 }
 
 class SlidingWindowCounter {

@@ -76,3 +76,16 @@ now writes capacity rows and history events for these paths and checkpoints via
 the state-store session before release. This does not yet start a server or
 wire real child process IPC; those belong to the remaining Broker, Runner, and
 packaging tasks.
+
+## 2026-05-29 02:02 PDT
+
+Added the Broker's operator-facing control surfaces. The Broker can now enter
+drain mode, evict one game, snapshot health/readiness, and render Prometheus
+text for active games, connected sessions, wake acceptance, capacity, and max
+budget-consumed ratio by budget. The package also exports a small admin HTTP
+server factory with `/healthz`, `/readyz`, `/metrics`, `POST /admin/drain`, and
+`POST /admin/games/:id/evict`.
+
+These routes are not wired into a shard image yet; the point of this slice is
+to make the Broker core's operational surface concrete before the later
+packaging task decides bind addresses, auth, and Fly process layout.
