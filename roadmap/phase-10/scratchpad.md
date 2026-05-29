@@ -260,3 +260,49 @@ Verification:
 - `pnpm typecheck`
 - `pnpm build:bundles`
 - `git diff --check`
+
+## 2026-05-29 12:02 PDT
+
+Task 7 is still in progress. The release-gate matrix has been updated and
+partially hardened, but the full proof is not green yet.
+
+Completed checkpoints since the last scratchpad entry:
+
+- `ab18934 Harden scenario suite release gate`: the CI/local suite now runs the
+  first-party `testing/scenarios` catalog plus
+  `examples/bundles/historia-default/scenarios`; suite-mode game IDs include a
+  per-suite nonce; docs and local runner guidance describe the configured
+  release-gate catalogs.
+- `7c189ff Isolate local scenario suite artifacts`: local suite runs now scope
+  history, API wire records, and local Tigris storage under the output root per
+  runtime, avoiding stale `var/` state pollution across proof attempts.
+- `ca5e142 Record missing WS send targets`: Broker `ws.send.rejected` history
+  now records missing target detail, unblocking the compromised-bundle local
+  oracle.
+
+Focused proofs that passed:
+
+- `checkpoint-durability-consistency` under `api-kind-partition-burst` and
+  `no-faults` on `noivm`: 2/2 passed.
+- `compromised-bundle-adversarial` under all nemeses on `noivm`: 4/4 passed.
+
+Full release-gate attempts exposed remaining failures before a complete green
+matrix:
+
+- Earlier full attempts were stopped after stale game IDs and stale local
+  artifacts explained the first failures; those are now fixed in committed
+  suite/local-wrapper changes.
+- The next partial full proof surfaced failures in `compute-stress`,
+  `race-and-deploy-adversarial`, and `runner-crash-blast-radius`.
+- The current worktree contains uncommitted candidate fixes for blob budget
+  reservation ordering, host-event delivery races against release, synchronous
+  `noivm` timeout reporting, and skip-aware runner-crash local oracle checks.
+- Validation for those candidate fixes has passed typechecks for Broker,
+  Control Plane, Runner, scenario runner, and oracles plus `git diff --check`.
+- The latest focused rerun,
+  `var/scenario-suite-task7-failing-slices2`, still failed 12/12 across those
+  three scenarios, so the next step is to inspect the remaining oracle details
+  before committing any of the candidate code fixes.
+
+No scenario-suite run is active at this timestamp. Only unrelated long-lived
+editor/dev processes were present in the process table.
