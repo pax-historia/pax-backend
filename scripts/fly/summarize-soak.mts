@@ -94,6 +94,8 @@ interface SoakSummary {
   };
 }
 
+const SCENARIO_RESULT_KINDS = new Set(["load", "property", "fuzz", "replay"]);
+
 const options = parseArgs(process.argv.slice(2));
 const soakDir = resolve(options.soakDir);
 const files = await listFiles(soakDir);
@@ -252,7 +254,9 @@ async function readScenarioResult(
 > {
   const raw = await readFile(path, "utf8");
   const value = JSON.parse(raw) as Record<string, unknown>;
-  if (value["kind"] !== "scenario-result") return undefined;
+  if (value["schema_version"] !== 1 || !SCENARIO_RESULT_KINDS.has(String(value["kind"] ?? ""))) {
+    return undefined;
+  }
   const oracles = isRecord(value["oracles"]) ? value["oracles"] : {};
   const failingOracles = Object.entries(oracles)
     .filter(([_name, oracle]) => isRecord(oracle) && (oracle["ok"] !== true || oracle["status"] !== "pass"))

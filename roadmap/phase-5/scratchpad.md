@@ -687,3 +687,25 @@ zero workload failures, zero runner-side session closes, zero session errors,
 zero capacity warnings, and zero budget rejects. The no-fault local replay
 history is still 1006 lines / 435,476 bytes; the memory-fix proof point remains
 the upcoming close/history/replay transition after the one-hour hold completes.
+
+## 2026-05-29 01:11 PDT
+
+The scale-history retry cleared the previous driver OOM point. The no-fault
+case completed all workload phases, closed all 1000 sessions normally with
+code `1000` / `scenarioComplete`, appended archived/control-plane history,
+replayed the selected oracles, wrote
+`ivm-chat-steady-state-1000g-10shards-no-faults.result.json`, and advanced into
+`shard-death-every-5m` without `exit.code`. The pulled local summary reports
+126,012 no-fault history events / 43,365,629 bytes, 1000 placements across all
+10 shards, all seven selected scenario oracles passing, no parse errors, no
+error events, and `gates_ok=true`. This is a clean contrast to the prior
+275 MB history artifact and driver OOM before result write.
+
+The first artifact pull hit Fly exec's request-body ceiling at the default 4
+MiB chunk size; retrying with `PAX_FLY_PULL_CHUNK_BYTES=262144` pulled the
+current validation directory successfully. Also fixed
+`scripts/fly/summarize-soak.mts` to recognize current per-case
+`ScenarioResult` files (`kind: "load"`, schema version 1) instead of only the
+older `kind: "scenario-result"` shape. Verification: `pnpm typecheck`,
+`git diff --check`, and a local streaming summary over the pulled validation
+artifacts.
