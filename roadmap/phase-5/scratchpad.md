@@ -332,3 +332,9 @@ Ninth detached monitor snapshot landed at `2026-05-29T01:35:33.564Z`. The run re
 ## 2026-05-28 18:41 PDT
 
 Tenth detached monitor snapshot landed at `2026-05-29T01:40:33.664Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported ten clean monitor snapshots and `gates_ok=true`.
+
+## 2026-05-28 18:46 PDT
+
+Eleventh detached monitor snapshot landed at `2026-05-29T01:45:33.788Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported eleven clean monitor snapshots and `gates_ok=true`.
+
+Storage remained controlled during the hold: shard-fly-iad-1 was at 4% `/data` usage, the other nine shard volumes were at 3%, every `/data/observability` directory was still 4096 bytes, and every shard had zero local JSONL files.
