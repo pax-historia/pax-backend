@@ -6,12 +6,10 @@
 #
 #   - Verifies Fly org `pax-backend` and the Infisical project (linked
 #     via .infisical.json; created manually via the Infisical web UI)
-#   - Fly app `pax-backend-shards`  (Rivet shard machines; agent deploys image)
+#   - Fly app `pax-backend-shards`  (Broker shard machines; agent deploys image)
 #   - Fly app `pax-backend-control` (placement router + control plane +
 #                                    api gateway + reference URL services)
 #   - Fly app `pax-backend-driver`  (scenario-runner driver machines on demand)
-#   - Fly Volume `pax_backend_rocks` (5 GB on shards, /data; starter — agent
-#                                    grows to 10 volumes as it deploys shards)
 #   - Tigris bucket `pax-backend-blobs` (AWS_* captured into Infisical on
 #     first create, then synced to all three Fly apps)
 #   - Upstash Redis `pax-backend-directory` (REDIS_URL captured into Infisical,
@@ -50,9 +48,6 @@ SHARDS_APP="pax-backend-shards"
 CONTROL_APP="pax-backend-control"
 DRIVER_APP="pax-backend-driver"
 ALL_APPS=("$SHARDS_APP" "$CONTROL_APP" "$DRIVER_APP")
-# Fly volume names must be valid identifiers (underscore not dash).
-VOLUME_NAME="pax_backend_rocks"
-VOLUME_SIZE_GB=5
 TIGRIS_BUCKET="pax-backend-blobs"
 REDIS_NAME="pax-backend-directory"
 FLY_TOKEN_EXPIRY_HOURS=1440  # 60 days
@@ -277,20 +272,10 @@ ensure_app() {
 for app in "${ALL_APPS[@]}"; do ensure_app "$app"; done
 
 # ---------------------------------------------------------------------------
-# Step 2/7: Starter Volume on shards app
+# Step 2/7: Shard runtime storage shape
 # ---------------------------------------------------------------------------
-say "Step 2/7: Starter Volume ($VOLUME_NAME, ${VOLUME_SIZE_GB}GB, $REGION) on $SHARDS_APP"
-VOLUMES_RAW="$(fly volumes list --app "$SHARDS_APP" --json 2>/dev/null || echo '[]')"
-EXISTING_VOL_COUNT="$(echo "$VOLUMES_RAW" | jq --arg n "$VOLUME_NAME" '[.[] | select(.name == $n and (.state // "created") != "destroyed")] | length')"
-if [[ "$EXISTING_VOL_COUNT" -ge 1 ]]; then
-  skip "volume $VOLUME_NAME already exists on $SHARDS_APP (count=$EXISTING_VOL_COUNT)"
-else
-  fly volumes create "$VOLUME_NAME" \
-    --app "$SHARDS_APP" --region "$REGION" --size "$VOLUME_SIZE_GB" --yes \
-    >/dev/null 2>&1 \
-    && ok "created starter volume $VOLUME_NAME (${VOLUME_SIZE_GB}GB) in $REGION on $SHARDS_APP" \
-    || err "failed to create volume $VOLUME_NAME on $SHARDS_APP"
-fi
+say "Step 2/7: Shard runtime storage shape"
+skip "no Fly volume is provisioned; Broker state, blobs, bundles, and history are Tigris-backed"
 
 # ---------------------------------------------------------------------------
 # Step 3/7: Tigris bucket + capture AWS_* into Infisical (first run only).
@@ -481,10 +466,9 @@ fi
 cat <<EOF
 
   Fly org:        $ORG
-  Shards app:     $SHARDS_APP     (Rivet shard image; agent deploys)
+  Shards app:     $SHARDS_APP     (Broker shard image; agent deploys)
   Control app:    $CONTROL_APP    (placement router + control plane + api gateway + reference URL services)
   Driver app:     $DRIVER_APP     (scenario-runner driver machines, on demand)
-  Starter volume: $VOLUME_NAME (${VOLUME_SIZE_GB}GB at /data on $SHARDS_APP; agent grows to 10)
   Tigris bucket:  $TIGRIS_BUCKET
   Redis:          $REDIS_NAME
   Infisical:      workspace=$WORKSPACE_ID env=$INFI_ENV

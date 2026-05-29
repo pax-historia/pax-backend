@@ -8,18 +8,12 @@
     "typecheck": "tsc -b --pretty",
     "local:up": "./scripts/dev/local-up.sh",
     "local:down": "./scripts/dev/local-down.sh",
-    "build:engine": "./scripts/build/build-engine.sh",
     "build:router": "./scripts/build/build-router.sh",
-    "build:vendor-ts": "./scripts/build/build-vendor-ts.sh",
     "build:bundles": "./scripts/build/build-bundles.sh",
     "bootstrap:up": "./scripts/bootstrap/spin-up.sh",
     "bootstrap:down": "PAX_BACKEND_TEARDOWN_CONFIRM=yes ./scripts/bootstrap/tear-down.sh"
   },
   "pnpm": {
-    "overrides": {
-      "@rivetkit/engine-runner-protocol": "file:vendor/rivet/rivetkit-typescript/packages/engine-runner-protocol",
-      "@rivetkit/virtual-websocket": "file:vendor/rivet/shared/typescript/virtual-websocket"
-    },
     "onlyBuiltDependencies": [
       "isolated-vm",
       "esbuild"

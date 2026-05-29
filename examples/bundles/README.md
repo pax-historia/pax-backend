@@ -8,7 +8,7 @@ zone.
 | Bundle | What it exercises | Status |
 |---|---|---|
 | `budget-edge-probe/` | Adversarial compute-budget probe for CPU timeout, WS rate, bandwidth, state size, blob key count, and API rate edges. | scenario guard |
-| `hello-ws-echo/` | The WS tunnel, idempotency keys, `sessionId` stability. Echoes every `onPlayerMessage` body back via `c.ws.send`. The vertical smoke loads this. | shipped |
+| `hello-ws-echo/` | The WS transport, idempotency keys, `sessionId` stability. Echoes every `onPlayerMessage` body back via `c.ws.send`. The vertical smoke loads this. | shipped |
 | `hello-blob-rw/` | The keyed `c.blob` namespace. Writes the current JSON snapshot under `current.json` with `c.blob.put`, reads it back with `c.blob.get`, and exercises namespace durability plus the per-game key/byte caps. | source added (untested) |
 | `hello-state-rw/` | The managed `c.state` tier; reads/writes the whole object and includes an explicit `await c.state.flush()` before a crash-test point. Exercises Tigris-canonical state and the flush-window guarantee. | source added (untested) |
 | `hello-ai-call/` | The API gateway + context envelope + wire-grain recording end-to-end. Invokes `c.api.invoke('mock-ai.v1', ...)` per connected player message. The URL service sees the `connectedSessions` snapshot. | source added (untested) |

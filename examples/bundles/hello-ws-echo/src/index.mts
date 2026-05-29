@@ -2,8 +2,8 @@
 //
 // Authored in TypeScript with full SDK types. esbuild bundles this to
 // dist/bundle.js as a script (IIFE) whose footer calls __pax_install on
-// the default export. The compiled artifact is what the parent-actor reads
-// from disk and ships to the isolated-vm child for eval.
+// the default export. The compiled artifact is what the Broker resolves
+// and assigns to a Runner isolate for eval.
 
 import { defineBundle } from "@pax-backend/runtime-sdk";
 

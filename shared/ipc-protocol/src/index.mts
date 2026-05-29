@@ -438,7 +438,7 @@ export interface ApiGatewayInvokeResult {
 }
 
 export interface ApiInvokeIpcPayload extends ApiInvokeRequest {
-  /** Legacy child-runner field; the Broker stamps this in the new bridge. */
+  /** Replay compatibility field; the Broker stamps this in the active bridge. */
   readonly triggeringSessionId?: string | null;
 }
 

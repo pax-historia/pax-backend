@@ -22,8 +22,8 @@ Shard registry + the admin REST surface from [plan](../../README.md)
   still reference it)
 - Shard registry + drain (`GET /admin/shards`, `GET /admin/shards/:id`,
   `POST /admin/shards/:id/drain`, `DELETE /admin/shards/:id/drain`). Drain
-  ACKs only after every parent-actor on the shard has force-flushed each
-  running game's pending `c.state` writes to Tigris, so the redeploy
+  asks the target Broker to stop accepting wakes and release active games
+  through planned checkpoint transitions, so the redeploy
   runbook can rely on zero state loss on planned moves (see
   [README](../../../README.md) guarantee #11 and
   [docs-next/subsystems/redeploy-and-drain.md](../../docs-next/subsystems/redeploy-and-drain.md)).
@@ -36,10 +36,10 @@ Shard registry + the admin REST surface from [plan](../../README.md)
 **No ledger endpoints.** **No metadata endpoints.** See the plan's "Explicitly
 NOT in the admin surface" subsection.
 
-The current pass wires the shard registry and drain intent through Redis.
-Drained shards continue serving in-flight games, but parent self-registration
-publishes `acceptingWakes=false` so placement stops choosing them for new
-wakes.
+The current pass wires the shard registry through Broker capacity rows in
+Redis and sends drain/resume commands to each Broker's admin surface. Drained
+shards continue serving in-flight games until release, but publish
+`acceptingWakes=false` so placement stops choosing them for new wakes.
 
 `GET /admin/games/by-compat-tag/:tag` accepts `cursor` and `limit` query
 parameters and returns `{ cursor, limit, nextCursor, games }`, ordered by

@@ -12,20 +12,4 @@ var
 **/*.tsbuildinfo
 **/node_modules
 
-vendor/*
-!vendor/rivet/
-vendor/rivet/*
-!vendor/rivet/rivetkit-typescript/
-vendor/rivet/rivetkit-typescript/*
-!vendor/rivet/rivetkit-typescript/packages/
-vendor/rivet/rivetkit-typescript/packages/*
-!vendor/rivet/rivetkit-typescript/packages/engine-runner/
-!vendor/rivet/rivetkit-typescript/packages/engine-runner-protocol/
-!vendor/rivet/shared/
-vendor/rivet/shared/*
-!vendor/rivet/shared/typescript/
-vendor/rivet/shared/typescript/*
-!vendor/rivet/shared/typescript/virtual-websocket/
-
-vendor/rivet/**/dist
-vendor/rivet/**/node_modules
+vendor

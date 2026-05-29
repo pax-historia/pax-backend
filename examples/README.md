@@ -28,7 +28,7 @@ code happens to consume it.
 
 | Bundle | What it demonstrates |
 |---|---|
-| `hello-ws-echo` | `onWake` (cold-start), `onPlayerConnect` (sessionId stability), `onPlayerMessage` (idempotency seq), `c.ws.send` (WS tunnel back), `c.log.emit` (history). Echoes every player message back. The smoke loop loads this. |
+| `hello-ws-echo` | `onWake` (cold-start), `onPlayerConnect` (sessionId stability), `onPlayerMessage` (idempotency seq), `c.ws.send` (WS transport back), `c.log.emit` (history). Echoes every player message back. The smoke loop loads this. |
 | `hello-blob-rw` | `c.blob` durability |
 | `hello-state-rw` | `c.state` durability + `c.state.flush()` |
 | `hello-ai-call` | `c.api.invoke('mock-ai.v1', ...)` + context envelope + wire-grain recording |

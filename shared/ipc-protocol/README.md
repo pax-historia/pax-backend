@@ -31,9 +31,9 @@ credentials.
 ## Legacy aliases
 
 `ParentToChildEnvelope`, `ChildToParentEnvelope`, `PARENT_TO_CHILD`,
-`CHILD_TO_PARENT`, and `envelope(...)` are compatibility exports for the
-old parent-actor and per-game child-runner packages while Phase 7 migrates
-their implementation. New code should use the Broker/Runner names above.
+`CHILD_TO_PARENT`, and `envelope(...)` remain as type aliases for archived
+history/replay compatibility. They are not part of the active runtime path;
+new code uses the Broker/Runner names above.
 
 ## Evolution rule
 

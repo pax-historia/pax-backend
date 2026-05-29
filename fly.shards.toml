@@ -21,10 +21,6 @@ kill_timeout = "60s"
   PAX_CPU_MS_PER_TICK_LIMIT = "10000"
   PAX_API_GATEWAY_URL = "http://pax-backend-control.internal:9081/invoke"
 
-[mounts]
-  source = "pax_backend_runtime"
-  destination = "/data"
-
 [[services]]
   protocol = "tcp"
   internal_port = 7700

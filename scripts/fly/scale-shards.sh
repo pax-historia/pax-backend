@@ -10,16 +10,14 @@ set -euo pipefail
 # Usage:
 #   scripts/fly/scale-shards.sh 3
 #   PAX_SHARD_MACHINE_TARGET=10 scripts/fly/scale-shards.sh
-#   PAX_SHARD_CHILD_RUNNER_KIND=noivm scripts/fly/scale-shards.sh 10
+#   PAX_SHARD_RUNNER_KIND=noivm scripts/fly/scale-shards.sh 10
 
 ORG="pax-backend"
 APP="pax-backend-shards"
 REGION="${PAX_SHARD_REGION:-iad}"
-VOLUME_NAME="pax_backend_rocks"
-DEFAULT_VOLUME_SIZE_GB=20
 MAX_TARGET=10
 TARGET="${1:-${PAX_SHARD_MACHINE_TARGET:-}}"
-CHILD_RUNNER_KIND="${PAX_SHARD_CHILD_RUNNER_KIND:-ivm}"
+RUNNER_KIND="${PAX_SHARD_RUNNER_KIND:-ivm}"
 
 say()  { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 ok()   { printf "    \033[32m✓\033[0m %s\n" "$*"; }
@@ -31,8 +29,8 @@ command -v jq >/dev/null 2>&1 || err "jq not installed"
 [[ -n "$TARGET" ]] || err "missing target count"
 [[ "$TARGET" =~ ^[0-9]+$ ]] || err "target count must be an integer"
 (( TARGET >= 1 && TARGET <= MAX_TARGET )) || err "target must be between 1 and $MAX_TARGET"
-[[ "$CHILD_RUNNER_KIND" == "ivm" || "$CHILD_RUNNER_KIND" == "noivm" ]] \
-  || err "PAX_SHARD_CHILD_RUNNER_KIND must be ivm or noivm"
+[[ "$RUNNER_KIND" == "ivm" || "$RUNNER_KIND" == "noivm" ]] \
+  || err "PAX_SHARD_RUNNER_KIND must be ivm or noivm"
 
 say "Org/app guard"
 ORG_LIST_RAW="$(fly orgs list --json 2>/dev/null || true)"
@@ -46,18 +44,6 @@ ok "app '$APP' reachable in org '$ORG'"
 
 machines_json() {
   fly machines list -a "$APP" --json
-}
-
-parse_volume_id() {
-  jq -r 'if type == "array" then .[0].id else (.id // .ID) end'
-}
-
-unattached_volume_id() {
-  fly volumes list -a "$APP" --json | jq -r --arg name "$VOLUME_NAME" --argjson size "$1" '
-    [.[] | select(.name == $name and (.attached_machine_id == null or .attached_machine_id == "") and .size_gb == $size)]
-    | sort_by(.created_at // "")
-    | first.id // ""
-  '
 }
 
 machine_count() {
@@ -76,24 +62,19 @@ normalize_machine_env() {
   local machine_id="$1"
   local slot="$2"
   local skip_start="${3:-no}"
-  local shard_id internal_host internal_url valid_hosts
+  local shard_id internal_host internal_url
   shard_id="$(slot_shard_id "$slot")"
   internal_host="$(machine_internal_host "$machine_id")"
-  internal_url="http://${internal_host}:6420"
-  valid_hosts="${internal_host},${APP}.fly.dev,127.0.0.1,localhost"
+  internal_url="http://${internal_host}:7700"
   local args=(
     machine update "$machine_id"
     -a "$APP"
     --env "PAX_SHARD_SLOT=$slot"
     --env "PAX_SHARD_ID=$shard_id"
     --env "PAX_SHARD_PUBLIC_URL=$internal_url"
-    --env "RIVET_PUBLIC_URL=$internal_url"
-    --env "RIVET_VALID_HOSTS=$valid_hosts"
-    --env "RIVET_GUARD_HOST=::"
-    --env "RIVET_API_PEER_HOST=::"
-    --env "RIVET_METRICS_HOST=::"
-    --env "PAX_PARENT_METRICS_BIND=:::7700"
-    --env "PAX_CHILD_RUNNER_KIND=$CHILD_RUNNER_KIND"
+    --env "PAX_BROKER_BIND=:::7700"
+    --env "PAX_BROKER_WS_PATH=/gateway"
+    --env "PAX_RUNNER_KIND=$RUNNER_KIND"
     --yes
     --skip-health-checks
   )
@@ -119,17 +100,13 @@ normalize_machine_env() {
 
 create_machine_config() {
   local source_machine="$1"
-  local volume_id="$2"
-  local output_path="$3"
-  jq --arg volume_id "$volume_id" --arg app "$APP" '
+  local output_path="$2"
+  jq --arg app "$APP" '
     .config
-    | .mounts = [
-        ((.mounts[0] // { "path": "/data", "name": "pax_backend_rocks" })
-          | .volume = $volume_id
-          | .path = "/data")
-      ]
+    | del(.mounts)
     | .env.PAX_SHARD_PUBLIC_URL = ("https://" + $app + ".fly.dev")
-    | .env.RIVET_PUBLIC_URL = ("https://" + $app + ".fly.dev")
+    | .env.PAX_BROKER_BIND = ":::7700"
+    | .env.PAX_BROKER_WS_PATH = "/gateway"
   ' <<<"$source_machine" > "$output_path"
 }
 
@@ -164,23 +141,11 @@ while (( current_count < TARGET )); do
   machines="$(machines_json)"
   source_machine="$(printf "%s\n" "$machines" | jq 'sort_by(.created_at)[0]')"
   image_ref="$(jq -r '.config.image // .image_ref' <<<"$source_machine")"
-  volume_size_gb="$(jq -r ".config.mounts[0].size_gb // $DEFAULT_VOLUME_SIZE_GB" <<<"$source_machine")"
   next_slot=$((current_count + 1))
   name="pax-shard-${REGION}-${next_slot}"
 
-  say "Prepare volume for $name"
-  volume_id="$(unattached_volume_id "$volume_size_gb")"
-  if [[ -n "$volume_id" && "$volume_id" != "null" ]]; then
-    ok "reusing unattached volume $volume_id (${volume_size_gb}GB)"
-  else
-    volume_json="$(fly volumes create "$VOLUME_NAME" -a "$APP" -r "$REGION" -s "$volume_size_gb" --yes --json)"
-    volume_id="$(parse_volume_id <<<"$volume_json")"
-    [[ -n "$volume_id" && "$volume_id" != "null" ]] || err "could not parse created volume id"
-    ok "created volume $volume_id (${volume_size_gb}GB)"
-  fi
-
   tmp_config="$(mktemp)"
-  create_machine_config "$source_machine" "$volume_id" "$tmp_config"
+  create_machine_config "$source_machine" "$tmp_config"
   say "Create stopped machine $name"
   fly machine create "$image_ref" -a "$APP" -r "$REGION" --name "$name" \
     --machine-config "$(cat "$tmp_config")" >/dev/null

@@ -276,3 +276,17 @@ fields the oracles need. The oracles and scenario-local checks were updated
 from parent/child event names to Broker/Runner names while preserving legacy
 replay compatibility where it is cheap. `pnpm typecheck`, `bash -n
 scripts/test/scenario-suite-local.sh`, and `git diff --check` pass.
+
+## 2026-05-29 03:08 PDT
+
+The Phase 7 verification pass found the old Rivet parent/per-game child
+packages still wired into the root workspace and typecheck graph, plus stale
+Rivet build helpers and Fly scaling volume/env logic. Added a cleanup task
+above final verification and closed it.
+
+The active workspace now contains Broker, Runner, and state-store runtime
+packages only. Removed the tracked old parent/child package files, root
+references to them, Rivet package overrides, and obsolete `build:engine` /
+`build:vendor-ts` helpers. Fly shard scaling and bootstrap no longer provision
+or normalize the old RocksDB volume/Rivet env path; shard machines normalize
+Broker port 7700 and `PAX_RUNNER_KIND`.
