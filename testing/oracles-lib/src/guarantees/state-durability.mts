@@ -10,7 +10,7 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
   const findings: OracleFinding[] = [];
   let observed = 0;
 
-  for (const event of history) {
+  for (const event of [...history].sort(compareEventOrder)) {
     if (
       event.event !== "state.write" &&
       event.event !== "state.read" &&
@@ -18,7 +18,8 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
       event.event !== "state.flush.plannedTransition" &&
       event.event !== "state.checkpoint" &&
       event.event !== "state.fence.conflict" &&
-      event.event !== "state.fence.winner"
+      event.event !== "state.fence.winner" &&
+      event.event !== "state.restore"
     ) {
       continue;
     }
@@ -39,9 +40,12 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
     if (
       event.event === "state.flush" ||
       event.event === "state.flush.plannedTransition" ||
-      event.event === "state.checkpoint"
+      event.event === "state.checkpoint" ||
+      event.event === "state.restore"
     ) {
-      const checkpointSeq = numberField(event, "checkpointSeq");
+      const checkpointSeq = event.event === "state.restore"
+        ? numberField(event, "newCheckpointSeq")
+        : numberField(event, "checkpointSeq");
       if (checkpointSeq !== undefined) {
         const previous = lastCheckpointSeqByGame.get(gameId);
         if (previous !== undefined && checkpointSeq <= previous) {
@@ -54,6 +58,7 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
         }
         lastCheckpointSeqByGame.set(gameId, checkpointSeq);
       }
+      if (event.event === "state.restore") hasSuccessfulWrite.delete(gameId);
       continue;
     }
     if (
@@ -68,4 +73,18 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
   }
 
   return result(ORACLE, GUARANTEE, history, observed, findings);
+}
+
+function compareEventOrder(left: HistoryEvent, right: HistoryEvent): number {
+  const leftTime = Date.parse(stringField(left, "ts") ?? "");
+  const rightTime = Date.parse(stringField(right, "ts") ?? "");
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+  const leftSeq = numberField(left, "pax_seq");
+  const rightSeq = numberField(right, "pax_seq");
+  if (left.shardId === right.shardId && leftSeq !== undefined && rightSeq !== undefined) {
+    return leftSeq - rightSeq;
+  }
+  return 0;
 }

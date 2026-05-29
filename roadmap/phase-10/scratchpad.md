@@ -196,3 +196,41 @@ Verification:
 - `pnpm typecheck`
 - `pnpm build:bundles`
 - `git diff --check`
+
+## 2026-05-29 08:30 PDT
+
+Completed Task 5's time-travel restore proof. The control-plane
+`/admin/games/:id/snapshot`, `/checkpoints`, and `/restore` paths now read and
+write the canonical state-store root chain instead of the retired Redis raw
+storage keys. Snapshot supports `?at=<checkpointSeq>` against retained roots and
+returns decoded state plus per-blob base64/decoded metadata. Restore writes a
+revert-forward head, emits `state.restore`, and asks the active Broker to reload
+the game from storage without performing a planned-transition checkpoint over
+the restored root.
+
+The Broker now has an admin `reload-from-storage` path for restore reloads. It
+closes active sessions, disposes the isolate, releases the active directory
+claim, and immediately wakes the game from the restored root with
+`cold-restart-from-storage`, recording `isolate.restart` with cause
+`stateRestore`.
+
+Added scenario-runner phases for `capture-checkpoint`,
+`expect-admin-snapshot`, and `restore-checkpoint`, plus the
+`time-travel-restore` scenario. The scenario commits marker `first`, captures
+its checkpoint, commits marker `second`, proves the admin view can still read
+`first` while head reads `second`, restores `first` forward, and verifies the
+next wake/probe sees `first` in both state and blob. Shared durability oracles
+now order merged control-plane/Broker history by event time and treat
+`state.restore` as an intentional restore boundary.
+
+Verification:
+
+- `pnpm --filter @pax-backend/control-plane check-types`
+- `pnpm --filter @pax-backend/broker check-types`
+- `pnpm --filter @pax-backend/scenario-runner check-types`
+- `pnpm --filter @pax-backend/oracles-lib check-types`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=time-travel-restore PAX_SCENARIO_SUITE_NEMESES=no-faults PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm,ivm PAX_SCENARIO_SUITE_SCENARIOS=time-travel-restore PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `pnpm typecheck`
+- `pnpm build:bundles`
+- `git diff --check`

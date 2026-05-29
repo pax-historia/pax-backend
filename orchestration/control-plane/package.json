@@ -19,6 +19,7 @@
     "@aws-sdk/client-s3": "^3.1055.0",
     "@pax-backend/ipc-protocol": "workspace:*",
     "@pax-backend/node-telemetry": "workspace:*",
+    "@pax-backend/state-store": "workspace:*",
     "ioredis": "^5.4.1",
     "ws": "^8.21.0"
   }

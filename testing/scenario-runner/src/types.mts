@@ -167,6 +167,22 @@ export type ScenarioWorkloadPhase =
       readonly marker: string;
     }
   | {
+      readonly type: "capture-checkpoint";
+      readonly targetGameCount: number;
+      readonly alias: string;
+    }
+  | {
+      readonly type: "expect-admin-snapshot";
+      readonly targetGameCount: number;
+      readonly marker: string;
+      readonly checkpointAlias?: string;
+    }
+  | {
+      readonly type: "restore-checkpoint";
+      readonly targetGameCount: number;
+      readonly checkpointAlias: string;
+    }
+  | {
       readonly type: "await-nemesis";
       readonly action: "kill-shard" | "api-kind-partition" | "crash-runner";
       readonly minimumOccurrences: number;

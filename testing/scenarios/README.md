@@ -16,6 +16,7 @@ for the broader rules about the `testing/` zone (kind-folders,
 | `race-and-deploy-adversarial/` | Host-event/sleep race, reconnect churn, and active bundle-flip collision guard using the `race-edge-probe` v1/v2 bundles. |
 | `runner-crash-blast-radius/` | Runner process death under active games. Asserts `runner.crash` reports the affected set, stays within the configured K bound, and affected games re-wake from storage. |
 | `shard-death-resilience/` | Composed with the `shard-death-every-5m` nemesis; asserts `c.state` flush-window durability (guarantee #11), `c.blob` namespace durability across shard loss (guarantee #12), and `cold-restart-from-storage` behavior on the next wake. |
+| `time-travel-restore/` | Admin checkpoint time travel. Captures an older retained root, views it read-only, restores it forward, and verifies the next wake sees the restored state/blob marker. |
 
 ## Per-scenario layout
 

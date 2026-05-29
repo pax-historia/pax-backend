@@ -412,6 +412,21 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
       requireString(value["marker"], path, `${prefix}.marker`);
       return normalized;
+    case "capture-checkpoint":
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      requireString(value["alias"], path, `${prefix}.alias`);
+      return normalized;
+    case "expect-admin-snapshot":
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      requireString(value["marker"], path, `${prefix}.marker`);
+      if (value["checkpointAlias"] !== undefined) {
+        requireString(value["checkpointAlias"], path, `${prefix}.checkpointAlias`);
+      }
+      return normalized;
+    case "restore-checkpoint":
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      requireString(value["checkpointAlias"], path, `${prefix}.checkpointAlias`);
+      return normalized;
     case "await-nemesis":
       requireOneOf(value["action"], path, `${prefix}.action`, [
         "kill-shard",

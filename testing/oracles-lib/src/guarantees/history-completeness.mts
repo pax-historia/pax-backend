@@ -93,6 +93,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "state.checkpoint": ["gameId"],
   "state.fence.conflict": ["gameId", "operation", "error"],
   "state.fence.winner": ["gameId", "marker"],
+  "state.restore": ["gameId"],
   "state.read": ["gameId", "requestId"],
   "state.write": ["gameId", "requestId"],
   "state.write.rejected": ["gameId", "error"],

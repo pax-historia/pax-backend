@@ -125,6 +125,9 @@ importers:
       '@pax-backend/node-telemetry':
         specifier: workspace:*
         version: link:../../shared/node-telemetry
+      '@pax-backend/state-store':
+        specifier: workspace:*
+        version: link:../../runtime/state-store
       ioredis:
         specifier: ^5.4.1
         version: 5.11.0

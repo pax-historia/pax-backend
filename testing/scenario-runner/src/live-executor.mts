@@ -81,6 +81,7 @@ interface LiveExecutorContext {
   readonly phaseTimeoutMs: number;
   readonly startedAtMs: number;
   readonly sessions: ScenarioSession[];
+  readonly checkpointAliases: Map<string, Map<string, number>>;
   readonly historyWriter: HistoryWriter;
   readonly nemesisRuntime: NemesisRuntime;
 }
@@ -123,6 +124,7 @@ export async function executeLiveWorkload(
       parsePositiveInt(process.env["PAX_SCENARIO_PHASE_TIMEOUT_MS"], DEFAULT_PHASE_TIMEOUT_MS),
     startedAtMs,
     sessions: [],
+    checkpointAliases: new Map(),
     historyWriter,
     nemesisRuntime: new NemesisRuntime(
       input.nemesisManifest ?? {
@@ -225,6 +227,15 @@ async function executePhase(
       return;
     case "inject-fence-winner":
       await injectFenceWinner(ctx, phase.targetGameCount, phase.marker);
+      return;
+    case "capture-checkpoint":
+      await captureCheckpoint(ctx, phase.targetGameCount, phase.alias);
+      return;
+    case "expect-admin-snapshot":
+      await expectAdminSnapshot(ctx, phase.targetGameCount, phase.marker, phase.checkpointAlias);
+      return;
+    case "restore-checkpoint":
+      await restoreCheckpoint(ctx, phase.targetGameCount, phase.checkpointAlias);
       return;
     case "close-sessions":
       await closeAllSessions(ctx, phase.reason);
@@ -903,6 +914,112 @@ async function injectFenceWinner(
   }
 }
 
+async function captureCheckpoint(
+  ctx: LiveExecutorContext,
+  targetGameCount: number,
+  alias: string,
+): Promise<void> {
+  const byGame = ctx.checkpointAliases.get(alias) ?? new Map<string, number>();
+  ctx.checkpointAliases.set(alias, byGame);
+  for (const gameId of targetGameIds(ctx.workload, targetGameCount)) {
+    const response = await requestJson<{
+      readonly head?: unknown;
+      readonly checkpoints?: readonly Record<string, unknown>[];
+    }>(`${ctx.controlPlaneUrl}/admin/games/${encodeURIComponent(gameId)}/checkpoints`);
+    const checkpointSeq = typeof response.head === "number"
+      ? response.head
+      : typeof response.checkpoints?.[0]?.["checkpointSeq"] === "number"
+        ? response.checkpoints[0]["checkpointSeq"]
+        : undefined;
+    if (checkpointSeq === undefined) {
+      throw new Error(`no retained checkpoint found for ${gameId}`);
+    }
+    byGame.set(gameId, checkpointSeq);
+    ctx.historyWriter.append("workload.checkpoint.captured", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      alias,
+      checkpointSeq,
+    });
+  }
+}
+
+async function expectAdminSnapshot(
+  ctx: LiveExecutorContext,
+  targetGameCount: number,
+  marker: string,
+  checkpointAlias: string | undefined,
+): Promise<void> {
+  for (const gameId of targetGameIds(ctx.workload, targetGameCount)) {
+    const checkpointSeq = checkpointAlias
+      ? requireCheckpointAlias(ctx, checkpointAlias, gameId)
+      : undefined;
+    const url = new URL(`${ctx.controlPlaneUrl}/admin/games/${encodeURIComponent(gameId)}/snapshot`);
+    if (checkpointSeq !== undefined) url.searchParams.set("at", String(checkpointSeq));
+    const response = await requestJson<Record<string, unknown>>(url.toString());
+    const stateMarker = snapshotStateMarker(response);
+    const blobMarker = snapshotBlobMarker(response, "snapshot.json");
+    if (stateMarker !== marker || blobMarker !== marker) {
+      throw new Error(
+        `snapshot marker mismatch for ${gameId}: expected ${marker}, state=${stateMarker ?? "missing"}, blob=${blobMarker ?? "missing"}`,
+      );
+    }
+    ctx.historyWriter.append("workload.admin-snapshot.observed", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      checkpointAlias: checkpointAlias ?? null,
+      checkpointSeq: numberField(response, "checkpointSeq") ?? checkpointSeq ?? null,
+      expectedMarker: marker,
+      stateMarker,
+      blobMarker,
+    });
+  }
+}
+
+async function restoreCheckpoint(
+  ctx: LiveExecutorContext,
+  targetGameCount: number,
+  checkpointAlias: string,
+): Promise<void> {
+  const targets = new Set(targetGameIds(ctx.workload, targetGameCount));
+  const sessions = [...ctx.sessions];
+  const retained: ScenarioSession[] = [];
+  const targetSessions: ScenarioSession[] = [];
+
+  for (const session of sessions) {
+    if (!targets.has(session.gameId)) {
+      retained.push(session);
+      continue;
+    }
+    targetSessions.push(session);
+  }
+
+  for (const gameId of targets) {
+    const fromCheckpointSeq = requireCheckpointAlias(ctx, checkpointAlias, gameId);
+    const response = await requestJson<{
+      readonly newCheckpointSeq?: unknown;
+      readonly reload?: unknown;
+    }>(`${ctx.controlPlaneUrl}/admin/games/${encodeURIComponent(gameId)}/restore`, {
+      method: "POST",
+      body: { atCheckpointSeq: fromCheckpointSeq },
+    });
+    ctx.historyWriter.append("workload.checkpoint.restored", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      checkpointAlias,
+      fromCheckpointSeq,
+      newCheckpointSeq: typeof response.newCheckpointSeq === "number" ? response.newCheckpointSeq : null,
+      reload: response.reload ?? null,
+    });
+  }
+
+  ctx.sessions.splice(0, ctx.sessions.length, ...retained);
+  await Promise.all(targetSessions.map((session) => waitForSessionClosed(session)));
+}
+
 async function waitForSessionClosed(session: ScenarioSession): Promise<void> {
   if (
     session.ws.readyState === WebSocket.CLOSED ||
@@ -977,6 +1094,58 @@ function targetGameIds(
     );
   }
   return scenarioGameIds(workload).slice(0, targetGameCount);
+}
+
+function requireCheckpointAlias(
+  ctx: LiveExecutorContext,
+  alias: string,
+  gameId: string,
+): number {
+  const checkpointSeq = ctx.checkpointAliases.get(alias)?.get(gameId);
+  if (checkpointSeq === undefined) {
+    throw new Error(`checkpoint alias ${alias} has no captured seq for ${gameId}`);
+  }
+  return checkpointSeq;
+}
+
+function snapshotStateMarker(snapshot: Readonly<Record<string, unknown>>): string | undefined {
+  const state = snapshot["state"];
+  const direct = markerFromValue(state);
+  if (direct) return direct;
+  const storageState = recordField(recordField(snapshot, "storage"), "state");
+  return markerFromValue(storageState?.["value"]);
+}
+
+function snapshotBlobMarker(
+  snapshot: Readonly<Record<string, unknown>>,
+  key: string,
+): string | undefined {
+  const storageBlob = recordField(recordField(snapshot, "storage"), "blob");
+  const entry = recordField(storageBlob, key);
+  return markerFromValue(entry?.["value"]);
+}
+
+function markerFromValue(value: unknown): string | undefined {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+  const marker = record?.["marker"];
+  return typeof marker === "string" ? marker : undefined;
+}
+
+function recordField(
+  record: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+): Readonly<Record<string, unknown>> | undefined {
+  const value = record?.[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+function numberField(record: Readonly<Record<string, unknown>>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" ? value : undefined;
 }
 
 function readStringArrayFixture(

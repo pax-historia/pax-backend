@@ -307,6 +307,65 @@ export class Broker {
     return true;
   }
 
+  async reloadGameFromStorage(gameId: string, reason = "stateRestore"): Promise<boolean> {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    const previousRunnerId = game.runner.id;
+    this.games.delete(gameId);
+    this.clearSleepTimer(game, reason);
+    this.cancelCheckpointTimer(gameId);
+    this.closeSessions(game, reason);
+    await game.runner.release(gameId);
+    await this.deps.directory.releaseActiveGame?.(gameId, game.generation);
+    await this.writeHistory({
+      event: "isolate.disposed",
+      gameId,
+      runnerId: previousRunnerId,
+      intentional: true,
+      reason,
+    });
+
+    const wake = await this.deps.bundles?.resolveForGame(gameId);
+    if (!wake) {
+      await this.writeHistory({
+        event: "isolate.restart.failed",
+        gameId,
+        runnerId: previousRunnerId,
+        cause: reason,
+        error: "bundleUnavailable",
+      });
+      await this.publishCapacity();
+      return true;
+    }
+
+    try {
+      await this.wakeGame({
+        ...wake,
+        runId: game.runId,
+        wakeReason: "cold-restart-from-storage",
+        generation: this.now(),
+      });
+      const restarted = this.games.get(gameId);
+      await this.writeHistory({
+        event: "isolate.restart",
+        gameId,
+        runnerId: restarted?.runner.id,
+        previousRunnerId,
+        cause: reason,
+      });
+    } catch (err) {
+      await this.writeHistory({
+        event: "isolate.restart.failed",
+        gameId,
+        runnerId: previousRunnerId,
+        cause: reason,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await this.publishCapacity();
+    }
+    return true;
+  }
+
   async crashRunnerForTest(runnerId: string): Promise<boolean> {
     this.ensureStarted();
     return this.deps.runners.crashRunnerForTest(runnerId);
@@ -1816,6 +1875,13 @@ async function handleBrokerAdminRequest(
   if (method === "POST" && evictMatch) {
     const evicted = await broker.evictGame(decodeURIComponent(evictMatch[1]!));
     writeJson(res, evicted ? 202 : 404, evicted ? { ok: true } : { error: "gameNotFound" });
+    return;
+  }
+  const reloadMatch = /^\/admin\/games\/([^/]+)\/reload-from-storage$/.exec(url.pathname);
+  if (method === "POST" && reloadMatch) {
+    const reason = url.searchParams.get("reason") ?? "stateRestore";
+    const reloaded = await broker.reloadGameFromStorage(decodeURIComponent(reloadMatch[1]!), reason);
+    writeJson(res, reloaded ? 202 : 404, reloaded ? { ok: true } : { error: "gameNotFound" });
     return;
   }
   const fenceWinnerMatch = /^\/admin\/games\/([^/]+)\/fence-winner$/.exec(url.pathname);

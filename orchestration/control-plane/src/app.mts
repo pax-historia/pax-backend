@@ -10,6 +10,14 @@ import { Redis } from "ioredis";
 
 import { startPaxNodeTelemetry } from "@pax-backend/node-telemetry";
 import {
+  LocalStateObjectStore,
+  S3StateObjectStore,
+  StateStore,
+  type MaterializedGameState,
+  type StateCheckpoint,
+  type StateObjectStore,
+} from "@pax-backend/state-store";
+import {
   type ActiveGamePlacement,
   type ApiKindRegistration,
   DEFAULT_BLOB_BYTES_LIMIT,
@@ -148,6 +156,21 @@ const bundleObjectStore: BundleObjectStore =
   TIGRIS_BUCKET.length > 0
     ? new S3BundleObjectStore(TIGRIS_BUCKET, TIGRIS_REGION, TIGRIS_ENDPOINT)
     : new LocalBundleObjectStore(LOCAL_TIGRIS_DIR);
+const stateObjectStore: StateObjectStore = stateObjectStoreFromEnv(process.env);
+const stateStore = new StateStore(stateObjectStore);
+
+function stateObjectStoreFromEnv(env: NodeJS.ProcessEnv): LocalStateObjectStore | S3StateObjectStore {
+  const bucket = env["BUCKET_NAME"] ?? env["PAX_TIGRIS_BUCKET"];
+  if (bucket) {
+    return new S3StateObjectStore({
+      bucket,
+      prefix: env["PAX_STATE_OBJECT_PREFIX"] ?? "state-runtime/",
+      region: env["AWS_REGION"] ?? "auto",
+      endpoint: env["AWS_ENDPOINT_URL_S3"],
+    });
+  }
+  return new LocalStateObjectStore(env["PAX_LOCAL_TIGRIS_DIR"] ?? LOCAL_TIGRIS_DIR);
+}
 
 async function responseBodyToString(body: unknown): Promise<string> {
   if (body && typeof body === "object" && "transformToString" in body) {
@@ -641,6 +664,16 @@ async function handleGameResource(
     return;
   }
 
+  if (parts.length === 4 && parts[3] === "checkpoints" && req.method === "GET") {
+    await handleGameCheckpoints(res, store, gameId, url);
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "restore" && req.method === "POST") {
+    await handleGameRestore(req, res, store, config, gameId);
+    return;
+  }
+
   if (parts.length === 4 && parts[3] === "host-event" && req.method === "POST") {
     await handleHostEvent(req, res, store, config, gameId);
     return;
@@ -1064,10 +1097,20 @@ async function handleGameSnapshot(
   const game = await requireGame(store, gameId);
   const includeBlob = url.searchParams.get("includeBlob") !== "false";
   const apiLimit = clampInt(url.searchParams.get("apiLimit"), 0, 1000, 100);
-  const [allowedPlayers, stateRaw, blobRaw] = await Promise.all([
+  const atCheckpointSeq = readOptionalIntegerQuery(url.searchParams.get("at"), "at");
+  const materialized = atCheckpointSeq === undefined
+    ? await stateStore.materialize(gameId)
+    : await stateStore.viewCheckpoint(gameId, atCheckpointSeq);
+  if (!materialized) {
+    throw new HttpError(409, "checkpointOutOfHorizon", {
+      gameId,
+      atCheckpointSeq,
+    });
+  }
+  const decodedState = decodeStoredBytes(materialized.state);
+  const blobSnapshot = await readBlobSnapshot(materialized, includeBlob);
+  const [allowedPlayers] = await Promise.all([
     store.listAllowedPlayers(gameId),
-    store.getStorageRaw(gameId, "state"),
-    includeBlob ? store.getStorageRaw(gameId, "blob") : Promise.resolve(undefined),
   ]);
   const connectedPlayers = connectedPlayersForGame(config.historyPath, gameId).map((session) => ({
     sessionId: session.sessionId,
@@ -1082,14 +1125,157 @@ async function handleGameSnapshot(
   writeJson(res, 200, {
     ok: true,
     game,
+    checkpointSeq: materialized.checkpointSeq,
+    atCheckpointSeq: atCheckpointSeq ?? null,
     allowedPlayers,
     connectedPlayers,
+    state: decodedState.found && "value" in decodedState ? decodedState.value : null,
+    blob: blobSnapshot.values,
     storage: {
-      state: decodeStoredRaw(stateRaw),
-      blob: includeBlob ? decodeStoredRaw(blobRaw) : { omitted: true },
+      state: decodedState,
+      blob: blobSnapshot.storage,
     },
     recentApiInvokes,
   });
+}
+
+async function handleGameCheckpoints(
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  gameId: string,
+  url: URL,
+): Promise<void> {
+  await requireGame(store, gameId);
+  const limit = clampInt(url.searchParams.get("limit"), 1, 1000, 100);
+  const checkpoints = await stateStore.listCheckpoints(gameId, limit);
+  writeJson(res, 200, {
+    ok: true,
+    gameId,
+    head: checkpoints[0]?.checkpointSeq ?? null,
+    checkpoints: checkpoints.map(checkpointResponse),
+    nextCursor: null,
+  });
+}
+
+async function handleGameRestore(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: ControlPlaneStore,
+  config: ControlPlaneConfig,
+  gameId: string,
+): Promise<void> {
+  const body = asRecord(await readJson(req), "restore body");
+  const fromCheckpointSeq = readPositiveInteger(body, "atCheckpointSeq");
+  const game = await requireGame(store, gameId);
+  const [bundle, target, activeGame] = await Promise.all([
+    requireBundle(store, game.bundleName),
+    stateStore.viewCheckpoint(gameId, fromCheckpointSeq),
+    store.getActiveGame(gameId),
+  ]);
+  if (!target) {
+    throw new HttpError(409, "checkpointOutOfHorizon", {
+      gameId,
+      fromCheckpointSeq,
+    });
+  }
+  const restored = await stateStore.restoreCheckpoint(gameId, fromCheckpointSeq, {
+    bundleCompatTag: bundle.manifest.compatTagProduced,
+    blobCompatTag: game.blobCompatTag,
+  });
+  if (!restored) {
+    throw new HttpError(409, "checkpointOutOfHorizon", {
+      gameId,
+      fromCheckpointSeq,
+    });
+  }
+  appendControlHistory(config, "state.restore", {
+    gameId,
+    fromCheckpointSeq,
+    newCheckpointSeq: restored.checkpointSeq,
+    rootId: restored.rootId,
+    activeReloadRequested: activeGame !== undefined,
+  });
+  const reload = activeGame
+    ? await requestActiveRestoreReload(store, activeGame, gameId)
+    : { requested: false };
+  writeJson(res, 200, {
+    ok: true,
+    gameId,
+    fromCheckpointSeq,
+    newCheckpointSeq: restored.checkpointSeq,
+    reload,
+  });
+}
+
+async function requestActiveRestoreReload(
+  store: ControlPlaneStore,
+  activeGame: ActiveGamePlacement,
+  gameId: string,
+): Promise<{ readonly requested: true; readonly shardId: string; readonly shardUrl: string }> {
+  const shard = await store.getShard(activeGame.shardId);
+  if (!shard) throw new HttpError(503, "activeShardMissing", { shardId: activeGame.shardId });
+  const url = new URL(
+    `/admin/games/${encodeURIComponent(gameId)}/reload-from-storage`,
+    shard.url,
+  );
+  url.searchParams.set("reason", "stateRestore");
+  const response = await fetch(url, { method: "POST" });
+  if (!response.ok) {
+    throw new HttpError(503, "restoreReloadFailed", {
+      gameId,
+      shardId: shard.shardId,
+      status: response.status,
+      body: await response.text(),
+    });
+  }
+  return { requested: true, shardId: shard.shardId, shardUrl: shard.url };
+}
+
+function checkpointResponse(checkpoint: StateCheckpoint): Record<string, unknown> {
+  return {
+    checkpointSeq: checkpoint.checkpointSeq,
+    rootId: checkpoint.rootId,
+    rootObjectKey: checkpoint.rootObjectKey,
+    ts: checkpoint.createdAt,
+    createdAt: checkpoint.createdAt,
+    codec: checkpoint.codec,
+    byteSize: checkpoint.byteSize,
+    blobCompatTag: checkpoint.blobCompatTag ?? null,
+    bundleCompatTag: checkpoint.bundleCompatTag ?? null,
+  };
+}
+
+async function readBlobSnapshot(
+  materialized: MaterializedGameState,
+  includeBlob: boolean,
+): Promise<{
+  readonly values: Record<string, string> | null;
+  readonly storage: Record<string, unknown> | { readonly omitted: true };
+}> {
+  if (!includeBlob) return { values: null, storage: { omitted: true } };
+  const values: Record<string, string> = {};
+  const storage: Record<string, unknown> = {};
+  for (const [key, version] of [...materialized.blobs.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    const object = await stateObjectStore.get(version.objectKey);
+    if (!object) {
+      storage[key] = {
+        found: false,
+        bytes: 0,
+        sha256: version.sha256,
+        objectKey: version.objectKey,
+      };
+      continue;
+    }
+    const base64 = Buffer.from(object.body).toString("base64");
+    values[key] = base64;
+    storage[key] = {
+      ...decodeStoredBytes(object.body),
+      base64,
+      sha256: version.sha256,
+      objectKey: version.objectKey,
+    };
+  }
+  return { values, storage };
 }
 
 async function handleCompatTags(
@@ -1265,6 +1451,14 @@ function readString(record: Readonly<Record<string, unknown>>, field: string): s
   return value;
 }
 
+function readPositiveInteger(record: Readonly<Record<string, unknown>>, field: string): number {
+  const value = record[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(400, "badRequest", { field, expected: "positive integer" });
+  }
+  return value;
+}
+
 function assertBundleName(bundleName: string): void {
   if (!/^[A-Za-z0-9._-]{1,256}$/.test(bundleName)) {
     throw new HttpError(400, "badRequest", {
@@ -1407,12 +1601,20 @@ function encodeStoredValue(
   return { raw, bytes };
 }
 
-function decodeStoredRaw(
-  raw: string | undefined,
+function decodeStoredBytes(
+  bytes: Uint8Array,
 ):
   | { readonly found: false; readonly bytes: 0 }
   | { readonly found: true; readonly bytes: number; readonly value?: unknown; readonly parseError?: string } {
-  if (raw === undefined) return { found: false, bytes: 0 };
+  if (bytes.byteLength === 0) return { found: false, bytes: 0 };
+  return decodeStoredText(Buffer.from(bytes).toString("utf8"));
+}
+
+function decodeStoredText(
+  raw: string,
+):
+  | { readonly found: false; readonly bytes: 0 }
+  | { readonly found: true; readonly bytes: number; readonly value?: unknown; readonly parseError?: string } {
   const bytes = Buffer.byteLength(raw, "utf8");
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -1462,6 +1664,15 @@ function optionalInt(value: string | null): number | undefined {
   if (value === null || value.length === 0) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function readOptionalIntegerQuery(value: string | null, field: string): number | undefined {
+  if (value === null || value.length === 0) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || String(parsed) !== value) {
+    throw new HttpError(400, "badRequest", { field, expected: "non-negative integer" });
+  }
+  return parsed;
 }
 
 function clampInt(

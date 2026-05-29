@@ -1,4 +1,4 @@
-import { booleanField, finding, result, stringField } from "../helpers.mjs";
+import { booleanField, finding, numberField, result, stringField } from "../helpers.mjs";
 import type { HistoryEvent, OracleFinding, OracleResult } from "../types.mjs";
 
 const ORACLE = "blob-durability";
@@ -9,13 +9,14 @@ export function blobDurability(history: readonly HistoryEvent[]): OracleResult {
   const findings: OracleFinding[] = [];
   let observed = 0;
 
-  for (const event of history) {
+  for (const event of [...history].sort(compareEventOrder)) {
     if (
       event.event !== "blob.put" &&
       event.event !== "blob.get" &&
       event.event !== "blob.delete" &&
       event.event !== "state.fence.conflict" &&
-      event.event !== "state.fence.winner"
+      event.event !== "state.fence.winner" &&
+      event.event !== "state.restore"
     ) {
       continue;
     }
@@ -25,7 +26,11 @@ export function blobDurability(history: readonly HistoryEvent[]): OracleResult {
       findings.push(finding("missing-gameid", `${event.event} must include gameId`, event));
       continue;
     }
-    if (event.event === "state.fence.conflict" || event.event === "state.fence.winner") {
+    if (
+      event.event === "state.fence.conflict" ||
+      event.event === "state.fence.winner" ||
+      event.event === "state.restore"
+    ) {
       clearGame(hasSuccessfulWrite, gameId);
       continue;
     }
@@ -65,4 +70,18 @@ function clearGame(values: Set<string>, gameId: string): void {
   for (const value of values) {
     if (value.startsWith(prefix)) values.delete(value);
   }
+}
+
+function compareEventOrder(left: HistoryEvent, right: HistoryEvent): number {
+  const leftTime = Date.parse(stringField(left, "ts") ?? "");
+  const rightTime = Date.parse(stringField(right, "ts") ?? "");
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+  const leftSeq = numberField(left, "pax_seq");
+  const rightSeq = numberField(right, "pax_seq");
+  if (left.shardId === right.shardId && leftSeq !== undefined && rightSeq !== undefined) {
+    return leftSeq - rightSeq;
+  }
+  return 0;
 }
