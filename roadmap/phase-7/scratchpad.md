@@ -137,3 +137,16 @@ This no-ivm implementation is not a security boundary, but it is the contract
 drift detector for the same async bridge the isolated-vm Runner will use. The
 next slice is the production isolated-vm Runner and then the process-level IPC
 wrapper.
+
+## 2026-05-29 02:14 PDT
+
+Added the isolated-vm Runner implementation. `IvmRunnerProcess` now hosts many
+games as one isolate per game, evaluates bundles inside isolated-vm, injects a
+deep-frozen async `c.*` shim, uses promise-returning bridge calls instead of
+`applySyncPromise`, wraps handlers with isolated-vm timeouts, sets per-isolate
+memory limits from the assignment, and emits handler plus isolate counter
+telemetry back through the Broker bridge.
+
+The Runner still needs a child-process wrapper so a real Broker process can
+talk to Runner processes over the shared request-id IPC envelope rather than an
+in-process `BrokerBridge`.
