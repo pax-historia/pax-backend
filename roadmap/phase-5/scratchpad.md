@@ -472,3 +472,30 @@ the Node heap limit after the shard failure, so the metrics collector now keeps
 debug runs. This keeps long-soak percentile attribution useful without holding
 as much per-series JS heap across ten shard metric surfaces. Verification:
 `pnpm --filter @pax-backend/scenario-runner check-types` and `git diff --check`.
+
+## 2026-05-28 21:59 PDT
+
+Deployed the child-RSS parent actor fix to `pax-backend-shards` as
+`deployment-01KSS025RW6DW5FD3HBNTMGHQ0` / release version 11. As expected, the
+deploy reset every shard machine to the app-level `shard-fly-iad-1` env; reran
+`PAX_SHARD_CHILD_RUNNER_KIND=ivm scripts/fly/scale-shards.sh 10`, which
+restored distinct `shard-fly-iad-1` through `shard-fly-iad-10` identities and
+internal URLs. Verification from the driver showed `/admin/shards` at 10
+healthy accepting shards with `activeGames=0`, and a live shard grep showed
+`childRssBytes` in both `/app/runtime/parent-actor/dist/parent.mjs` and
+`/app/runtime/parent-actor/src/parent.mts`.
+
+Deployed the scenario-runner metric reservoir guard to `pax-backend-driver` as
+`deployment-01KSS1AA08S6N0VF9KB0BT37FD` / release version 12. Verified the
+driver image contains `SCALAR_SERIES_RESERVOIR_SAMPLES` with the default 256
+sample cap, then checked control/router/gateway metrics and all 20 per-shard
+parent/engine metrics endpoints from the driver.
+
+Started a detached target-density validation from driver machine
+`1854539b257768` at
+`/data/phase-5/validation/ivm-v1scale-20260529T045623Z`, wrapper PID `822`.
+It runs the existing `testing/scale-ladders/v1-scale.mts` `1000g-10shards`
+rung with `ivm`, a 1536 MiB Node old-space cap, the same pinned internal
+control/router/gateway URLs, and per-shard metrics labels. The no-fault case is
+first; the launch check found the wrapper alive, the no-fault history file
+created, and the shard registry still at 10 healthy accepting empty shards.
