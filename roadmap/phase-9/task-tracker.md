@@ -1,6 +1,6 @@
 # Phase 9 — Fly topology proof
 
-> Status: `to_do` · Directive and exit signal: [README](../README.md)
+> Status: `in_progress` · Directive and exit signal: [README](../README.md)
 
 ## Tasks
 

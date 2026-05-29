@@ -73,3 +73,24 @@ cargo audit --file orchestration/placement-router/Cargo.lock
 That scan loaded the RustSec advisory DB, scanned 197 crate dependencies, and
 reported no advisories. Vendored Rivet lockfiles were not audited or edited as
 part of this phase, matching the standing `vendor/rivet/` constraint.
+
+## 2026-05-29 03:50 PDT
+
+Phase 8 verification is complete. Re-read the Phase 8 directive and exit
+signal in the roadmap: the required exit is a green local smoke on the new
+runtime with no production `.env`, plus clean or logged dependency audits.
+
+Final verification commands:
+
+```sh
+pnpm typecheck
+cargo check --manifest-path orchestration/placement-router/Cargo.toml
+git diff --check
+pnpm smoke
+pnpm audit
+cargo audit --file orchestration/placement-router/Cargo.lock
+```
+
+All passed. The final smoke opened a Broker WebSocket, received the bundle
+`ready` frame, sent an `echo`, received the bundle-defined echo frame, and found
+the expected session-scoped history events.
