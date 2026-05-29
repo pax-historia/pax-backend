@@ -8,7 +8,7 @@ export default {
   defaultBackend: "live",
   defaultNemesis: "no-faults",
   description:
-    "A hostile bundle attempts to send to a player with no connected session; the parent must reject the target without crashing.",
+    "A hostile bundle attempts to send to a player with no connected session; the Broker must reject the target without crashing.",
   oracleNames: [
     "allowed-only-connection",
     "compute-plane-quotas",

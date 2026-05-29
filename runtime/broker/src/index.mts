@@ -236,6 +236,11 @@ export class Broker {
     this.started = true;
     this.acceptingWakes = true;
     await this.publishCapacity();
+    await this.writeHistory({
+      event: "broker.start",
+      version: process.env["PAX_VERSION"] ?? "dev",
+      runtimeContractsSupported: this.config.runtimeContractsSupported,
+    });
   }
 
   async stop(): Promise<void> {
@@ -245,6 +250,11 @@ export class Broker {
     await this.deps.runners.stop();
     await this.deps.directory.removeShard(this.config.shardId);
     this.started = false;
+    await this.writeHistory({
+      event: "broker.stop",
+      intentional: true,
+      reason: "shutdown",
+    });
   }
 
   async requestDrain(reason = "admin"): Promise<void> {
@@ -381,6 +391,18 @@ export class Broker {
       ws.close(4403, "wrong shard");
       return;
     }
+    const routedGameId = url.searchParams.get("gameId");
+    if (routedGameId && routedGameId !== claims.gameId) {
+      await this.writeHistory({
+        event: "connection.refused",
+        gameId: claims.gameId,
+        routedGameId,
+        playerId: claims.playerId,
+        reason: "wrongGame",
+      });
+      ws.close(4403, "wrong game");
+      return;
+    }
 
     const allowed = await this.deps.allowedPlayers.has(claims.gameId, claims.playerId);
     if (!allowed) {
@@ -483,55 +505,49 @@ export class Broker {
         });
         return;
       case RUNNER_TO_BROKER.stateRead:
-        await this.respond(game, "state.read.response", this.readState(game), envelope.requestId);
+        await this.respond(game, "state.read.response", await this.readState(game, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.stateWrite:
         await this.respond(game, "state.write.response", {
-          response: this.writeState(game, envelope.payload.value),
+          response: await this.writeState(game, envelope.payload.value, envelope.requestId),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.stateFlush:
         await this.respond(game, "state.flush.response", {
-          response: await this.flushState(game, "state.flush"),
+          response: await this.flushState(game, "state.flush", envelope.requestId),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.blobPut:
         await this.respond(game, "blob.put.response", {
-          response: await this.putBlob(game, envelope.payload),
+          response: await this.putBlob(game, envelope.payload, envelope.requestId),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.blobGet:
-        await this.respond(game, "blob.get.response", await this.getBlob(game, envelope.payload), envelope.requestId);
+        await this.respond(game, "blob.get.response", await this.getBlob(game, envelope.payload, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.blobDelete:
-        await this.respond(game, "blob.delete.response", await this.deleteBlob(game, envelope.payload.key), envelope.requestId);
+        await this.respond(game, "blob.delete.response", await this.deleteBlob(game, envelope.payload.key, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.blobList:
-        await this.respond(game, "blob.list.response", await this.listBlobs(game, envelope.payload), envelope.requestId);
+        await this.respond(game, "blob.list.response", await this.listBlobs(game, envelope.payload, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.wsSend:
         await this.respond(game, "ws.send.response", {
-          response: this.handleWsSend(game, envelope.payload),
+          response: await this.handleWsSend(game, envelope.payload, envelope.requestId),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.playersAllowed:
-        await this.respond(game, "players.allowed.response", {
-          players: await this.deps.allowedPlayers.list(game.gameId),
-        }, envelope.requestId);
+        await this.respond(game, "players.allowed.response", await this.playersAllowed(game, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.playersConnected:
-        await this.respond(game, "players.connected.response", {
-          players: this.connectedSessions(game),
-        }, envelope.requestId);
+        await this.respond(game, "players.connected.response", await this.playersConnected(game, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.computeBudget:
-        await this.respond(game, "compute.budget.response", {
-          budget: this.computeBudgetSnapshot(game),
-        }, envelope.requestId);
+        await this.respond(game, "compute.budget.response", await this.computeBudget(game, envelope.requestId), envelope.requestId);
         return;
       case RUNNER_TO_BROKER.apiInvoke:
         await this.respond(game, "api.invoke.response", {
-          response: await this.invokeGateway(game, envelope.payload),
+          response: await this.invokeGateway(game, envelope.payload, envelope.requestId),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.logEmit:
@@ -547,10 +563,31 @@ export class Broker {
         await this.releaseGame(game, envelope.payload.reason);
         return;
       case RUNNER_TO_BROKER.handlerComplete:
-        await this.writeHistory({ event: "handler.complete", gameId: game.gameId, ...envelope.payload });
+        await this.writeHistory({
+          event: "handler.complete",
+          gameId: game.gameId,
+          ...envelope.payload,
+          handlerName: envelope.payload.handler,
+        });
         return;
       case RUNNER_TO_BROKER.handlerError:
-        await this.writeHistory({ event: "handler.error", gameId: game.gameId, ...envelope.payload });
+        await this.writeHistory({
+          event: "handler.error",
+          gameId: game.gameId,
+          ...envelope.payload,
+          handlerName: envelope.payload.handler,
+        });
+        if (envelope.payload.code === "handlerTimeout") {
+          await this.writeHistory({
+            event: "compute.budget.rejected",
+            gameId: game.gameId,
+            requestId: envelope.requestId,
+            budget: "cpu-ms-per-tick",
+            reason: "handlerTimeout",
+            used: envelope.payload.durationMs,
+            limit: envelope.payload.timeoutMs,
+          });
+        }
         return;
       case RUNNER_TO_BROKER.isolateFatal:
         await this.writeHistory({ event: "isolate.fatal", gameId: game.gameId, ...envelope.payload });
@@ -735,7 +772,10 @@ export class Broker {
       gameId: session.gameId,
       sessionId: session.sessionId,
       playerId: session.playerId,
+      connectedAt: session.connectedAt,
+      disconnectedAt: this.now(),
       reason,
+      traceId: stringOrNull(session.jwtClaims["traceId"]),
     });
     await this.invokeGameHandler(game, "onPlayerDisconnect", {
       playerId: session.playerId,
@@ -748,29 +788,54 @@ export class Broker {
   private scheduleSleep(game: BrokerGame): void {
     this.clearSleepTimer(game);
     const delay = this.config.sleepGraceMs ?? 60_000;
+    const deadline = this.now() + delay;
+    void this.writeHistory({
+      event: "lifecycle.sleepGrace.started",
+      gameId: game.gameId,
+      delayMs: delay,
+      deadline,
+    });
     game.sleepTimer = setTimeout(() => {
+      game.sleepTimer = undefined;
+      void this.writeHistory({
+        event: "lifecycle.sleepGrace.expired",
+        gameId: game.gameId,
+        deadline,
+      });
       void this.sleepGame(game, "idle");
     }, delay);
     game.sleepTimer.unref();
   }
 
-  private clearSleepTimer(game: BrokerGame): void {
+  private clearSleepTimer(game: BrokerGame, cause = "cancelled"): void {
     if (!game.sleepTimer) return;
     clearTimeout(game.sleepTimer);
     game.sleepTimer = undefined;
+    void this.writeHistory({
+      event: "lifecycle.sleepGrace.cancelled",
+      gameId: game.gameId,
+      cause,
+    });
   }
 
   private async sleepGame(game: BrokerGame, reason: OnSleepPayload["reason"]): Promise<void> {
     if (!this.games.has(game.gameId)) return;
-    this.clearSleepTimer(game);
+    this.clearSleepTimer(game, reason);
     const deadline = this.now() + (this.config.sleepDeadlineMs ?? 30_000);
+    await this.writeHistory({
+      event: "onSleep.sent",
+      gameId: game.gameId,
+      reason,
+      deadline,
+      budgetMs: this.config.sleepDeadlineMs ?? 30_000,
+    });
     await this.invokeGameHandler(game, "onSleep", { reason, deadline });
     await this.releaseGame(game, reason);
   }
 
   private async releaseGame(game: BrokerGame, reason: string): Promise<void> {
     if (!this.games.delete(game.gameId)) return;
-    this.clearSleepTimer(game);
+    this.clearSleepTimer(game, reason);
     this.closeSessions(game, reason);
     const response = await this.flushState(game, "state.flush.plannedTransition");
     await game.runner.release(game.gameId);
@@ -844,8 +909,18 @@ export class Broker {
     );
   }
 
-  private readState(game: BrokerGame): { readonly found: boolean; readonly value: unknown | null; readonly bytes: number } {
+  private async readState(
+    game: BrokerGame,
+    requestId?: string,
+  ): Promise<{ readonly found: boolean; readonly value: unknown | null; readonly bytes: number }> {
     const bytes = game.state.readState();
+    await this.writeHistory({
+      event: "state.read",
+      gameId: game.gameId,
+      requestId,
+      found: bytes.byteLength > 0,
+      byteSize: bytes.byteLength,
+    });
     return {
       found: bytes.byteLength > 0,
       value: decodeJsonState(bytes),
@@ -853,28 +928,46 @@ export class Broker {
     };
   }
 
-  private writeState(game: BrokerGame, value: unknown): StorageWriteResponse {
+  private async writeState(game: BrokerGame, value: unknown, requestId?: string): Promise<StorageWriteResponse> {
     const encoded = encodeJsonState(value);
-    if (!encoded.ok) return encoded.response;
+    if (!encoded.ok) {
+      const response = encoded.response;
+      await this.writeHistory({
+        event: "state.write.rejected",
+        gameId: game.gameId,
+        requestId,
+        error: response.ok ? "storageUnavailable" : response.error,
+      });
+      return response;
+    }
     if (encoded.bytes.byteLength > this.budgetLimits.stateBytes) {
+      await this.writeHistory({
+        event: "state.write.rejected",
+        gameId: game.gameId,
+        requestId,
+        error: "sizeExceeded",
+        limit: this.budgetLimits.stateBytes,
+      });
       return { ok: false, error: "sizeExceeded", detail: { limit: this.budgetLimits.stateBytes } };
     }
     game.state.writeState(encoded.bytes);
     game.budgets.stateBytes = encoded.bytes.byteLength;
-    void this.writeHistory({
+    await this.writeHistory({
       event: "state.write",
       gameId: game.gameId,
-      bytes: encoded.bytes.byteLength,
+      requestId,
+      byteSize: encoded.bytes.byteLength,
     });
     return { ok: true };
   }
 
-  private async flushState(game: BrokerGame, event: string): Promise<StorageWriteResponse> {
+  private async flushState(game: BrokerGame, event: string, requestId?: string): Promise<StorageWriteResponse> {
     try {
       const root = await game.state.flush();
       await this.writeHistory({
         event,
         gameId: game.gameId,
+        requestId,
         checkpointSeq: root?.checkpointSeq,
       });
       return { ok: true };
@@ -889,17 +982,42 @@ export class Broker {
     }
   }
 
-  private async putBlob(game: BrokerGame, payload: BlobPutIpcPayload): Promise<StorageWriteResponse> {
+  private async putBlob(game: BrokerGame, payload: BlobPutIpcPayload, requestId?: string): Promise<StorageWriteResponse> {
     const keyCheck = validateBlobKey(payload.key);
-    if (!keyCheck.ok) return keyCheck;
+    if (!keyCheck.ok) {
+      await this.writeHistory({
+        event: "blob.put.rejected",
+        gameId: game.gameId,
+        requestId,
+        key: payload.key,
+        error: keyCheck.error,
+      });
+      return keyCheck;
+    }
     const bytes = Buffer.from(payload.bytesBase64, "base64");
     const previousSize = game.blobSizes.get(payload.key) ?? 0;
     const nextBlobBytes = game.budgets.blobBytes - previousSize + bytes.byteLength;
     const nextBlobKeys = game.blobSizes.has(payload.key) ? game.budgets.blobKeys : game.budgets.blobKeys + 1;
     if (nextBlobBytes > this.budgetLimits.blobBytes) {
+      await this.writeHistory({
+        event: "blob.put.rejected",
+        gameId: game.gameId,
+        requestId,
+        key: payload.key,
+        error: "sizeExceeded",
+        limit: this.budgetLimits.blobBytes,
+      });
       return { ok: false, error: "sizeExceeded", detail: { limit: this.budgetLimits.blobBytes } };
     }
     if (nextBlobKeys > this.budgetLimits.blobKeys) {
+      await this.writeHistory({
+        event: "blob.put.rejected",
+        gameId: game.gameId,
+        requestId,
+        key: payload.key,
+        error: "keyCountExceeded",
+        limit: this.budgetLimits.blobKeys,
+      });
       return { ok: false, error: "keyCountExceeded", detail: { limit: this.budgetLimits.blobKeys } };
     }
     await game.state.putBlob(payload.key, bytes);
@@ -909,8 +1027,9 @@ export class Broker {
     await this.writeHistory({
       event: "blob.put",
       gameId: game.gameId,
+      requestId,
       key: payload.key,
-      bytes: bytes.byteLength,
+      byteSize: bytes.byteLength,
     });
     return { ok: true };
   }
@@ -918,20 +1037,23 @@ export class Broker {
   private async getBlob(
     game: BrokerGame,
     payload: BlobGetIpcPayload,
+    requestId?: string,
   ): Promise<{ readonly found: boolean; readonly bytesBase64?: string; readonly bytes: number }> {
     const bytes = await game.state.getBlob(payload.key);
     await this.writeHistory({
       event: "blob.get",
       gameId: game.gameId,
+      requestId,
       key: payload.key,
       found: bytes !== undefined,
+      byteSize: bytes?.byteLength ?? 0,
     });
     return bytes
       ? { found: true, bytesBase64: Buffer.from(bytes).toString("base64"), bytes: bytes.byteLength }
       : { found: false, bytes: 0 };
   }
 
-  private async deleteBlob(game: BrokerGame, key: string): Promise<{ readonly ok: true }> {
+  private async deleteBlob(game: BrokerGame, key: string, requestId?: string): Promise<{ readonly ok: true }> {
     const previousSize = game.blobSizes.get(key);
     await game.state.deleteBlob(key);
     if (previousSize !== undefined) {
@@ -939,32 +1061,77 @@ export class Broker {
       game.budgets.blobBytes = Math.max(0, game.budgets.blobBytes - previousSize);
       game.budgets.blobKeys = game.blobSizes.size;
     }
-    await this.writeHistory({ event: "blob.delete", gameId: game.gameId, key });
+    await this.writeHistory({ event: "blob.delete", gameId: game.gameId, requestId, key });
     return { ok: true };
   }
 
   private async listBlobs(
     game: BrokerGame,
     payload: BlobListIpcPayload,
+    requestId?: string,
   ): Promise<{ readonly items: readonly { readonly key: string; readonly size: number }[] }> {
     const keys = await game.state.listBlobs(payload.prefix);
+    const items = keys.map((key) => ({ key, size: game.blobSizes.get(key) ?? 0 }));
+    await this.writeHistory({
+      event: "blob.list",
+      gameId: game.gameId,
+      requestId,
+      prefix: payload.prefix,
+      keyCount: items.length,
+    });
     return {
-      items: keys.map((key) => ({ key, size: game.blobSizes.get(key) ?? 0 })),
+      items,
     };
   }
 
-  private handleWsSend(game: BrokerGame, payload: WsSendPayload): WsSendResponse {
+  private async handleWsSend(game: BrokerGame, payload: WsSendPayload, requestId?: string): Promise<WsSendResponse> {
     const serialized = trySerializeWsBody(payload.body);
-    if (!serialized.ok) return serialized.response;
+    if (!serialized.ok) {
+      const response = serialized.response;
+      await this.writeHistory({
+        event: "ws.send.rejected",
+        gameId: game.gameId,
+        requestId,
+        target: payload.target,
+        error: response.ok ? "serializationFailed" : response.error,
+      });
+      return response;
+    }
     const targets = resolveWsSendTargets(payload.target, [...game.sessions.values()]);
-    if (!targets.ok) return targets.response;
+    if (!targets.ok) {
+      const response = targets.response;
+      await this.writeHistory({
+        event: "ws.send.rejected",
+        gameId: game.gameId,
+        requestId,
+        target: payload.target,
+        error: response.ok ? "targetInvalid" : response.error,
+      });
+      return response;
+    }
 
     const bytes = Buffer.byteLength(serialized.text, "utf8") * targets.sessions.length;
     const now = this.now();
     if (game.budgets.wsBytes.sum(now) + bytes > this.budgetLimits.bandwidthBytesPerSec) {
+      await this.writeHistory({
+        event: "ws.send.rejected",
+        gameId: game.gameId,
+        requestId,
+        target: payload.target,
+        error: "bandwidthExceeded",
+        limit: this.budgetLimits.bandwidthBytesPerSec,
+      });
       return { ok: false, error: "bandwidthExceeded", detail: { limit: this.budgetLimits.bandwidthBytesPerSec } };
     }
     if (game.budgets.wsMessages.sum(now) + 1 > this.budgetLimits.wsMessagesPerSec) {
+      await this.writeHistory({
+        event: "ws.send.rejected",
+        gameId: game.gameId,
+        requestId,
+        target: payload.target,
+        error: "rateExceeded",
+        limit: this.budgetLimits.wsMessagesPerSec,
+      });
       return { ok: false, error: "rateExceeded", detail: { limit: this.budgetLimits.wsMessagesPerSec } };
     }
     game.budgets.wsBytes.add(bytes, now);
@@ -980,21 +1147,101 @@ export class Broker {
       });
       sent += 1;
     }
-    void this.writeHistory({
+    await this.writeHistory({
       event: "ws.send",
       gameId: game.gameId,
+      requestId,
       target: payload.target,
-      sent,
+      recipientCount: sent,
       bytes,
     });
     return { ok: true, sent, bytes };
   }
 
-  private async invokeGateway(game: BrokerGame, payload: ApiInvokeRequest): Promise<ApiInvokeResponse> {
+  private async playersAllowed(
+    game: BrokerGame,
+    requestId?: string,
+  ): Promise<{ readonly players: readonly string[] }> {
+    const players = await this.deps.allowedPlayers.list(game.gameId);
+    await this.writeHistory({
+      event: "players.allowed",
+      gameId: game.gameId,
+      requestId,
+      playerCount: players.length,
+    });
+    return { players };
+  }
+
+  private async playersConnected(
+    game: BrokerGame,
+    requestId?: string,
+  ): Promise<{ readonly players: readonly ConnectedSessionSnapshot[] }> {
+    const players = this.connectedSessions(game);
+    await this.writeHistory({
+      event: "players.connected",
+      gameId: game.gameId,
+      requestId,
+      playerCount: players.length,
+    });
+    return { players };
+  }
+
+  private async computeBudget(
+    game: BrokerGame,
+    requestId?: string,
+  ): Promise<{ readonly budget: ComputeBudgetSnapshot }> {
+    const budget = this.computeBudgetSnapshot(game);
+    await this.writeHistory({
+      event: "compute.budget",
+      gameId: game.gameId,
+      requestId,
+      snapshot: budget,
+    });
+    return { budget };
+  }
+
+  private async invokeGateway(
+    game: BrokerGame,
+    payload: ApiInvokeRequest,
+    requestId?: string,
+  ): Promise<ApiInvokeResponse> {
     const now = this.now();
     game.budgets.apiInvocations.add(1, now);
+    if (game.budgets.apiInvocations.sum(now) > this.budgetLimits.apiInvocationsPerMin) {
+      await this.writeHistory({
+        event: "compute.budget.rejected",
+        gameId: game.gameId,
+        requestId,
+        budget: "api-invocations-per-min",
+        used: game.budgets.apiInvocations.sum(now),
+        limit: this.budgetLimits.apiInvocationsPerMin,
+      });
+      await this.writeHistory({
+        event: "api.invoke.response",
+        gameId: game.gameId,
+        requestId,
+        kind: payload.kind,
+        traceId: game.currentDispatch?.traceId ?? null,
+        ok: false,
+        error: "apiRateExceeded",
+        durationMs: 0,
+      });
+      return { ok: false, error: "apiRateExceeded" };
+    }
     const triggeringSession =
       game.currentDispatch?.sessionId ? game.sessions.get(game.currentDispatch.sessionId) : undefined;
+    const traceId = game.currentDispatch?.traceId ?? null;
+    const started = this.now();
+    await this.writeHistory({
+      event: "api.invoke.request",
+      gameId: game.gameId,
+      requestId,
+      kind: payload.kind,
+      triggeringSessionId: triggeringSession?.sessionId ?? null,
+      traceId,
+      connectedSessionCount: game.sessions.size,
+      idempotencyKey: payload.idempotencyKey,
+    });
     try {
       const result = await this.deps.gateway.invoke({
         ...payload,
@@ -1005,14 +1252,55 @@ export class Broker {
         bundleName: game.bundleName,
         bundleCompatTag: game.bundleCompatTag,
         runId: game.runId,
-        traceId: game.currentDispatch?.traceId ?? null,
+        traceId,
       });
-      if (result.wireRecord) await this.writeHistory({ ...result.wireRecord, event: "api.invoke.wire" });
+      if (result.wireRecord) {
+        await this.writeHistory({
+          event: "api.invoke.wire",
+          gameId: game.gameId,
+          requestId,
+          kind: payload.kind,
+          gatewayRequestId: result.wireRecord.requestId,
+          runId: game.runId,
+          traceId,
+          fingerprint: result.wireRecord.fingerprint,
+          mode: result.wireRecord.mode,
+          statusCode: result.wireRecord.statusCode,
+          error: result.wireRecord.error,
+          rawOutbound: result.wireRecord.rawOutbound,
+          rawInbound: result.wireRecord.rawInbound,
+          recordedAt: result.wireRecord.recordedAt,
+        });
+      }
+      await this.writeHistory({
+        event: "api.invoke.response",
+        gameId: game.gameId,
+        requestId,
+        kind: payload.kind,
+        traceId,
+        ok: result.response.ok,
+        error: result.response.ok ? undefined : result.response.error,
+        fingerprint: result.wireRecord?.fingerprint,
+        mode: result.wireRecord?.mode,
+        statusCode: result.wireRecord?.statusCode,
+        durationMs: this.now() - started,
+      });
       return result.response;
     } catch (err) {
       await this.writeHistory({
+        event: "api.invoke.response",
+        gameId: game.gameId,
+        requestId,
+        kind: payload.kind,
+        traceId,
+        ok: false,
+        error: "providerError",
+        durationMs: this.now() - started,
+      });
+      await this.writeHistory({
         event: "api.invoke.error",
         gameId: game.gameId,
+        requestId,
         kind: payload.kind,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -1327,7 +1615,10 @@ function resolveWsSendTargets(target: WsTarget, sessions: readonly BrokerSession
   const requested = new Set(target);
   const missing = [...requested].filter((playerId) => !sessions.some((session) => session.playerId === playerId));
   if (missing.length > 0) {
-    return { ok: false, response: { ok: false, error: "targetNotConnected", detail: { missing } } };
+    return {
+      ok: false,
+      response: { ok: false, error: "targetNotConnected", detail: { missing, missingTargets: missing } },
+    };
   }
   return {
     ok: true,

@@ -9,11 +9,15 @@ export function placementContractSafety(history: readonly HistoryEvent[]): Oracl
   let observed = 0;
 
   for (const event of history) {
-    if (event.event === "parent.ready") {
+    if (event.event === "broker.start" || event.event === "parent.ready") {
       observed += 1;
       if (!Array.isArray(event["runtimeContractsSupported"])) {
         findings.push(
-          finding("missing-runtime-contract-range", "parent.ready must include runtimeContractsSupported", event),
+          finding(
+            "missing-runtime-contract-range",
+            `${event.event} must include runtimeContractsSupported`,
+            event,
+          ),
         );
       }
       continue;
@@ -56,9 +60,9 @@ export function placementContractSafety(history: readonly HistoryEvent[]): Oracl
       }
       continue;
     }
-    if (event.event === "placement.rejected") {
+    if (event.event === "placement.rejected" || event.event === "placement.refused") {
       observed += 1;
-      const error = stringField(event, "error");
+      const error = stringField(event, "error") ?? stringField(event, "reason");
       if (error === "contractOutOfRange" && contractRequired(event) === undefined) {
         findings.push(
           finding("missing-required-contract", "contractOutOfRange must include required contract", event),

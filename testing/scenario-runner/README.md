@@ -31,8 +31,8 @@ Current source pass provides the first runner shell:
   production admin drain endpoint (`POST /admin/shards/:id/drain`), while
   `api-kind-partition-burst` temporarily rewires an API kind through
   `POST /admin/api-kinds`
-- scrapes live Prometheus metrics from router, control-plane, gateway, parent,
-  and vendored engine endpoints during non-replay runs; replay mode still
+- scrapes live Prometheus metrics from router, control-plane, gateway, and
+  Broker endpoints during non-replay runs; replay mode still
   summarizes `metrics.emit` and capacity warnings from history
 - runs every substrate guarantee oracle from `@pax-backend/oracles-lib` by default
 - can narrow replay checks with `--oracles scenario` or an explicit comma-separated list;
@@ -48,7 +48,7 @@ Current source pass provides the first runner shell:
   `scale-ladder.result.json` summary plus one `rung.result.json`, history file,
   and scenario `result.json` per rung × nemesis case
 - tags suite runs with `--runtime ivm|noivm`; the local stack still needs to be
-  started with matching `PAX_CHILD_RUNNER_KIND`, which
+  started with matching `PAX_RUNNER_KIND`, which
   [`scripts/test/scenario-suite-local.sh`](../../scripts/test/scenario-suite-local.sh)
   does for both runtimes
 - can set `PAX_SCENARIO_EXPECT_HISTORY_MODE=delay` for split deployments
@@ -85,8 +85,8 @@ PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios \
   scripts/test/scenario-suite-local.sh
 ```
 
-The script restarts the local stack once with `PAX_CHILD_RUNNER_KIND=ivm` and
-once with `PAX_CHILD_RUNNER_KIND=noivm`, then invokes suite mode for each
+The script restarts the local stack once with `PAX_RUNNER_KIND=ivm` and
+once with `PAX_RUNNER_KIND=noivm`, then invokes suite mode for each
 catalog. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`, `PAX_SCENARIO_SUITE_NEMESES`,
 or `PAX_SCENARIO_SUITE_ORACLES` when iterating locally. CI uses the same contract.
 
@@ -114,10 +114,8 @@ concurrent session proof from higher-throughput message-rate probes.
 
 For live runs, `sampling_profile` controls metric scrape cadence: `ramp` samples
 every 30 seconds and `cliff_hold` every second. The collector aggregates online
-instead of retaining raw scrape lines, and `cliff_hold` applies a small
-vendored-engine metric-family allowlist to keep 24-hour soaks bounded. Override
-cadence with `--metrics-scrape-interval-ms` when a short local run needs denser
-samples.
+instead of retaining raw scrape lines. Override cadence with
+`--metrics-scrape-interval-ms` when a short local run needs denser samples.
 
 After each live case, the runner appends archived and control-plane history
 before running oracles. Control-plane history is fetched with bounded concurrency
@@ -128,7 +126,6 @@ or higher request fanout. For long scale soaks, set
 contract events needed by the scale oracles plus failure/capacity/budget events;
 the full raw history remains in the observability archive.
 
-By default the collector uses one parent and one vendored-engine endpoint. For
-multi-shard rungs, set `PAX_PARENT_METRICS_URLS` and `PAX_RIVET_METRICS_URLS` to
-comma-separated `label=url` entries so `metrics.per_surface` keeps each shard's
-samples separate.
+By default the collector uses one Broker endpoint. For multi-shard rungs, set
+`PAX_BROKER_METRICS_URLS` to comma-separated `label=url` entries so
+`metrics.per_surface` keeps each shard's samples separate.

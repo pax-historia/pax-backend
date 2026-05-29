@@ -10,6 +10,64 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
   let observed = 0;
 
   for (const event of history) {
+    if (event.event === "isolate.restart.failed") {
+      observed += 1;
+      findings.push(
+        finding(
+          "isolate-restart-failed",
+          "unexpected isolate failures must restart the same game successfully",
+          event,
+        ),
+      );
+      continue;
+    }
+
+    if (event.event === "isolate.restart") {
+      observed += 1;
+      const gameId = stringField(event, "gameId");
+      if (!gameId) {
+        findings.push(
+          finding("unscoped-isolate-restart", "isolate.restart must be scoped to one game", event),
+        );
+        continue;
+      }
+      pendingRestarts.delete(`broker:${gameId}`);
+      continue;
+    }
+
+    if (event.event === "isolate.disposed" || event.event === "isolate.fatal") {
+      observed += 1;
+      const gameId = stringField(event, "gameId");
+      if (!gameId) {
+        findings.push(
+          finding("unscoped-isolate-failure", "isolate failure event must be scoped to one game", event),
+        );
+        continue;
+      }
+      if (event.event === "isolate.disposed" && booleanField(event, "intentional") === true) {
+        continue;
+      }
+      pendingRestarts.set(`broker:${gameId}`, event);
+      continue;
+    }
+
+    if (event.event === "runner.crash") {
+      observed += 1;
+      const affected = event["affectedGameIds"];
+      if (!Array.isArray(affected)) {
+        findings.push(
+          finding("unscoped-runner-crash", "runner.crash must include affectedGameIds", event),
+        );
+        continue;
+      }
+      for (const gameId of affected) {
+        if (typeof gameId === "string" && gameId.length > 0) {
+          pendingRestarts.set(`broker:${gameId}`, event);
+        }
+      }
+      continue;
+    }
+
     if (event.event === "child.restart.failed") {
       observed += 1;
       findings.push(
@@ -61,8 +119,8 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
   for (const event of pendingRestarts.values()) {
     findings.push(
       finding(
-        "missing-child-restart",
-        "unexpected child.exit must be followed by a child.restart for the same game",
+        "missing-isolate-restart",
+        "unexpected isolate or runner failure must be followed by an isolate.restart for the same game",
         event,
       ),
     );

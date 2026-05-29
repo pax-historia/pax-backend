@@ -261,3 +261,18 @@ The stale local `scripts/dev/spawn-engine.mts` helper is removed, and an audit
 over `fly.shards.toml`, `runtime/shard-image`, `scripts/dev`, and
 `scripts/observability` found no remaining Rivet/parent runtime references
 except the word "parents" in a process-sweep safety comment.
+
+## 2026-05-29 03:02 PDT
+
+Closed the tests/scenarios compatibility task. The smoke bot and live
+scenario executor now call the router's `POST /placement` endpoint and open
+Broker WebSockets directly, with JWT wrong-game tests mutating the `gameId`
+query parameter instead of Rivet subprotocol state. Scenario metrics now scrape
+Broker endpoints through `PAX_BROKER_METRICS_URL(S)`.
+
+The Broker history surface now emits Broker/Runner-era lifecycle, session,
+storage, blob, WS, player, compute, and API request/response events with the
+fields the oracles need. The oracles and scenario-local checks were updated
+from parent/child event names to Broker/Runner names while preserving legacy
+replay compatibility where it is cheap. `pnpm typecheck`, `bash -n
+scripts/test/scenario-suite-local.sh`, and `git diff --check` pass.

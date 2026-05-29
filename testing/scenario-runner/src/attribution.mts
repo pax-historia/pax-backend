@@ -58,7 +58,7 @@ function collectMetricSamples(history: readonly HistoryEvent[]): readonly Metric
       const ratio = numberValue(event["ratio"]);
       if (budget && ratio !== undefined) {
         samples.push({
-          surface: "parent",
+          surface: "broker",
           name: `compute.${budget}.usage_ratio`,
           value: ratio,
         });

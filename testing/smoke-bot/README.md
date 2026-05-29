@@ -9,10 +9,10 @@ rules about the `testing/` zone.
 1. Seeds Redis with a `BundleRecord` (`bundles:hello-ws-echo`) and a
    `GameRecord` (`games:<gameId>`) so the placement router has enough
    state to decide.
-2. `GET <router>/games/:id/placement?userId=alice`. Expects a signed JWT
-   and the full `webSocketUrl` to open against the shard.
-3. Opens the WebSocket using the rivet subprotocols (`rivet`,
-   `rivet_encoding.json`, `rivet_conn_params.<json>`). Expects a `ready`
+2. `POST <router>/placement`. Expects a signed JWT and the full
+   `webSocketUrl` to open against the Broker shard.
+3. Opens the WebSocket directly with the placement token in the URL.
+   Expects a `ready`
    frame from the bundle's `onPlayerConnect` handler with a
    substrate-generated `sessionId` (`ses_<32 hex>`).
 4. Sends `{type:'echo', body:{...}}`. Expects an `echo` frame back with
@@ -31,7 +31,7 @@ All via env vars so the same driver targets localhost or (later) Fly:
 |---|---|---|
 | `PAX_ROUTER_URL` | `http://127.0.0.1:9080` | Placement router base URL |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Where to seed bundle/game keys |
-| `PAX_HISTORY_PATH` | `<repo>/var/history.jsonl` | Where the parent writes; we read the smoke's tail |
+| `PAX_HISTORY_PATH` | `<repo>/var/history.jsonl` | Where the Broker writes; we read the smoke's tail |
 | `PAX_SMOKE_GAME_ID` | `smoke-<timestamp>` | Override for deterministic re-runs |
 | `PAX_SMOKE_PLAYER_ID` | `alice` | Player id baked into the JWT |
 | `PAX_SMOKE_BUNDLE` | `hello-ws-echo` | Which bundle to seed |

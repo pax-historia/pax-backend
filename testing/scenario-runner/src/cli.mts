@@ -134,7 +134,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 function parseSuiteOptions(values: ReadonlyMap<string, string>): SuiteCliOptions {
   const oracles = parseOracles(values.get("oracles"));
   const runtimeKind = parseRuntime(
-    values.get("runtime") ?? process.env["PAX_CHILD_RUNNER_KIND"] ?? "ivm",
+    values.get("runtime") ?? process.env["PAX_RUNNER_KIND"] ?? "ivm",
   );
   const outputDir =
     values.get("output-dir") ??
@@ -164,7 +164,7 @@ function parseSuiteOptions(values: ReadonlyMap<string, string>): SuiteCliOptions
 function parseScaleOptions(values: ReadonlyMap<string, string>): ScaleCliOptions {
   const oracles = values.has("oracles") ? parseOracles(values.get("oracles")) : undefined;
   const runtimeKind = parseRuntime(
-    values.get("runtime") ?? process.env["PAX_CHILD_RUNNER_KIND"] ?? "ivm",
+    values.get("runtime") ?? process.env["PAX_RUNNER_KIND"] ?? "ivm",
   );
   const outputDir =
     values.get("output-dir") ??

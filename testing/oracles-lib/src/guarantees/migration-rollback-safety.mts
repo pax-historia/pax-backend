@@ -79,7 +79,10 @@ export function migrationRollbackSafety(history: readonly HistoryEvent[]): Oracl
         ),
       );
     }
-    if (event.event === "child.handlerError" && stringField(event, "handler") === "onWake") {
+    if (
+      (event.event === "child.handlerError" || event.event === "handler.error") &&
+      (stringField(event, "handler") === "onWake" || stringField(event, "handlerName") === "onWake")
+    ) {
       observed += 1;
     }
   }

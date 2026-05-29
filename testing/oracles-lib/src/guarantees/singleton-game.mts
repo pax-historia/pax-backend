@@ -10,12 +10,17 @@ export function singletonGame(history: readonly HistoryEvent[]): OracleResult {
   let observed = 0;
 
   for (const event of history) {
-    if (event.event === "game.created") {
+    if (event.event === "game.created" || event.event === "game.woke" || event.event === "isolate.created") {
       observed += 1;
       const gameId = stringField(event, "gameId");
-      const runId = stringField(event, "runId");
+      const runId =
+        stringField(event, "runId") ??
+        numberScope(event, "generation") ??
+        stringField(event, "runnerId") ??
+        stringField(event, "runnerName") ??
+        event.event;
       if (!gameId || !runId) {
-        findings.push(finding("missing-field", "game.created must include gameId and runId", event));
+        findings.push(finding("missing-field", `${event.event} must include gameId and a run scope`, event));
         continue;
       }
       const activeRun = activeRunByGame.get(gameId);
@@ -33,11 +38,21 @@ export function singletonGame(history: readonly HistoryEvent[]): OracleResult {
       continue;
     }
 
-    if (event.event === "child.exit" || event.event === "actor.stop") {
+    if (
+      event.event === "child.exit" ||
+      event.event === "actor.stop" ||
+      event.event === "game.released" ||
+      event.event === "isolate.disposed"
+    ) {
       const gameId = stringField(event, "gameId");
       if (gameId) activeRunByGame.delete(gameId);
     }
   }
 
   return result(ORACLE, GUARANTEE, history, observed, findings);
+}
+
+function numberScope(event: HistoryEvent, key: string): string | undefined {
+  const value = event[key];
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : undefined;
 }

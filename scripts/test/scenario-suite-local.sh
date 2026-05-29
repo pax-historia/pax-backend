@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run scenario-runner suite catalogs against the local stack for each child runtime.
+# Run scenario-runner suite catalogs against the local stack for each Runner runtime.
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ for runtime in "${RUNTIME_LIST[@]}"; do
     continue
   fi
   cleanup
-  PAX_CHILD_RUNNER_KIND="$runtime" "$REPO_ROOT/scripts/dev/local-up.sh"
+  PAX_RUNNER_KIND="$runtime" "$REPO_ROOT/scripts/dev/local-up.sh"
   for catalog in "${CATALOG_LIST[@]}"; do
     catalog="$(printf '%s' "$catalog" | xargs)"
     if [[ -z "$catalog" ]]; then

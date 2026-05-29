@@ -372,7 +372,7 @@ async function openOneSession(
   playerId: string,
 ): Promise<ScenarioSession> {
   const placement = await requestPlacement(ctx, gameId, playerId);
-  const ws = new WebSocket(placement.webSocketUrl, [...rivetProtocols(gameId)]);
+  const ws = new WebSocket(placement.webSocketUrl);
   const ready = await waitForReady(ws, ctx.phaseTimeoutMs, gameId, playerId);
   ws.on("close", (code: number, reason: Buffer) => {
     ctx.historyWriter.append("workload.session.closed", {
@@ -409,10 +409,16 @@ async function requestPlacement(
   gameId: string,
   playerId: string,
 ): Promise<PlacementResponse> {
-  const placementUrl = `${ctx.routerUrl}/games/${encodeURIComponent(
-    gameId,
-  )}/placement?userId=${encodeURIComponent(playerId)}`;
-  const placementResult = await fetchJsonMaybe(placementUrl);
+  const placementUrl = `${ctx.routerUrl}/placement`;
+  const placementResult = await fetchJsonMaybe(placementUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      gameId,
+      playerId,
+      runId: ctx.input.runId,
+    }),
+  });
   if (placementResult.status !== 200) {
     ctx.historyWriter.append("placement.rejected", {
       gameId,
@@ -427,6 +433,7 @@ async function requestPlacement(
   ctx.historyWriter.append("placement.accepted", {
     gameId: placement.gameId,
     playerId,
+    shardId: placement.shardId,
     placedShardId: placement.shardId,
     runId: placement.runId,
     traceId: placement.traceId,
@@ -534,7 +541,7 @@ async function expectWsRefusals(
     const placement = await requestPlacement(ctx, placementGameId, playerId);
     const url = new URL(placement.webSocketUrl);
     if (connectGameId !== placementGameId) {
-      url.searchParams.set("rvt-key", connectGameId);
+      url.searchParams.set("gameId", connectGameId);
     }
     switch (attempt.tokenMutation) {
       case undefined:
@@ -648,11 +655,11 @@ function encodeJwtPart(value: Readonly<Record<string, unknown>>): string {
 
 function waitForRejectedWebSocket(
   url: URL,
-  protocolGameId: string,
+  _gameId: string,
   timeoutMs: number,
 ): Promise<{ readonly code: number; readonly reason: string }> {
   return new Promise((resolveClose, rejectClose) => {
-    const ws = new WebSocket(url.toString(), [...rivetProtocols(protocolGameId)]);
+    const ws = new WebSocket(url.toString());
     let lastError: string | undefined;
     const timeout = setTimeout(() => {
       ws.terminate();
@@ -926,8 +933,9 @@ async function requestJson<T = unknown>(
 
 async function fetchJsonMaybe(
   url: string,
+  init?: RequestInit,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
-  const response = await fetch(url);
+  const response = await fetch(url, init);
   return {
     status: response.status,
     body: await readResponseBody(response),
@@ -966,14 +974,6 @@ function isReadyFrame(value: unknown): value is ReadyFrame {
     (value as { readonly type?: unknown }).type === "ready" &&
     typeof (value as { readonly sessionId?: unknown }).sessionId === "string"
   );
-}
-
-function rivetProtocols(gameId: string): readonly string[] {
-  return [
-    "rivet",
-    "rivet_encoding.json",
-    `rivet_conn_params.${encodeURIComponent(JSON.stringify({ name: gameId }))}`,
-  ];
 }
 
 function sleep(ms: number): Promise<void> {

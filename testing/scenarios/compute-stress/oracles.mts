@@ -28,7 +28,7 @@ const computeEdgeOracle: Oracle = (history) => {
   );
   requireEvent(
     history,
-    (event) => event.event === "state.write" && event["ok"] === false && event["error"] === "sizeExceeded",
+    (event) => event.event === "state.write.rejected" && event["error"] === "sizeExceeded",
     "missing-state-size-rejection",
     "state-bytes edge did not produce sizeExceeded",
     findings,
@@ -43,11 +43,11 @@ const computeEdgeOracle: Oracle = (history) => {
   requireEvent(
     history,
     (event) =>
-      event.event === "child.handlerError" &&
-      event["handler"] === "onPlayerMessage" &&
+      event.event === "handler.error" &&
+      event["handlerName"] === "onPlayerMessage" &&
       event["code"] === "handlerTimeout",
     "missing-cpu-handler-timeout",
-    "cpu-ms-per-tick edge did not produce child.handlerError(handlerTimeout)",
+    "cpu-ms-per-tick edge did not produce handler.error(handlerTimeout)",
     findings,
   );
   requireEvent(
@@ -81,10 +81,10 @@ const computeEdgeOracle: Oracle = (history) => {
   for (const response of apiRateExceeded) {
     const requestId = response["requestId"];
     const wire = typeof requestId === "string" ? wiresByRequestId.get(requestId) : undefined;
-    if (!wire || wire["statusCode"] !== 0 || wire["error"] !== "apiRateExceeded") {
+    if (wire) {
       findings.push({
         code: "api-rate-contacted-service",
-        message: "apiRateExceeded must be recorded as a gateway-local refusal with statusCode 0",
+        message: "apiRateExceeded must be rejected before contacting the gateway",
         event: response,
       });
     }

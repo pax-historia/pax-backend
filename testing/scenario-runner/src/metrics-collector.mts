@@ -63,8 +63,7 @@ type MetricSummary = ScalarSeriesSummary | HistogramSummary;
 const DEFAULT_ROUTER_METRICS_URL = "http://127.0.0.1:9080/metrics";
 const DEFAULT_CONTROL_METRICS_URL = "http://127.0.0.1:9070/metrics";
 const DEFAULT_GATEWAY_METRICS_URL = "http://127.0.0.1:9081/metrics";
-const DEFAULT_PARENT_METRICS_URL = "http://127.0.0.1:7700/metrics";
-const DEFAULT_ENGINE_METRICS_URL = "http://127.0.0.1:6430/metrics";
+const DEFAULT_BROKER_METRICS_URL = "http://127.0.0.1:7700/metrics";
 const DEFAULT_SCRAPE_TIMEOUT_MS = 2_000;
 const SCALAR_SERIES_RESERVOIR_SAMPLES = positiveInt(
   process.env["PAX_METRICS_SCALAR_RESERVOIR_SAMPLES"],
@@ -342,14 +341,9 @@ function metricEndpoints(input: ScenarioRunnerInput): readonly MetricEndpoint[] 
         ),
     },
     ...metricEndpointGroup(
-      "parent",
-      process.env["PAX_PARENT_METRICS_URLS"],
-      process.env["PAX_PARENT_METRICS_URL"] ?? DEFAULT_PARENT_METRICS_URL,
-    ),
-    ...metricEndpointGroup(
-      "engine",
-      process.env["PAX_RIVET_METRICS_URLS"],
-      process.env["PAX_RIVET_METRICS_URL"] ?? DEFAULT_ENGINE_METRICS_URL,
+      "broker",
+      process.env["PAX_BROKER_METRICS_URLS"],
+      process.env["PAX_BROKER_METRICS_URL"] ?? DEFAULT_BROKER_METRICS_URL,
     ),
   ];
 }
@@ -431,28 +425,12 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 function metricAllowedForProfile(
-  surface: string,
-  metric: string,
+  _surface: string,
+  _metric: string,
   profile: SamplingProfile,
 ): boolean {
-  if (profile !== "cliff_hold" || metricSurfaceBase(surface) !== "engine") return true;
-  return FAST_ENGINE_METRIC_FAMILIES.some(
-    (family) => metric === family || metric.startsWith(`${family}_`),
-  );
+  return profile === "cliff_hold" || profile === "replay" || profile === "ramp";
 }
-
-function metricSurfaceBase(surface: string): string {
-  return surface.split(":", 1)[0] ?? surface;
-}
-
-const FAST_ENGINE_METRIC_FAMILIES = [
-  "rivet_api_request_duration",
-  "rivet_gasoline_worker_bumps_per_tick",
-  "rivet_ups_bytes_per_message",
-  "rivet_ups_ops_per_message",
-  "rivet_workflow_tick_duration",
-  "rivet_actor_active",
-] as const;
 
 function summarizeAccumulatorBySurface(
   accumulator: MetricsAccumulator,

@@ -17,7 +17,7 @@ const WS_ERRORS = new Set([
   "targetInvalid",
   "targetNotConnected",
 ]);
-const HANDLER_ERROR_CODES = new Set(["handlerError", "handlerTimeout"]);
+const HANDLER_ERROR_CODES = new Set(["handlerException", "handlerTimeout"]);
 const COMPUTE_BUDGETS = new Set([
   "cpu-ms-per-tick",
   "memory-bytes",
@@ -62,11 +62,11 @@ export function computePlaneQuotas(history: readonly HistoryEvent[]): OracleResu
         findings.push(finding("untyped-ws-quota-error", "ws.send used an unknown error", event));
       }
     }
-    if (event.event === "child.handlerError") {
+    if (event.event === "child.handlerError" || event.event === "handler.error") {
       const code = stringField(event, "code");
       if (!code || !HANDLER_ERROR_CODES.has(code)) {
         findings.push(
-          finding("untyped-handler-error", "child.handlerError used an unknown code", event),
+          finding("untyped-handler-error", `${event.event} used an unknown code`, event),
         );
       }
       if (code === "handlerTimeout") observed += 1;

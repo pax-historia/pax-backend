@@ -55,7 +55,7 @@ export default {
     },
     {
       type: "expect-history-events",
-      events: ["state.write"],
+      events: ["state.write.rejected"],
       minimumPerGame: 1,
     },
     {
@@ -91,7 +91,7 @@ export default {
     },
     {
       type: "expect-history-events",
-      events: ["child.handlerError", "compute.budget.rejected"],
+      events: ["handler.error", "compute.budget.rejected"],
       minimumPerGame: 1,
     },
     {
@@ -101,11 +101,11 @@ export default {
     {
       type: "expect-history-events",
       events: [
-        "child.handlerError",
+        "handler.error",
         "compute.budget.rejected",
         "api.invoke.request",
         "api.invoke.response",
-        "state.write",
+        "state.write.rejected",
         "blob.put.rejected",
         "ws.send.rejected",
         "blob.put",

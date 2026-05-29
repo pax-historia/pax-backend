@@ -4,7 +4,7 @@
 //
 //  1. Seed Redis with bundle manifest + game record so the placement router
 //     has enough state to decide.
-//  2. GET /games/:id/placement on the router. Expect a signed JWT and the
+//  2. POST /placement on the router. Expect a signed JWT and the
 //     full webSocketUrl to open against the shard.
 //  3. Open WebSocket; expect a "ready" frame from the hello-ws-echo bundle's
 //     onPlayerConnect handler.
@@ -193,6 +193,10 @@ async function main(): Promise<void> {
       compatTagsAccepted: ["smoke:v1"],
       runtimeContractRequired: 1,
     },
+    source: readFileSync(
+      join(REPO_ROOT, "examples", "bundles", "hello-ws-echo", "dist", "bundle.js"),
+      "utf8",
+    ),
     publishedAt: Date.now(),
   };
   const gameRecord: GameRecord = {
@@ -206,11 +210,13 @@ async function main(): Promise<void> {
   log("seeded bundles + games + allowed-players keys");
 
   // 2. Placement.
-  const placementUrl = `${ROUTER_URL}/games/${encodeURIComponent(
-    GAME_ID,
-  )}/placement?userId=${encodeURIComponent(PLAYER_ID)}`;
-  log("GET", placementUrl);
-  const placementResp = await fetch(placementUrl);
+  const placementUrl = `${ROUTER_URL}/placement`;
+  log("POST", placementUrl);
+  const placementResp = await fetch(placementUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ gameId: GAME_ID, playerId: PLAYER_ID }),
+  });
   if (!placementResp.ok) {
     const text = await placementResp.text();
     const parsed = parsePlacementError(text);
@@ -245,14 +251,9 @@ async function main(): Promise<void> {
     runtimeContractsSupported: placement.runtimeContractsSupported,
   });
 
-  // 3. Open WebSocket — must request rivet subprotocols.
+  // 3. Open WebSocket directly against the Broker.
   log("opening WS:", placement.webSocketUrl);
-  const rivetProtocols = [
-    "rivet",
-    "rivet_encoding.json",
-    `rivet_conn_params.${encodeURIComponent(JSON.stringify({ name: GAME_ID }))}`,
-  ];
-  const ws = new WebSocket(placement.webSocketUrl, rivetProtocols);
+  const ws = new WebSocket(placement.webSocketUrl);
   let readyMsg: ReadyFrame | null = null;
   let echoMsg: EchoFrame | null = null;
 
@@ -307,7 +308,7 @@ async function main(): Promise<void> {
   if (echo.sessionId !== ready.sessionId) {
     fail("echo sessionId differs from ready sessionId", { echo, ready });
   }
-  // Bundle echoes the FULL onPlayerMessage payload's `body` field; parent
+  // Bundle echoes the FULL onPlayerMessage payload's `body` field; the Broker
   // forwards the incoming JSON as `body`. So echo.body === {type:'echo', body}.
   const want = { type: "echo", body };
   if (JSON.stringify(echo.body) !== JSON.stringify(want)) {

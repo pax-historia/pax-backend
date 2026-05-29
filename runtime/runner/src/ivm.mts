@@ -109,7 +109,7 @@ export class IvmRunnerProcess implements RunnerProcess {
       await this.bridge.emit(input.gameId, "handler.error", {
         handler: input.handler,
         error: err instanceof Error ? err.stack ?? err.message : String(err),
-        code: durationMs >= input.timeoutMs ? "handlerTimeout" : "handlerError",
+        code: durationMs >= input.timeoutMs ? "handlerTimeout" : "handlerException",
         durationMs,
         timeoutMs: input.timeoutMs,
       });

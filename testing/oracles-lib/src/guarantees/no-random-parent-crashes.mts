@@ -5,6 +5,15 @@ const ORACLE = "no-random-parent-crashes";
 const GUARANTEE = 9;
 
 const PARENT_LIVENESS_EVENTS = new Set([
+  "broker.start",
+  "broker.stop",
+  "runner.ready",
+  "game.woke",
+  "game.released",
+  "handler.complete",
+  "handler.error",
+  "isolate.ready",
+  "isolate.fatal",
   "parent.ready",
   "actor.start",
   "actor.stop",
@@ -19,9 +28,14 @@ export function noRandomParentCrashes(history: readonly HistoryEvent[]): OracleR
 
   for (const event of history) {
     if (PARENT_LIVENESS_EVENTS.has(event.event)) observed += 1;
-    if (event.event === "parent.crash" || event.event === "parent.fatal") {
+    if (
+      event.event === "broker.crash" ||
+      event.event === "broker.fatal" ||
+      event.event === "parent.crash" ||
+      event.event === "parent.fatal"
+    ) {
       observed += 1;
-      findings.push(finding("parent-crash", "parent actor recorded an unexpected crash", event));
+      findings.push(finding("broker-crash", "Broker recorded an unexpected crash", event));
     }
   }
 

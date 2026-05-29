@@ -40,13 +40,16 @@ const compromisedBundleOracle: Oracle = (history) => {
   if (leakedSend) {
     findings.push({
       code: "unexpected-missing-target-send",
-      message: "parent sent a frame to the missing target",
+      message: "Broker sent a frame to the missing target",
       event: leakedSend,
     });
   }
 
   const fatal = history.find(
-    (event) => event.event === "parent.crash" || event.event === "child.fatal",
+    (event) =>
+      event.event === "broker.crash" ||
+      event.event === "broker.fatal" ||
+      event.event === "isolate.fatal",
   );
   if (fatal) {
     findings.push({
