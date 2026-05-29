@@ -79,3 +79,28 @@ Verification so far: `pnpm --filter @pax-backend/runner check-types` passed, and
 a direct `buildRunnerChildEnv` probe with fake JWT/S3/Redis/Tigris keys confirmed
 the forbidden names were not present while `PAX_RUNNER_CHILD`,
 `PAX_RUNNER_ID`, and `PAX_RUNNER_KIND` were still set.
+
+## 2026-05-29 07:17 PDT
+
+Landed the first native-crash signal path. `ChildProcessRunnerProcess` now
+captures the assigned game IDs before an unexpected child exit clears them, then
+notifies the Broker-side spawn callback. The `RunnerPool` can replace a dead
+Runner in-place so the crashed child does not keep winning future assignments
+with an empty `assignedGames` set. The Broker writes `runner.crash` with
+`affectedGameIds`, removes the crashed games from the old active directory
+claim, closes their sessions, and immediately wakes them from storage on the
+replacement Runner with `onWake.reason = cold-restart-after-crash`, followed by
+`isolate.restart`.
+
+Added a deterministic local injection hook at
+`POST /admin/runners/:runnerId/crash`, backed by `SIGKILL` on the child process.
+This is intentionally an admin/test hook, not a creator surface. The event schema
+now uses `runnerId` for `runner.crash`, and `history-completeness` requires the
+new restart/crash event fields.
+
+Verification: `pnpm --filter @pax-backend/runner check-types`,
+`pnpm --filter @pax-backend/oracles-lib check-types`,
+`pnpm --filter @pax-backend/broker check-types`, and full `pnpm typecheck`
+passed. Running the actual nemesis/oracle proof is still pending; the next
+Task 2 slice should add a runner-crash nemesis or workload phase and assert the
+K-bound explicitly.

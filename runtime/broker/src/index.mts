@@ -5,7 +5,7 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { Logger } from "pino";
 import WebSocket, { type RawData } from "ws";
 
-import type { RunnerPool, RunnerProcess } from "@pax-backend/runner";
+import type { RunnerCrashEvent, RunnerPool, RunnerProcess } from "@pax-backend/runner";
 import type { GameStateSession, StateStore } from "@pax-backend/state-store";
 import {
   DEFAULT_BLOB_BYTES_LIMIT,
@@ -29,6 +29,8 @@ import {
   type RunnerToBrokerEnvelope,
   type RuntimeHandlerName,
   type StorageWriteResponse,
+  type WakeErrorClass,
+  type WakeReason,
   type WsSendPayload,
   type WsSendResponse,
   type WsTarget,
@@ -87,6 +89,8 @@ export interface BrokerWakeInput {
   readonly handlerTimeoutMs?: number;
   readonly testSeed?: number | string;
   readonly generation?: number;
+  readonly wakeReason?: WakeReason;
+  readonly wakeErrorClass?: WakeErrorClass;
 }
 
 export interface BrokerDependencies {
@@ -300,6 +304,31 @@ export class Broker {
     return true;
   }
 
+  async crashRunnerForTest(runnerId: string): Promise<boolean> {
+    this.ensureStarted();
+    return this.deps.runners.crashRunnerForTest(runnerId);
+  }
+
+  async handleRunnerCrash(input: RunnerCrashEvent): Promise<void> {
+    this.ensureStarted();
+    const affectedGameIds = input.affectedGameIds
+      .filter((gameId) => this.games.get(gameId)?.runner.id === input.runnerId)
+      .sort();
+
+    await this.writeHistory({
+      event: "runner.crash",
+      runnerId: input.runnerId,
+      affectedGameIds,
+      code: input.code,
+      signal: input.signal,
+    });
+
+    for (const gameId of affectedGameIds) {
+      await this.restartGameAfterRunnerCrash(gameId, input.runnerId);
+    }
+    await this.publishCapacity();
+  }
+
   async wakeGame(input: BrokerWakeInput): Promise<void> {
     this.ensureStarted();
     if (this.games.has(input.gameId)) return;
@@ -368,7 +397,8 @@ export class Broker {
       generation,
     });
     await this.invokeGameHandler(game, "onWake", {
-      reason: stateBytes.byteLength === 0 ? "cold-start" : "cold-restart-from-storage",
+      reason: input.wakeReason ?? (stateBytes.byteLength === 0 ? "cold-start" : "cold-restart-from-storage"),
+      errorClass: input.wakeErrorClass,
       runId: game.runId,
       bundleName: game.bundleName,
       bundleCompatTag: game.bundleCompatTag,
@@ -923,6 +953,61 @@ export class Broker {
     });
     await this.publishCapacity();
     await this.maybeWriteDrainCompleted(reason);
+  }
+
+  private async restartGameAfterRunnerCrash(gameId: string, runnerId: string): Promise<void> {
+    const game = this.games.get(gameId);
+    if (!game || game.runner.id !== runnerId) return;
+
+    this.games.delete(gameId);
+    this.clearSleepTimer(game, "runnerCrash");
+    this.closeSessions(game, "runnerCrash");
+    await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
+    await this.writeHistory({
+      event: "isolate.disposed",
+      gameId: game.gameId,
+      runnerId,
+      intentional: false,
+      reason: "runnerCrash",
+    });
+
+    const wake = await this.deps.bundles?.resolveForGame(gameId);
+    if (!wake) {
+      await this.writeHistory({
+        event: "isolate.restart.failed",
+        gameId,
+        runnerId,
+        cause: "runnerCrash",
+        error: "bundleUnavailable",
+      });
+      return;
+    }
+
+    try {
+      await this.wakeGame({
+        ...wake,
+        runId: game.runId,
+        wakeReason: "cold-restart-after-crash",
+        wakeErrorClass: "crash",
+        generation: this.now(),
+      });
+      const restarted = this.games.get(gameId);
+      await this.writeHistory({
+        event: "isolate.restart",
+        gameId,
+        runnerId: restarted?.runner.id,
+        previousRunnerId: runnerId,
+        cause: "runnerCrash",
+      });
+    } catch (err) {
+      await this.writeHistory({
+        event: "isolate.restart.failed",
+        gameId,
+        runnerId,
+        cause: "runnerCrash",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private closeSessions(game: BrokerGame, reason: string): void {
@@ -1580,6 +1665,12 @@ async function handleBrokerAdminRequest(
   if (method === "POST" && evictMatch) {
     const evicted = await broker.evictGame(decodeURIComponent(evictMatch[1]!));
     writeJson(res, evicted ? 202 : 404, evicted ? { ok: true } : { error: "gameNotFound" });
+    return;
+  }
+  const runnerCrashMatch = /^\/admin\/runners\/([^/]+)\/crash$/.exec(url.pathname);
+  if (method === "POST" && runnerCrashMatch) {
+    const crashed = await broker.crashRunnerForTest(decodeURIComponent(runnerCrashMatch[1]!));
+    writeJson(res, crashed ? 202 : 404, crashed ? { ok: true } : { error: "runnerNotFound" });
     return;
   }
   writeJson(res, 404, { error: "notFound" });

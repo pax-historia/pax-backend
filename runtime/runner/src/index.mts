@@ -29,6 +29,7 @@ export interface RunnerProcess {
   invoke(input: RunnerInvoke): Promise<unknown>;
   release(gameId: string): Promise<void>;
   stop(): Promise<void>;
+  crashForTest?(): boolean;
 }
 
 export class RunnerPool {
@@ -63,6 +64,20 @@ export class RunnerPool {
   async stop(): Promise<void> {
     await Promise.all(this.runners.map((runner) => runner.stop()));
     this.assignments.clear();
+  }
+
+  crashRunnerForTest(runnerId: string): boolean {
+    const runner = this.runners.find((candidate) => candidate.id === runnerId);
+    return runner?.crashForTest?.() ?? false;
+  }
+
+  replaceRunner(runnerId: string, replacement: RunnerProcess): void {
+    const index = this.runners.findIndex((runner) => runner.id === runnerId);
+    if (index < 0) throw new Error(`runner ${runnerId} is not in the pool`);
+    this.runners[index] = replacement;
+    for (const [gameId, runner] of [...this.assignments]) {
+      if (runner.id === runnerId) this.assignments.delete(gameId);
+    }
   }
 
   private pickRunner(): RunnerProcess {

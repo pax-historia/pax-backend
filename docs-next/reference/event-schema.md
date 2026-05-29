@@ -175,8 +175,9 @@ isolates with it. Runner-scoped.
 
 | Field | Notes |
 |---|---|
-| `runnerName` | |
+| `runnerId` | |
 | `affectedGameIds` | array (bounded by `K`) |
+| `code?` | process exit code, if any |
 | `signal?` | |
 
 ### `isolate.restart`
@@ -187,6 +188,8 @@ crash) or a `runner.crash`.
 | Field | Notes |
 |---|---|
 | `gameId` | |
+| `runnerId` | replacement Runner |
+| `previousRunnerId?` | Runner that crashed, when cause is `runnerCrash` |
 | `cause` | `'oom' \| 'crash' \| 'cpuTimeout' \| 'runnerCrash' \| 'unknown'` |
 
 ### `isolate.restart.failed`

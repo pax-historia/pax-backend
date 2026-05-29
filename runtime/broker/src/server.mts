@@ -41,22 +41,29 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
   });
   const logger = pino({ name: "pax-broker", level: env["PAX_LOG_LEVEL"] ?? "info" });
   let broker: Broker | undefined;
+  let runners: RunnerPool;
+  const spawnRunner = (index: number) =>
+    spawnRunnerChildProcess({
+      id: `${shardId}-runner-${index + 1}`,
+      kind: parseRunnerKind(env["PAX_RUNNER_KIND"] ?? "ivm"),
+      modulePath: env["PAX_RUNNER_CHILD_MODULE"] ?? fileURLToPath(new URL("../../runner/src/child-process.mts", import.meta.url)),
+      execArgv: parseExecArgv(env["PAX_RUNNER_CHILD_EXEC_ARGV"]),
+      maxAssignedGames: parsePositiveInteger(env["PAX_RUNNER_MAX_ASSIGNED_GAMES"] ?? "128", 128),
+      defaultHandlerTimeoutMs: parsePositiveInteger(env["PAX_HANDLER_TIMEOUT_MS"] ?? "1000", 1_000),
+      onEnvelope: async (envelope, runner) => {
+        if (!broker) throw new Error("Broker received Runner envelope before startup completed");
+        await broker.handleRunnerEnvelope(runner.id, envelope);
+      },
+      onCrash: async (event, runner) => {
+        const replacement = spawnRunner(index);
+        runners.replaceRunner(runner.id, replacement);
+        if (!broker) throw new Error("Broker received Runner crash before startup completed");
+        await broker.handleRunnerCrash(event);
+      },
+    });
 
-  const runners = new RunnerPool(
-    Array.from({ length: parsePositiveInteger(env["PAX_RUNNER_PROCESS_COUNT"] ?? "1", 1) }, (_value, index) =>
-      spawnRunnerChildProcess({
-        id: `${shardId}-runner-${index + 1}`,
-        kind: parseRunnerKind(env["PAX_RUNNER_KIND"] ?? "ivm"),
-        modulePath: env["PAX_RUNNER_CHILD_MODULE"] ?? fileURLToPath(new URL("../../runner/src/child-process.mts", import.meta.url)),
-        execArgv: parseExecArgv(env["PAX_RUNNER_CHILD_EXEC_ARGV"]),
-        maxAssignedGames: parsePositiveInteger(env["PAX_RUNNER_MAX_ASSIGNED_GAMES"] ?? "128", 128),
-        defaultHandlerTimeoutMs: parsePositiveInteger(env["PAX_HANDLER_TIMEOUT_MS"] ?? "1000", 1_000),
-        onEnvelope: async (envelope, runner) => {
-          if (!broker) throw new Error("Broker received Runner envelope before startup completed");
-          await broker.handleRunnerEnvelope(runner.id, envelope);
-        },
-      }),
-    ),
+  runners = new RunnerPool(
+    Array.from({ length: parsePositiveInteger(env["PAX_RUNNER_PROCESS_COUNT"] ?? "1", 1) }, (_value, index) => spawnRunner(index)),
   );
 
   const stateStore = new StateStore(stateObjectStoreFromEnv(env), {

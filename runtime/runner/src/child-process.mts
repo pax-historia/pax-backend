@@ -27,11 +27,24 @@ export type RunnerEnvelopeHandler = (
   runner: ChildProcessRunnerProcess,
 ) => void | Promise<void>;
 
+export interface RunnerCrashEvent {
+  readonly runnerId: string;
+  readonly affectedGameIds: readonly string[];
+  readonly code: number | null;
+  readonly signal: string | null;
+}
+
+export type RunnerCrashHandler = (
+  event: RunnerCrashEvent,
+  runner: ChildProcessRunnerProcess,
+) => void | Promise<void>;
+
 export interface ChildProcessRunnerProcessOptions {
   readonly id: string;
   readonly kind: RunnerKind;
   readonly child: ChildProcess;
   readonly onEnvelope: RunnerEnvelopeHandler;
+  readonly onCrash?: RunnerCrashHandler;
   readonly assignTimeoutMs?: number;
   readonly stopTimeoutMs?: number;
 }
@@ -40,6 +53,7 @@ export interface SpawnRunnerChildProcessOptions {
   readonly id: string;
   readonly kind: RunnerKind;
   readonly onEnvelope: RunnerEnvelopeHandler;
+  readonly onCrash?: RunnerCrashHandler;
   readonly modulePath?: string | URL;
   readonly argv?: readonly string[];
   readonly execArgv?: readonly string[];
@@ -97,16 +111,19 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
 
   private readonly child: ChildProcess;
   private readonly onEnvelope: RunnerEnvelopeHandler;
+  private readonly onCrash: RunnerCrashHandler | undefined;
   private readonly pending = new Map<string, PendingOperation>();
   private readonly assignTimeoutMs: number;
   private readonly stopTimeoutMs: number;
   private exited = false;
+  private stopping = false;
 
   constructor(options: ChildProcessRunnerProcessOptions) {
     this.id = options.id;
     this.kind = options.kind;
     this.child = options.child;
     this.onEnvelope = options.onEnvelope;
+    this.onCrash = options.onCrash;
     this.assignTimeoutMs = options.assignTimeoutMs ?? 30_000;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 5_000;
 
@@ -119,9 +136,21 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
       this.failAll(new Error(`runner child ${this.id} failed: ${err.message}`));
     });
     this.child.once("exit", (code, signal) => {
+      const affectedGameIds = [...this.assignedGames].sort();
       this.exited = true;
       this.assignedGames.clear();
       this.failAll(new Error(`runner child ${this.id} exited code=${code ?? "null"} signal=${signal ?? "null"}`));
+      if (!this.stopping && affectedGameIds.length > 0) {
+        void this.onCrash?.(
+          {
+            runnerId: this.id,
+            affectedGameIds,
+            code: code ?? null,
+            signal: signal ?? null,
+          },
+          this,
+        );
+      }
     });
   }
 
@@ -177,6 +206,7 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
 
   async stop(): Promise<void> {
     if (this.exited) return;
+    this.stopping = true;
     this.failAll(new Error(`runner child ${this.id} is stopping`));
     this.child.kill("SIGTERM");
     await new Promise<void>((resolve) => {
@@ -190,6 +220,11 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
         resolve();
       });
     });
+  }
+
+  crashForTest(): boolean {
+    if (this.exited) return false;
+    return this.child.kill("SIGKILL");
   }
 
   private async handleMessage(message: unknown): Promise<void> {
@@ -313,6 +348,7 @@ export function spawnRunnerChildProcess(options: SpawnRunnerChildProcessOptions)
     kind: options.kind,
     child,
     onEnvelope: options.onEnvelope,
+    onCrash: options.onCrash,
     assignTimeoutMs: options.assignTimeoutMs,
     stopTimeoutMs: options.stopTimeoutMs,
   });
