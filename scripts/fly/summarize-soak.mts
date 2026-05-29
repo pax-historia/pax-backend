@@ -313,6 +313,8 @@ function gateFailuresFor(
   }
   if (options.expectExitCode !== undefined && runExitCode !== options.expectExitCode) {
     failures.push(`expected exit.code ${options.expectExitCode}, saw ${runExitCode ?? "<missing>"}`);
+  } else if (options.expectExitCode === undefined && runExitCode !== undefined && runExitCode !== "0") {
+    failures.push(`run exited non-zero: ${runExitCode}`);
   }
   if (options.expectTargetGames !== undefined) {
     for (const entry of cases) {
@@ -325,6 +327,7 @@ function gateFailuresFor(
   }
   for (const entry of cases) {
     if (entry.parse_errors.length > 0) failures.push(`${entry.case_id} has parse errors`);
+    if (entry.error_events.length > 0) failures.push(`${entry.case_id} has error events`);
     if (entry.result_path && entry.result_status === undefined) {
       failures.push(`${entry.case_id} has an unrecognized result file`);
     }
@@ -370,6 +373,18 @@ function gateFailuresFor(
   }
   if (monitor && monitor.parse_errors.length > 0) {
     failures.push(`${monitor.path} has parse errors`);
+  }
+  if ((monitor?.last_failures ?? 0) > 0) {
+    failures.push(`${monitor.path} observed ${monitor?.last_failures} workload failure(s)`);
+  }
+  const monitorExitCode = monitor?.last_exit_code;
+  if (
+    options.expectExitCode === undefined &&
+    monitorExitCode !== undefined &&
+    monitorExitCode !== null &&
+    String(monitorExitCode) !== "0"
+  ) {
+    failures.push(`${monitor?.path} observed non-zero exit code ${monitorExitCode}`);
   }
   return failures;
 }
