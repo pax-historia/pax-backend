@@ -139,6 +139,33 @@ importers:
         specifier: workspace:*
         version: link:../../shared/node-telemetry
 
+  runtime/broker:
+    dependencies:
+      '@pax-backend/ipc-protocol':
+        specifier: workspace:*
+        version: link:../../shared/ipc-protocol
+      '@pax-backend/node-telemetry':
+        specifier: workspace:*
+        version: link:../../shared/node-telemetry
+      '@pax-backend/runner':
+        specifier: workspace:*
+        version: link:../runner
+      '@pax-backend/state-store':
+        specifier: workspace:*
+        version: link:../state-store
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.11.0
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
+      pino:
+        specifier: ^9.9.5
+        version: 9.14.0
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.0
+
   runtime/child-runner-ivm:
     dependencies:
       '@pax-backend/ipc-protocol':
@@ -201,6 +228,20 @@ importers:
       pino:
         specifier: ^9.9.5
         version: 9.14.0
+
+  runtime/runner:
+    dependencies:
+      '@pax-backend/ipc-protocol':
+        specifier: workspace:*
+        version: link:../../shared/ipc-protocol
+      '@pax-backend/runtime-sdk':
+        specifier: workspace:*
+        version: link:../../sdk/runtime-sdk
+      isolated-vm:
+        specifier: ^5.0.3
+        version: 5.0.4
+
+  runtime/state-store: {}
 
   sdk/bundle-tools:
     dependencies:

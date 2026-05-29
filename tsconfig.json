@@ -3,6 +3,9 @@
   "references": [
     { "path": "./shared/ipc-protocol" },
     { "path": "./shared/node-telemetry" },
+    { "path": "./runtime/state-store" },
+    { "path": "./runtime/runner" },
+    { "path": "./runtime/broker" },
     { "path": "./sdk/runtime-sdk" },
     { "path": "./sdk/runtime-sdk-test-harness" },
     { "path": "./sdk/bundle-tools" },

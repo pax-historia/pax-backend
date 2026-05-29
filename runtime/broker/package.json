@@ -1,0 +1,21 @@
+{
+  "name": "@pax-backend/broker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.mts",
+  "scripts": {
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pax-backend/ipc-protocol": "workspace:*",
+    "@pax-backend/node-telemetry": "workspace:*",
+    "@pax-backend/runner": "workspace:*",
+    "@pax-backend/state-store": "workspace:*",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^9.9.5",
+    "ws": "^8.18.3"
+  }
+}

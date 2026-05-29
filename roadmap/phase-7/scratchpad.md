@@ -25,3 +25,19 @@ metric sources, local dev scripts, and vendor build scripts. The next work is
 not a small rename: the code needs a production-shaped Broker, Runner pool,
 async IPC contract, and state-store path before Phase 7 can typecheck against
 the new `docs-next/` target.
+
+## 2026-05-29 01:44 PDT
+
+Added the new workspace package shape for the Phase 7 runtime rewrite:
+`@pax-backend/broker`, `@pax-backend/runner`, and
+`@pax-backend/state-store`. This is intentionally a narrow topology commit:
+it creates the production-shaped module boundaries and root project references
+without yet wiring the old runtime path through them.
+
+The state-store package starts with a root-object API, inline whole-state
+encoding, blob manifest versioning, conditional root writes, and an
+`enableTimeTravel` parent pointer hook. The Runner package defines assignment,
+invoke, release, telemetry, and pool contracts. The Broker package owns the
+capacity row shape and the first shard lifecycle/wake boundary. Follow-up tasks
+will replace the skeletal contracts with the async IPC protocol, actual Broker
+session handling, and Runner implementations.

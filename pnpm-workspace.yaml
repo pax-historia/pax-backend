@@ -1,6 +1,9 @@
 packages:
   - "shared/ipc-protocol"
   - "shared/node-telemetry"
+  - "runtime/broker"
+  - "runtime/runner"
+  - "runtime/state-store"
   - "runtime/parent-actor"
   - "runtime/child-runner-ivm"
   - "runtime/child-runner-noivm"
