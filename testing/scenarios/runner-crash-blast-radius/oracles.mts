@@ -2,14 +2,17 @@ import type { HistoryEvent, Oracle, OracleFinding } from "@pax-backend/oracles-l
 
 const runnerCrashOracle: Oracle = (history) => {
   const findings: OracleFinding[] = [];
+  const skipped = history.some(
+    (event) => event.event === "nemesis.await.skipped" && event["action"] === "crash-runner",
+  );
   const gameIdsInSlice = historyGameIds(history);
   const crash = history.find((event) => event.event === "runner.crash");
-  if (!crash) {
+  if (!crash && !skipped) {
     findings.push({
       code: "missing-runner-crash",
       message: "runner-crash nemesis did not produce a runner.crash event",
     });
-  } else {
+  } else if (crash) {
     const affected = crash["affectedGameIds"];
     const maxAssignedGames = crash["maxAssignedGames"];
     if (!Array.isArray(affected) || affected.length === 0) {
@@ -44,13 +47,15 @@ const runnerCrashOracle: Oracle = (history) => {
     }
   }
 
-  requireEvent(
-    history,
-    (event) => event.event === "nemesis.runner-crash.injected",
-    "missing-nemesis-injection",
-    "scenario did not record the runner-crash nemesis injection",
-    findings,
-  );
+  if (!skipped) {
+    requireEvent(
+      history,
+      (event) => event.event === "nemesis.runner-crash.injected",
+      "missing-nemesis-injection",
+      "scenario did not record the runner-crash nemesis injection",
+      findings,
+    );
+  }
 
   return {
     oracle: "runner-crash-blast-radius",

@@ -411,6 +411,7 @@ export class RunnerChildHost {
   private readonly bridge: ProcessBrokerBridge;
   private readonly runner: RunnerProcess;
   private readonly assignments = new Map<string, RunnerAssignment>();
+  private readonly gameOperationChains = new Map<string, Promise<void>>();
   private started = false;
 
   constructor(options: RunnerChildProcessOptions = {}) {
@@ -453,18 +454,31 @@ export class RunnerChildHost {
     if (this.bridge.resolveBrokerResponse(message)) return;
 
     if (message.type === BROKER_TO_RUNNER.assign) {
-      await this.assign(message);
+      await this.enqueueGameOperation(message.gameId, () => this.assign(message));
       return;
     }
     if (message.type === BROKER_TO_RUNNER.release) {
-      await this.release(message.gameId);
+      await this.enqueueGameOperation(message.gameId, () => this.release(message.gameId));
       return;
     }
     if (isRuntimeHandler(message.type)) {
-      await this.invoke(message as Extract<BrokerToRunnerEnvelope, { type: RuntimeHandlerName }>);
+      await this.enqueueGameOperation(
+        message.gameId,
+        () => this.invoke(message as Extract<BrokerToRunnerEnvelope, { type: RuntimeHandlerName }>),
+      );
       return;
     }
     this.sendUnknown(message);
+  }
+
+  private async enqueueGameOperation(gameId: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.gameOperationChains.get(gameId) ?? Promise.resolve();
+    const run = previous.then(operation);
+    const tracked = run.catch(() => undefined).finally(() => {
+      if (this.gameOperationChains.get(gameId) === tracked) this.gameOperationChains.delete(gameId);
+    });
+    this.gameOperationChains.set(gameId, tracked);
+    await run;
   }
 
   private async assign(envelope: Extract<BrokerToRunnerEnvelope, { type: "assign" }>): Promise<void> {

@@ -63,6 +63,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "isolate.restart": ["gameId", "runnerId", "cause"],
   "isolate.restart.failed": ["gameId", "runnerId", "cause", "error"],
   "log.emit": ["gameId"],
+  "lifecycle.requestSleep": ["gameId", "reason"],
   "lifecycle.sleepComplete": ["gameId", "reason"],
   "lifecycle.sleepGrace.cancelled": ["gameId", "cause"],
   "lifecycle.sleepGrace.expired": ["gameId"],

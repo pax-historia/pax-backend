@@ -67,6 +67,15 @@ Broker → isolate. Bundle receives `onSleep`.
 | `deadline` | ms since epoch |
 | `budgetMs` | grace window from now |
 
+### `lifecycle.requestSleep`
+
+Bundle requested voluntary hibernation with `c.lifecycle.requestSleep()`.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `reason` | `'requestedBySleep'` |
+
 ### `onSleep.deadline`
 
 Bundle did not report `lifecycle.sleepComplete` before the deadline.

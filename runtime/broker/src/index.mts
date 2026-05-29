@@ -728,9 +728,24 @@ export class Broker {
         await this.writeHistory({ event: "metrics.emit", gameId: game.gameId, ...envelope.payload });
         return;
       case RUNNER_TO_BROKER.lifecycleRequestSleep:
-        void this.sleepGame(game, "requestedBySleep");
+        await this.writeHistory({
+          event: "lifecycle.requestSleep",
+          gameId: game.gameId,
+          reason: "requestedBySleep",
+        });
+        void this.sleepGame(game, "requestedBySleep").catch((err) => {
+          this.deps.logger?.warn({ err, gameId: game.gameId }, "requested sleep failed");
+        });
         return;
       case RUNNER_TO_BROKER.lifecycleSleepComplete:
+        await this.writeHistory({
+          event: "lifecycle.sleepComplete",
+          gameId: game.gameId,
+          reason: envelope.payload.reason,
+          bundleName: game.bundleName,
+          bundleCompatTag: game.bundleCompatTag,
+          runnerId: game.runner.id,
+        });
         await this.releaseGame(game, envelope.payload.reason);
         return;
       case RUNNER_TO_BROKER.handlerComplete:
@@ -1058,11 +1073,23 @@ export class Broker {
       budgetMs: this.config.sleepDeadlineMs ?? 30_000,
     });
     await this.invokeGameHandler(game, "onSleep", { reason, deadline });
-    await this.releaseGame(game, reason);
+    const checkpointOk = await this.releaseGame(game, reason);
+    if (checkpointOk !== undefined) {
+      await this.writeHistory({
+        event: "lifecycle.sleepComplete",
+        gameId: game.gameId,
+        reason,
+        deadline,
+        bundleName: game.bundleName,
+        bundleCompatTag: game.bundleCompatTag,
+        runnerId: game.runner.id,
+        checkpointOk,
+      });
+    }
   }
 
-  private async releaseGame(game: BrokerGame, reason: string): Promise<void> {
-    if (!this.games.delete(game.gameId)) return;
+  private async releaseGame(game: BrokerGame, reason: string): Promise<boolean | undefined> {
+    if (!this.games.delete(game.gameId)) return undefined;
     this.clearSleepTimer(game, reason);
     this.cancelCheckpointTimer(game.gameId);
     this.closeSessions(game, reason);
@@ -1078,6 +1105,7 @@ export class Broker {
     });
     await this.publishCapacity();
     await this.maybeWriteDrainCompleted(reason);
+    return response.ok;
   }
 
   private async standDownSupersededGame(game: BrokerGame, operation: string): Promise<void> {
@@ -1354,10 +1382,10 @@ export class Broker {
       });
       return { ok: false, error: "keyCountExceeded", detail: { limit: this.budgetLimits.blobKeys } };
     }
-    await game.state.putBlob(payload.key, bytes);
     game.blobSizes.set(payload.key, bytes.byteLength);
     game.budgets.blobBytes = nextBlobBytes;
     game.budgets.blobKeys = nextBlobKeys;
+    await game.state.putBlob(payload.key, bytes);
     await this.writeHistory({
       event: "blob.put",
       gameId: game.gameId,
@@ -1555,27 +1583,6 @@ export class Broker {
   ): Promise<ApiInvokeResponse> {
     const now = this.now();
     game.budgets.apiInvocations.add(1, now);
-    if (game.budgets.apiInvocations.sum(now) > this.budgetLimits.apiInvocationsPerMin) {
-      await this.writeHistory({
-        event: "compute.budget.rejected",
-        gameId: game.gameId,
-        requestId,
-        budget: "api-invocations-per-min",
-        used: game.budgets.apiInvocations.sum(now),
-        limit: this.budgetLimits.apiInvocationsPerMin,
-      });
-      await this.writeHistory({
-        event: "api.invoke.response",
-        gameId: game.gameId,
-        requestId,
-        kind: payload.kind,
-        traceId: game.currentDispatch?.traceId ?? null,
-        ok: false,
-        error: "apiRateExceeded",
-        durationMs: 0,
-      });
-      return { ok: false, error: "apiRateExceeded" };
-    }
     const triggeringSession =
       game.currentDispatch?.sessionId ? game.sessions.get(game.currentDispatch.sessionId) : undefined;
     const traceId = game.currentDispatch?.traceId ?? null;

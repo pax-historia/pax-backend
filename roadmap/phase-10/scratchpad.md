@@ -306,3 +306,43 @@ matrix:
 
 No scenario-suite run is active at this timestamp. Only unrelated long-lived
 editor/dev processes were present in the process table.
+
+## 2026-05-29 12:17 PDT
+
+Pause point requested mid-Task 7. The focused red-slice rerun now improves from
+the prior 0/12 result to 8/12:
+
+- `var/scenario-suite-task7-failing-slices4`: 12 total, 8 passed, 4 failed,
+  0 errored.
+- `compute-stress` is green across all four nemeses after moving
+  `api-invocations-per-min` rejection back through the gateway wire-record path
+  and updating the scenario-local oracle to accept gateway status `0`
+  `apiRateExceeded` wire records as pre-provider rejects.
+- `runner-crash-blast-radius` is green across all four nemeses after making the
+  local oracle skip-aware for non-runner-crash nemesis profiles.
+- Remaining failures are the four `race-and-deploy-adversarial` nemesis slices.
+  The previous immediate host-event 503 is fixed: the control plane retries
+  host-event delivery via placement after active-game release races, child
+  runner per-game operations are serialized so release/assign cannot overtake
+  each other, state-store flushes are serialized, and Broker records explicit
+  `lifecycle.requestSleep` / `lifecycle.sleepComplete` history.
+- The remaining race failure is now later in the scenario: workload waits for
+  `onWake.sent`, host-event durability still reports the first
+  `race.afterRequest` receipt as undelivered, and the scenario-local oracle
+  still reports missing upgrade wake plus missing reconnect churn. Live history
+  shows the later `race.afterSleep` wake/retry/delivery path is happening, so
+  the next step is to inspect whether the missing `onWake.sent`/first-delivery
+  evidence is a history-emission gap, archive merge/filter gap, or still a real
+  runtime sequencing issue.
+
+Validation before this pause:
+
+- `pnpm --filter @pax-backend/runner check-types`
+- `pnpm --filter @pax-backend/broker check-types`
+- `pnpm --filter @pax-backend/state-store check-types`
+- `pnpm --filter @pax-backend/control-plane check-types`
+- `pnpm --filter @pax-backend/oracles-lib check-types`
+- `pnpm --filter @pax-backend/scenario-runner check-types`
+- `git diff --check`
+
+No scenario-suite or local stack processes are active at this timestamp.

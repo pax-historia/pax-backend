@@ -818,11 +818,38 @@ async function triggerHostEventDelivery(
   );
   const deliveryResponse = await fetch(deliveryUrl, { method: "POST" });
   if (!deliveryResponse.ok) {
+    const responseBody = await deliveryResponse.text();
+    if (!target.wakeTriggered && isReleasedDuringHostEventDelivery(deliveryResponse.status, responseBody)) {
+      const retryTarget = await placementHostEventTarget(config, gameId);
+      const retryUrl = new URL(
+        `/admin/games/${encodeURIComponent(gameId)}/host-events/drain`,
+        retryTarget.shardUrl,
+      );
+      const retryResponse = await fetch(retryUrl, { method: "POST" });
+      if (retryResponse.ok) {
+        appendControlHistory(config, "onHostEvent.wakeRequested", {
+          gameId,
+          shardId: retryTarget.shardId,
+          shardUrl: retryTarget.shardUrl,
+          deliveryUrl: retryUrl.toString(),
+          reason: "activeGameReleased",
+        });
+        return { wakeTriggered: true };
+      }
+      throw new HttpError(503, "hostEventDeliveryFailed", {
+        gameId,
+        shardUrl: retryTarget.shardUrl,
+        status: retryResponse.status,
+        body: await retryResponse.text(),
+        initialStatus: deliveryResponse.status,
+        initialBody: responseBody,
+      });
+    }
     throw new HttpError(503, "hostEventDeliveryFailed", {
       gameId,
       shardUrl: target.shardUrl,
       status: deliveryResponse.status,
-      body: await deliveryResponse.text(),
+      body: responseBody,
     });
   }
   appendControlHistory(config, target.wakeTriggered ? "onHostEvent.wakeRequested" : "onHostEvent.deliveryRequested", {
@@ -832,6 +859,10 @@ async function triggerHostEventDelivery(
     deliveryUrl: deliveryUrl.toString(),
   });
   return { wakeTriggered: target.wakeTriggered };
+}
+
+function isReleasedDuringHostEventDelivery(status: number, body: string): boolean {
+  return status >= 500 && body.includes(" was released");
 }
 
 async function activeHostEventTarget(

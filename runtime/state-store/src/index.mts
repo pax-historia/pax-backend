@@ -296,6 +296,7 @@ export class GameStateSession {
   private rootVersion?: string;
   private root?: StateRoot;
   private rootObjectKey?: string;
+  private flushChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly store: StateObjectStore,
@@ -350,6 +351,12 @@ export class GameStateSession {
   }
 
   async flush(): Promise<StateRoot | undefined> {
+    const run = this.flushChain.then(() => this.flushExclusive());
+    this.flushChain = run.then(() => undefined, () => undefined);
+    return await run;
+  }
+
+  private async flushExclusive(): Promise<StateRoot | undefined> {
     if (!this.isDirty()) return undefined;
     const previousRoot = this.root;
     const blobManifest = await this.writeDirtyBlobs();

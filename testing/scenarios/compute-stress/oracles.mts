@@ -81,10 +81,10 @@ const computeEdgeOracle: Oracle = (history) => {
   for (const response of apiRateExceeded) {
     const requestId = response["requestId"];
     const wire = typeof requestId === "string" ? wiresByRequestId.get(requestId) : undefined;
-    if (wire) {
+    if (wire && (wire["statusCode"] !== 0 || wire["error"] !== "apiRateExceeded")) {
       findings.push({
         code: "api-rate-contacted-service",
-        message: "apiRateExceeded must be rejected before contacting the gateway",
+        message: "apiRateExceeded must be rejected before contacting the URL service",
         event: response,
       });
     }

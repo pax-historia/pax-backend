@@ -111,6 +111,9 @@ export class NoIvmRunnerProcess implements RunnerProcess {
         input.handler,
       );
       const durationMs = performance.now() - started;
+      if (durationMs >= input.timeoutMs) {
+        throw new Error(`${input.handler} timed out after ${input.timeoutMs}ms`);
+      }
       game.cpuMs += durationMs;
       await this.bridge.emit(input.gameId, "handler.complete", {
         handler: input.handler,
