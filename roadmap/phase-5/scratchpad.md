@@ -388,3 +388,7 @@ Twenty-second detached monitor snapshot landed at `2026-05-29T02:40:34.545Z`. Th
 ## 2026-05-28 19:49 PDT
 
 Twenty-third detached monitor snapshot landed at `2026-05-29T02:45:34.665Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported twenty-three clean monitor snapshots and `gates_ok=true`, putting the retry roughly 84 minutes into the 1000-game no-faults hold.
+
+## 2026-05-28 20:02 PDT
+
+Switched from per-monitor commits to 15-minute checkpoint commits after the 23rd clean monitor; the detached driver monitor still writes every five minutes, and pulls preserve every line. Monitor snapshots 24, 25, and 26 landed at `2026-05-29T02:50:34.794Z`, `2026-05-29T02:55:34.858Z`, and `2026-05-29T03:00:34.905Z`. All three were clean: process alive, no `exit.code`, 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported 26 clean monitor snapshots and `gates_ok=true`, putting the retry roughly 99 minutes into the 1000-game no-faults hold.
