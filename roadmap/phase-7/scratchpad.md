@@ -103,3 +103,22 @@ The remaining process-level IPC implementation is intentionally left for the
 Runner-pool task; Broker task 4 now has the credential-holding authority,
 egress adapters, and operational surfaces the later Runner and packaging work
 can plug into.
+
+## 2026-05-29 02:10 PDT
+
+Completed the one-state-object state-store task. The package now implements the
+Broker-owned read-through/write-back cache as `GameStateSession`, with dirty
+state and dirty blob manifests committed together through one conditional head
+root PUT. State can be inlined in the root or written as a content-addressed
+state object; blob keys write immutable content-addressed versions referenced by
+the root manifest.
+
+History mechanics are now present: retained immutable root objects, parent
+chains, checkpoint listing, read-only checkpoint view, and revert-forward
+restore that writes a new head root referencing an older snapshot. GC is
+production-shaped for both modes: no-history sessions delete superseded object
+versions after the head commits, retained-history sessions prune beyond the
+configured horizon, and an orphan reaper can sweep unreferenced objects when the
+underlying store supports listing. The package also has memory, local-file, and
+S3/Tigris-compatible `StateObjectStore` adapters with conditional put conflict
+surface.
