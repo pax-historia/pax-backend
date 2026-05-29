@@ -295,6 +295,7 @@ export interface ScenarioScaleRunnerInput {
   readonly outputDir: string;
   readonly runtimeKind: ScenarioRuntimeKind;
   readonly rungIds?: readonly string[];
+  readonly nemesisIds?: readonly NemesisKind[];
   readonly scenarioCatalogDir?: string;
   readonly nemesisCatalogDir?: string;
   readonly mode?: ScenarioRunMode;

@@ -77,8 +77,9 @@ async function runScaleRung(
   const rungOutputDir = join(outputDir, safeCaseId(rung.rungId));
   await mkdir(rungOutputDir, { recursive: true });
   const cases: ScaleRungCaseSummary[] = [];
+  const nemesisIds = input.nemesisIds ?? rung.nemesisIds;
 
-  for (const nemesisId of rung.nemesisIds) {
+  for (const nemesisId of nemesisIds) {
     const caseStartedAtMs = Date.now();
     const caseId = safeCaseId(`${input.runtimeKind}-${scenarioId}-${rung.rungId}-${nemesisId}`);
     const caseRunId = `scale-${caseId}-${caseStartedAtMs}`;
@@ -162,7 +163,7 @@ async function runScaleRung(
     send_json_interval_ms: rung.sendJsonIntervalMs,
     send_json_fanout_ms: rung.sendJsonFanoutMs,
     sampling_profile: samplingProfile,
-    nemesis_ids: rung.nemesisIds,
+    nemesis_ids: nemesisIds,
     output_dir: rungOutputDir,
     started_at: new Date(startedAtMs).toISOString(),
     finished_at: new Date(finishedAtMs).toISOString(),

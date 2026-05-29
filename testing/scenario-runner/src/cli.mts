@@ -174,6 +174,7 @@ function parseScaleOptions(values: ReadonlyMap<string, string>): ScaleCliOptions
     outputDir,
     runtimeKind,
     rungIds: parseOptionalList(values.get("scale-rungs") ?? values.get("scale-rung")),
+    nemesisIds: parseOptionalNemesisList(values.get("nemeses")),
     scenarioCatalogDir: values.get("scenarios-dir"),
     nemesisCatalogDir: values.get("nemeses-dir"),
     mode: values.has("mode") ? parseMode(required(values, "mode")) : undefined,
