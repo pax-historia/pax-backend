@@ -191,3 +191,42 @@ The final deployed proof also validated that fix after the 60-second idle
 sleep grace: target machine `185906da630218` recorded `onSleep.sent`,
 `handler.complete` for `onSleep` in 0.24ms, `state.flush.plannedTransition`,
 and `game.released` with `checkpointOk=true` for `phase9-ws-mpquhwsj`.
+
+## 2026-05-29 04:43 PDT
+
+Started the Phase 9 topology scale proof from Fly driver machine
+`1854539b257768`.
+
+Preflight:
+
+- shard app has exactly three no-volume machines:
+  `185906da630218`, `781245db5e5908`, and `d8d04d6b232e38`
+- all three shard checks pass on image
+  `registry.fly.io/pax-backend-shards:deployment-ipv6-bind-20260529043955`
+- control/router/gateway internal health checks pass from the driver
+- driver-to-shard private metrics now works for all three
+  `*.vm.pax-backend-shards.internal:7700/metrics` endpoints
+
+The private metrics preflight exposed one topology issue before launch:
+`fly machine update --image` preserved the old per-machine
+`PAX_BROKER_BIND=0.0.0.0:7700`, so the Broker was healthy through the Fly
+service but unreachable over machine-private IPv6. The Broker now accepts
+bracketed IPv6 binds, shard config uses `PAX_BROKER_BIND=[::]:7700`, and the
+live machines were updated with that env value.
+
+Detached run:
+
+- remote dir: `/data/phase-9/topology/ivm-20260529T114309Z`
+- driver PID: `925`
+- command: `phase9-topology.mts` rung `100g-3shards-30m-topology`
+- runtime: `ivm`
+- oracles: `scenario`
+- control/router/gateway URLs: Fly-internal control app ports
+- broker metrics: one private URL per shard machine
+- history profile: `PAX_SCENARIO_HISTORY_PROFILE=scale`
+
+The scale plan contains both Phase 9 cases. It runs `no-faults` first, then
+`shard-death-every-5m`; Task 5 can close after the first case result is green,
+and Task 6 can close if the second case also passes. Initial `/admin/shards`
+from the driver showed active games already distributed evenly, two per shard
+at the first check.
