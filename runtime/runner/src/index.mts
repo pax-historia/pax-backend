@@ -1,4 +1,5 @@
 import type {
+  BrokerToRunnerEnvelope,
   RunnerAssignment,
   RunnerInvoke,
   RunnerKind,
@@ -6,6 +7,7 @@ import type {
 } from "@pax-backend/ipc-protocol";
 
 export type {
+  BrokerToRunnerEnvelope,
   RunnerAssignment,
   RunnerInvoke,
   RunnerKind,
@@ -22,6 +24,7 @@ export interface RunnerProcess {
   readonly kind: RunnerKind;
   readonly assignedGames: ReadonlySet<string>;
   assign(input: RunnerAssignment): Promise<void>;
+  send(envelope: BrokerToRunnerEnvelope): Promise<void>;
   invoke(input: RunnerInvoke): Promise<unknown>;
   release(gameId: string): Promise<void>;
   stop(): Promise<void>;

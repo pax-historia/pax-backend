@@ -1,15 +1,88 @@
-import type { RunnerPool } from "@pax-backend/runner";
-import type { StateStore } from "@pax-backend/state-store";
+import { Buffer } from "node:buffer";
+
+import jwt, { type JwtPayload } from "jsonwebtoken";
+import type { Logger } from "pino";
+import WebSocket, { type RawData } from "ws";
+
+import type { RunnerPool, RunnerProcess } from "@pax-backend/runner";
+import type { GameStateSession, StateStore } from "@pax-backend/state-store";
+import {
+  DEFAULT_BLOB_BYTES_LIMIT,
+  DEFAULT_BLOB_KEYS_LIMIT,
+  DEFAULT_STATE_BYTES_LIMIT,
+  RUNNER_TO_BROKER,
+  bridgeEnvelope,
+  generateSessionId,
+  type ApiGatewayInvokeResult,
+  type ApiInvokeRequest,
+  type ApiInvokeResponse,
+  type BlobGetIpcPayload,
+  type BlobListIpcPayload,
+  type BlobPutIpcPayload,
+  type BrokerToRunnerEnvelope,
+  type ComputeBudgetSnapshot,
+  type ConnectedSessionSnapshot,
+  type OnSleepPayload,
+  type RunnerToBrokerEnvelope,
+  type RuntimeHandlerName,
+  type StorageWriteResponse,
+  type WsSendPayload,
+  type WsSendResponse,
+  type WsTarget,
+} from "@pax-backend/ipc-protocol";
+
+export interface BrokerBudgetLimits {
+  readonly cpuMsPerTick: number;
+  readonly memoryBytes: number;
+  readonly bandwidthBytesPerSec: number;
+  readonly wsMessagesPerSec: number;
+  readonly stateBytes: number;
+  readonly blobBytes: number;
+  readonly blobKeys: number;
+  readonly apiInvocationsPerMin: number;
+}
+
+export const DEFAULT_BROKER_BUDGETS: BrokerBudgetLimits = {
+  cpuMsPerTick: 1_000,
+  memoryBytes: 256 * 1024 * 1024,
+  bandwidthBytesPerSec: 64 * 1024,
+  wsMessagesPerSec: 50,
+  stateBytes: DEFAULT_STATE_BYTES_LIMIT,
+  blobBytes: DEFAULT_BLOB_BYTES_LIMIT,
+  blobKeys: DEFAULT_BLOB_KEYS_LIMIT,
+  apiInvocationsPerMin: 60,
+};
 
 export interface BrokerConfig {
   readonly shardId: string;
   readonly publicUrl: string;
+  readonly jwtSecret: string;
   readonly runtimeContractsSupported: readonly [number, number];
   readonly capacity: {
     readonly maxActiveGames: number;
     readonly softWatermarkPct: number;
     readonly hardWatermarkPct: number;
   };
+  readonly budgets?: Partial<BrokerBudgetLimits>;
+  readonly defaultMemoryLimitMb?: number;
+  readonly handlerTimeoutMs?: number;
+  readonly sleepGraceMs?: number;
+  readonly sleepDeadlineMs?: number;
+  readonly maxInboundFrameBytes?: number;
+}
+
+export interface BrokerWakeInput {
+  readonly gameId: string;
+  readonly bundleName: string;
+  readonly bundleSource: string;
+  readonly bundleCompatTag: string;
+  readonly runtimeContractRequired: number;
+  readonly runId?: string | null;
+  readonly blobCompatTag?: string;
+  readonly memoryLimitMb?: number;
+  readonly handlerTimeoutMs?: number;
+  readonly testSeed?: number | string;
+  readonly generation?: number;
 }
 
 export interface BrokerDependencies {
@@ -21,95 +94,1049 @@ export interface BrokerDependencies {
   readonly directory: {
     publishCapacity(row: BrokerCapacityRow): Promise<void>;
     removeShard(shardId: string): Promise<void>;
+    claimActiveGame?(input: BrokerActiveGameClaim): Promise<void>;
+    releaseActiveGame?(gameId: string, generation?: number): Promise<void>;
   };
+  readonly allowedPlayers: {
+    has(gameId: string, playerId: string): Promise<boolean>;
+    list(gameId: string): Promise<readonly string[]>;
+  };
+  readonly gateway: {
+    invoke(input: BrokerGatewayInvokeInput): Promise<ApiGatewayInvokeResult>;
+  };
+  readonly bundles?: {
+    resolveForGame(gameId: string): Promise<BrokerWakeInput | undefined>;
+  };
+  readonly ids?: {
+    generateSessionId(): string;
+  };
+  readonly logger?: Pick<Logger, "debug" | "info" | "warn" | "error">;
+  readonly now?: () => number;
+}
+
+export interface BrokerActiveGameClaim {
+  readonly gameId: string;
+  readonly shardId: string;
+  readonly generation: number;
+  readonly placedAt: number;
+  readonly refreshedAt: number;
+}
+
+export interface BrokerGatewayInvokeInput extends ApiInvokeRequest {
+  readonly gameId: string;
+  readonly triggeringSessionId: string | null;
+  readonly triggeringJwtClaims: Readonly<Record<string, unknown>> | null;
+  readonly connectedSessions: readonly ConnectedSessionSnapshot[];
+  readonly bundleName: string;
+  readonly bundleCompatTag: string;
+  readonly runId: string | null;
+  readonly traceId: string | null;
+  readonly replayMode?: boolean;
 }
 
 export interface BrokerCapacityRow {
   readonly shardId: string;
   readonly url: string;
+  readonly status: "healthy" | "draining" | "unhealthy";
   readonly healthy: boolean;
   readonly acceptingWakes: boolean;
   readonly runtimeContractsSupported: readonly [number, number];
   readonly activeGames: number;
+  readonly currentGameCount: number;
+  readonly maxGames: number;
   readonly lastSeenAt: number;
+}
+
+interface PlacementClaims extends JwtPayload {
+  readonly gameId?: unknown;
+  readonly playerId?: unknown;
+  readonly shardId?: unknown;
+  readonly runId?: unknown;
+  readonly traceId?: unknown;
+}
+
+interface VerifiedPlacementClaims extends JwtPayload, Readonly<Record<string, unknown>> {
+  readonly gameId: string;
+  readonly playerId: string;
+  readonly shardId: string;
+  readonly runId?: unknown;
+  readonly traceId?: unknown;
+}
+
+interface BrokerSession {
+  readonly sessionId: string;
+  readonly gameId: string;
+  readonly playerId: string;
+  readonly jwtClaims: Readonly<Record<string, unknown>>;
+  readonly connectedAt: number;
+  seq: number;
+  ws: WebSocket;
+}
+
+interface DispatchContext {
+  readonly sessionId: string | null;
+  readonly traceId: string | null;
+}
+
+interface BrokerGame {
+  readonly gameId: string;
+  readonly generation: number;
+  readonly runner: RunnerProcess;
+  readonly state: GameStateSession;
+  readonly bundleName: string;
+  readonly bundleCompatTag: string;
+  readonly blobCompatTag?: string;
+  readonly runId: string | null;
+  readonly sessions: Map<string, BrokerSession>;
+  readonly blobSizes: Map<string, number>;
+  readonly budgets: GameBudgetState;
+  sleepTimer?: NodeJS.Timeout;
+  currentDispatch?: DispatchContext;
+}
+
+interface GameBudgetState {
+  readonly wsBytes: SlidingWindowCounter;
+  readonly wsMessages: SlidingWindowCounter;
+  readonly apiInvocations: SlidingWindowCounter;
+  stateBytes: number;
+  blobBytes: number;
+  blobKeys: number;
+  cpuMs: number;
+  memoryBytes: number;
 }
 
 export class Broker {
   private started = false;
-  private activeGames = new Set<string>();
   private acceptingWakes = true;
+  private readonly games = new Map<string, BrokerGame>();
+  private readonly budgetLimits: BrokerBudgetLimits;
 
   constructor(
     private readonly config: BrokerConfig,
     private readonly deps: BrokerDependencies,
-  ) {}
+  ) {
+    this.budgetLimits = { ...DEFAULT_BROKER_BUDGETS, ...config.budgets };
+  }
 
   async start(): Promise<void> {
     this.started = true;
+    this.acceptingWakes = true;
     await this.publishCapacity();
   }
 
   async stop(): Promise<void> {
     this.acceptingWakes = false;
     await this.publishCapacity();
+    await Promise.all([...this.games.values()].map((game) => this.releaseGame(game, "shutdown")));
     await this.deps.runners.stop();
     await this.deps.directory.removeShard(this.config.shardId);
     this.started = false;
   }
 
-  async wakeGame(input: {
-    readonly gameId: string;
-    readonly bundleName: string;
-    readonly bundleSource: string;
-    readonly bundleCompatTag: string;
-    readonly runtimeContractRequired: number;
-    readonly runId?: string | null;
-    readonly memoryLimitMb?: number;
-    readonly handlerTimeoutMs?: number;
-    readonly testSeed?: number | string;
-  }): Promise<void> {
+  async wakeGame(input: BrokerWakeInput): Promise<void> {
     this.ensureStarted();
-    await this.deps.stateStore.openSession({ gameId: input.gameId });
-    await this.deps.runners.assign({
+    if (this.games.has(input.gameId)) return;
+    this.ensureRuntimeContract(input.runtimeContractRequired);
+    this.ensureCapacity();
+
+    const state = await this.deps.stateStore.openSession({
+      gameId: input.gameId,
+      bundleCompatTag: input.bundleCompatTag,
+      blobCompatTag: input.blobCompatTag,
+    });
+    const stateBytes = state.readState();
+    const blobSizes = await this.materializeBlobSizes(state);
+    const runner = await this.deps.runners.assign({
       gameId: input.gameId,
       bundleName: input.bundleName,
       bundleSource: input.bundleSource,
       bundleCompatTag: input.bundleCompatTag,
       runtimeContractRequired: input.runtimeContractRequired,
       runId: input.runId ?? null,
-      memoryLimitMb: input.memoryLimitMb ?? 256,
-      handlerTimeoutMs: input.handlerTimeoutMs ?? 1_000,
+      memoryLimitMb: input.memoryLimitMb ?? this.config.defaultMemoryLimitMb ?? 256,
+      handlerTimeoutMs: input.handlerTimeoutMs ?? this.config.handlerTimeoutMs ?? 1_000,
       testSeed: input.testSeed,
+      generation: input.generation,
     });
-    this.activeGames.add(input.gameId);
-    await this.deps.history.write({
-      event: "game.created",
+
+    const now = this.now();
+    const generation = input.generation ?? now;
+    const game: BrokerGame = {
+      gameId: input.gameId,
+      generation,
+      runner,
+      state,
+      bundleName: input.bundleName,
+      bundleCompatTag: input.bundleCompatTag,
+      blobCompatTag: input.blobCompatTag,
+      runId: input.runId ?? null,
+      sessions: new Map(),
+      blobSizes,
+      budgets: {
+        wsBytes: new SlidingWindowCounter(1_000),
+        wsMessages: new SlidingWindowCounter(1_000),
+        apiInvocations: new SlidingWindowCounter(60_000),
+        stateBytes: stateBytes.byteLength,
+        blobBytes: sumMapValues(blobSizes),
+        blobKeys: blobSizes.size,
+        cpuMs: 0,
+        memoryBytes: 0,
+      },
+    };
+    this.games.set(input.gameId, game);
+    await this.deps.directory.claimActiveGame?.({
       gameId: input.gameId,
       shardId: this.config.shardId,
-      ts: new Date().toISOString(),
+      generation,
+      placedAt: now,
+      refreshedAt: now,
+    });
+    await this.writeHistory({
+      event: "game.woke",
+      gameId: input.gameId,
+      shardId: this.config.shardId,
+      runnerId: runner.id,
+      bundleName: input.bundleName,
+      bundleCompatTag: input.bundleCompatTag,
+      generation,
+    });
+    await this.invokeGameHandler(game, "onWake", {
+      reason: stateBytes.byteLength === 0 ? "cold-start" : "cold-restart-from-storage",
+      runId: game.runId,
+      bundleName: game.bundleName,
+      bundleCompatTag: game.bundleCompatTag,
+      blobCompatTag: game.blobCompatTag,
+      state: decodeJsonState(stateBytes),
     });
     await this.publishCapacity();
   }
 
+  async acceptWebSocket(ws: WebSocket, rawUrl: string | URL): Promise<void> {
+    this.ensureStarted();
+    const url = typeof rawUrl === "string" ? new URL(rawUrl, this.config.publicUrl) : rawUrl;
+    const token = url.searchParams.get("placementToken") ?? url.searchParams.get("token");
+    if (!token) {
+      ws.close(4401, "missing placement token");
+      return;
+    }
+
+    let claims: VerifiedPlacementClaims;
+    try {
+      claims = this.verifyPlacementToken(token);
+    } catch (err) {
+      await this.writeHistory({
+        event: "connection.refused",
+        reason: "unauthorized",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      ws.close(4401, "unauthorized");
+      return;
+    }
+    if (claims.shardId !== this.config.shardId) {
+      await this.writeHistory({
+        event: "connection.refused",
+        gameId: claims.gameId,
+        playerId: claims.playerId,
+        reason: "wrongShard",
+        tokenShardId: claims.shardId,
+        shardId: this.config.shardId,
+      });
+      ws.close(4403, "wrong shard");
+      return;
+    }
+
+    const allowed = await this.deps.allowedPlayers.has(claims.gameId, claims.playerId);
+    if (!allowed) {
+      await this.writeHistory({
+        event: "connection.refused",
+        gameId: claims.gameId,
+        playerId: claims.playerId,
+        reason: "playerNotAllowed",
+      });
+      ws.close(4403, "player not allowed");
+      return;
+    }
+
+    const game = await this.ensureGameForConnection(claims.gameId);
+    if (!game) {
+      await this.writeHistory({
+        event: "connection.refused",
+        gameId: claims.gameId,
+        playerId: claims.playerId,
+        reason: "gameNotAvailable",
+      });
+      ws.close(4503, "game not available");
+      return;
+    }
+
+    const connectedAt = this.now();
+    const sessionId = this.deps.ids?.generateSessionId() ?? generateSessionId();
+    const session: BrokerSession = {
+      sessionId,
+      gameId: claims.gameId,
+      playerId: claims.playerId,
+      jwtClaims: claims,
+      connectedAt,
+      seq: 0,
+      ws,
+    };
+    game.sessions.set(sessionId, session);
+    this.clearSleepTimer(game);
+    this.attachWebSocketHandlers(session);
+    this.sendJson(ws, {
+      type: "ready",
+      sessionId,
+      connectedAt: new Date(connectedAt).toISOString(),
+      playerId: claims.playerId,
+      gameId: claims.gameId,
+    });
+    await this.writeHistory({
+      event: "session.opened",
+      shardId: this.config.shardId,
+      gameId: claims.gameId,
+      playerId: claims.playerId,
+      sessionId,
+      connectedAt,
+      traceId: stringOrNull(claims.traceId),
+    });
+    await this.invokeGameHandler(
+      game,
+      "onPlayerConnect",
+      {
+        playerId: claims.playerId,
+        sessionId,
+        jwtClaims: claims,
+        connectedAt,
+      },
+      { sessionId, traceId: stringOrNull(claims.traceId) },
+    );
+  }
+
+  async handleRunnerEnvelope(runnerId: string, envelope: RunnerToBrokerEnvelope): Promise<void> {
+    if (envelope.type === RUNNER_TO_BROKER.runnerReady) {
+      await this.writeHistory({
+        event: "runner.ready",
+        runnerId,
+        kind: envelope.payload.kind,
+        pid: envelope.payload.pid,
+      });
+      return;
+    }
+    if (envelope.type === RUNNER_TO_BROKER.runnerUnknownMessage) {
+      await this.writeHistory({
+        event: "runner.unknownMessage",
+        runnerId,
+        type: envelope.payload.type,
+        detail: envelope.payload.detail,
+      });
+      return;
+    }
+
+    const game = this.validateAssignedRunner(runnerId, envelope.gameId, envelope.type);
+    if (!game) return;
+
+    switch (envelope.type) {
+      case RUNNER_TO_BROKER.isolateReady:
+        await this.writeHistory({
+          event: "isolate.ready",
+          gameId: game.gameId,
+          runnerId,
+          bundleName: envelope.payload.bundleName,
+          bundleCompatTag: envelope.payload.bundleCompatTag,
+        });
+        return;
+      case RUNNER_TO_BROKER.stateRead:
+        await this.respond(game, "state.read.response", this.readState(game), envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.stateWrite:
+        await this.respond(game, "state.write.response", {
+          response: this.writeState(game, envelope.payload.value),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.stateFlush:
+        await this.respond(game, "state.flush.response", {
+          response: await this.flushState(game, "state.flush"),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.blobPut:
+        await this.respond(game, "blob.put.response", {
+          response: await this.putBlob(game, envelope.payload),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.blobGet:
+        await this.respond(game, "blob.get.response", await this.getBlob(game, envelope.payload), envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.blobDelete:
+        await this.respond(game, "blob.delete.response", await this.deleteBlob(game, envelope.payload.key), envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.blobList:
+        await this.respond(game, "blob.list.response", await this.listBlobs(game, envelope.payload), envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.wsSend:
+        await this.respond(game, "ws.send.response", {
+          response: this.handleWsSend(game, envelope.payload),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.playersAllowed:
+        await this.respond(game, "players.allowed.response", {
+          players: await this.deps.allowedPlayers.list(game.gameId),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.playersConnected:
+        await this.respond(game, "players.connected.response", {
+          players: this.connectedSessions(game),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.computeBudget:
+        await this.respond(game, "compute.budget.response", {
+          budget: this.computeBudgetSnapshot(game),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.apiInvoke:
+        await this.respond(game, "api.invoke.response", {
+          response: await this.invokeGateway(game, envelope.payload),
+        }, envelope.requestId);
+        return;
+      case RUNNER_TO_BROKER.logEmit:
+        await this.writeHistory({ ...envelope.payload, event: envelope.payload.event ?? "log.emit", gameId: game.gameId });
+        return;
+      case RUNNER_TO_BROKER.metricsEmit:
+        await this.writeHistory({ event: "metrics.emit", gameId: game.gameId, ...envelope.payload });
+        return;
+      case RUNNER_TO_BROKER.lifecycleRequestSleep:
+        void this.sleepGame(game, "requestedBySleep");
+        return;
+      case RUNNER_TO_BROKER.lifecycleSleepComplete:
+        await this.releaseGame(game, envelope.payload.reason);
+        return;
+      case RUNNER_TO_BROKER.handlerComplete:
+        await this.writeHistory({ event: "handler.complete", gameId: game.gameId, ...envelope.payload });
+        return;
+      case RUNNER_TO_BROKER.handlerError:
+        await this.writeHistory({ event: "handler.error", gameId: game.gameId, ...envelope.payload });
+        return;
+      case RUNNER_TO_BROKER.isolateFatal:
+        await this.writeHistory({ event: "isolate.fatal", gameId: game.gameId, ...envelope.payload });
+        await this.releaseGame(game, "shutdown");
+        return;
+      case RUNNER_TO_BROKER.isolateCounters:
+        game.budgets.cpuMs = envelope.payload.cpuMs;
+        game.budgets.memoryBytes = envelope.payload.memoryBytes;
+        await this.writeHistory({ event: "isolate.counters", ...envelope.payload, gameId: game.gameId });
+        return;
+      case RUNNER_TO_BROKER.wsSendRejected:
+        await this.writeHistory({ event: "ws.send.rejected", gameId: game.gameId, ...envelope.payload });
+        return;
+      default: {
+        const _exhaustive: never = envelope;
+        throw new Error(`unhandled runner envelope ${JSON.stringify(_exhaustive)}`);
+      }
+    }
+  }
+
   snapshotCapacity(): BrokerCapacityRow {
-    const activeGames = this.activeGames.size;
+    const activeGames = this.games.size;
     const hardLimit = Math.floor(this.config.capacity.maxActiveGames * this.config.capacity.hardWatermarkPct);
     return {
       shardId: this.config.shardId,
       url: this.config.publicUrl,
+      status: this.started ? "healthy" : "unhealthy",
       healthy: this.started,
       acceptingWakes: this.acceptingWakes && activeGames < hardLimit,
       runtimeContractsSupported: this.config.runtimeContractsSupported,
       activeGames,
-      lastSeenAt: Date.now(),
+      currentGameCount: activeGames,
+      maxGames: this.config.capacity.maxActiveGames,
+      lastSeenAt: this.now(),
     };
+  }
+
+  private async ensureGameForConnection(gameId: string): Promise<BrokerGame | undefined> {
+    const existing = this.games.get(gameId);
+    if (existing) return existing;
+    const wake = await this.deps.bundles?.resolveForGame(gameId);
+    if (!wake) return undefined;
+    await this.wakeGame(wake);
+    return this.games.get(gameId);
+  }
+
+  private attachWebSocketHandlers(session: BrokerSession): void {
+    session.ws.on("message", (data) => {
+      void this.handlePlayerMessage(session, data).catch((err) => {
+        this.deps.logger?.warn({ err, sessionId: session.sessionId }, "player message failed");
+      });
+    });
+    session.ws.on("close", () => {
+      void this.handleSessionClosed(session, "left").catch((err) => {
+        this.deps.logger?.warn({ err, sessionId: session.sessionId }, "session close failed");
+      });
+    });
+  }
+
+  private async handlePlayerMessage(session: BrokerSession, data: RawData): Promise<void> {
+    const game = this.games.get(session.gameId);
+    if (!game || !game.sessions.has(session.sessionId)) return;
+    const text = rawDataToString(data);
+    if (Buffer.byteLength(text, "utf8") > (this.config.maxInboundFrameBytes ?? 1024 * 1024)) {
+      await this.writeHistory({
+        event: "ws.recv.oversized",
+        gameId: session.gameId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+      });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      await this.writeHistory({
+        event: "ws.recv.malformed",
+        gameId: session.gameId,
+        sessionId: session.sessionId,
+        playerId: session.playerId,
+      });
+      return;
+    }
+    const seq = session.seq;
+    session.seq += 1;
+    await this.writeHistory({
+      event: "onPlayerMessage",
+      gameId: session.gameId,
+      sessionId: session.sessionId,
+      playerId: session.playerId,
+      seq,
+      body,
+    });
+    await this.invokeGameHandler(
+      game,
+      "onPlayerMessage",
+      {
+        playerId: session.playerId,
+        sessionId: session.sessionId,
+        seq,
+        body,
+      },
+      { sessionId: session.sessionId, traceId: stringOrNull(session.jwtClaims["traceId"]) },
+    );
+  }
+
+  private async handleSessionClosed(session: BrokerSession, reason: OnSleepPayload["reason"] | "left"): Promise<void> {
+    const game = this.games.get(session.gameId);
+    if (!game || !game.sessions.delete(session.sessionId)) return;
+    await this.writeHistory({
+      event: "session.closed",
+      gameId: session.gameId,
+      sessionId: session.sessionId,
+      playerId: session.playerId,
+      reason,
+    });
+    await this.invokeGameHandler(game, "onPlayerDisconnect", {
+      playerId: session.playerId,
+      sessionId: session.sessionId,
+      reason,
+    });
+    if (game.sessions.size === 0) this.scheduleSleep(game);
+  }
+
+  private scheduleSleep(game: BrokerGame): void {
+    this.clearSleepTimer(game);
+    const delay = this.config.sleepGraceMs ?? 60_000;
+    game.sleepTimer = setTimeout(() => {
+      void this.sleepGame(game, "idle");
+    }, delay);
+    game.sleepTimer.unref();
+  }
+
+  private clearSleepTimer(game: BrokerGame): void {
+    if (!game.sleepTimer) return;
+    clearTimeout(game.sleepTimer);
+    game.sleepTimer = undefined;
+  }
+
+  private async sleepGame(game: BrokerGame, reason: OnSleepPayload["reason"]): Promise<void> {
+    if (!this.games.has(game.gameId)) return;
+    this.clearSleepTimer(game);
+    const deadline = this.now() + (this.config.sleepDeadlineMs ?? 30_000);
+    await this.invokeGameHandler(game, "onSleep", { reason, deadline });
+    await this.releaseGame(game, reason);
+  }
+
+  private async releaseGame(game: BrokerGame, reason: string): Promise<void> {
+    if (!this.games.delete(game.gameId)) return;
+    this.clearSleepTimer(game);
+    const response = await this.flushState(game, "state.flush.plannedTransition");
+    await game.runner.release(game.gameId);
+    await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
+    await this.writeHistory({
+      event: "game.released",
+      gameId: game.gameId,
+      runnerId: game.runner.id,
+      reason,
+      checkpointOk: response.ok,
+    });
+    await this.publishCapacity();
+  }
+
+  private async invokeGameHandler(
+    game: BrokerGame,
+    handler: RuntimeHandlerName,
+    payload: unknown,
+    context: DispatchContext = { sessionId: null, traceId: null },
+  ): Promise<void> {
+    const previous = game.currentDispatch;
+    game.currentDispatch = context;
+    try {
+      await game.runner.invoke({
+        gameId: game.gameId,
+        handler,
+        payload,
+        timeoutMs: this.config.handlerTimeoutMs ?? this.budgetLimits.cpuMsPerTick,
+        traceId: context.traceId ?? undefined,
+      });
+    } finally {
+      game.currentDispatch = previous;
+    }
+  }
+
+  private validateAssignedRunner(runnerId: string, gameId: string, type: string): BrokerGame | undefined {
+    const game = this.games.get(gameId);
+    if (!game || game.runner.id !== runnerId) {
+      void this.writeHistory({
+        event: "runner.assignmentRejected",
+        runnerId,
+        gameId,
+        type,
+      });
+      return undefined;
+    }
+    return game;
+  }
+
+  private async respond<T extends BrokerToRunnerEnvelope["type"]>(
+    game: BrokerGame,
+    type: T,
+    payload: Extract<BrokerToRunnerEnvelope, { type: T }>["payload"],
+    requestId?: string,
+  ): Promise<void> {
+    if (!requestId) return;
+    await game.runner.send(
+      bridgeEnvelope(game.gameId, type, payload, { requestId }) as BrokerToRunnerEnvelope,
+    );
+  }
+
+  private readState(game: BrokerGame): { readonly found: boolean; readonly value: unknown | null; readonly bytes: number } {
+    const bytes = game.state.readState();
+    return {
+      found: bytes.byteLength > 0,
+      value: decodeJsonState(bytes),
+      bytes: bytes.byteLength,
+    };
+  }
+
+  private writeState(game: BrokerGame, value: unknown): StorageWriteResponse {
+    const encoded = encodeJsonState(value);
+    if (!encoded.ok) return encoded.response;
+    if (encoded.bytes.byteLength > this.budgetLimits.stateBytes) {
+      return { ok: false, error: "sizeExceeded", detail: { limit: this.budgetLimits.stateBytes } };
+    }
+    game.state.writeState(encoded.bytes);
+    game.budgets.stateBytes = encoded.bytes.byteLength;
+    void this.writeHistory({
+      event: "state.write",
+      gameId: game.gameId,
+      bytes: encoded.bytes.byteLength,
+    });
+    return { ok: true };
+  }
+
+  private async flushState(game: BrokerGame, event: string): Promise<StorageWriteResponse> {
+    try {
+      const root = await game.state.flush();
+      await this.writeHistory({
+        event,
+        gameId: game.gameId,
+        checkpointSeq: root?.checkpointSeq,
+      });
+      return { ok: true };
+    } catch (err) {
+      await this.writeHistory({
+        event: "storage.unavailable",
+        gameId: game.gameId,
+        operation: event,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { ok: false, error: "storageUnavailable" };
+    }
+  }
+
+  private async putBlob(game: BrokerGame, payload: BlobPutIpcPayload): Promise<StorageWriteResponse> {
+    const keyCheck = validateBlobKey(payload.key);
+    if (!keyCheck.ok) return keyCheck;
+    const bytes = Buffer.from(payload.bytesBase64, "base64");
+    const previousSize = game.blobSizes.get(payload.key) ?? 0;
+    const nextBlobBytes = game.budgets.blobBytes - previousSize + bytes.byteLength;
+    const nextBlobKeys = game.blobSizes.has(payload.key) ? game.budgets.blobKeys : game.budgets.blobKeys + 1;
+    if (nextBlobBytes > this.budgetLimits.blobBytes) {
+      return { ok: false, error: "sizeExceeded", detail: { limit: this.budgetLimits.blobBytes } };
+    }
+    if (nextBlobKeys > this.budgetLimits.blobKeys) {
+      return { ok: false, error: "keyCountExceeded", detail: { limit: this.budgetLimits.blobKeys } };
+    }
+    await game.state.putBlob(payload.key, bytes);
+    game.blobSizes.set(payload.key, bytes.byteLength);
+    game.budgets.blobBytes = nextBlobBytes;
+    game.budgets.blobKeys = nextBlobKeys;
+    await this.writeHistory({
+      event: "blob.put",
+      gameId: game.gameId,
+      key: payload.key,
+      bytes: bytes.byteLength,
+    });
+    return { ok: true };
+  }
+
+  private async getBlob(
+    game: BrokerGame,
+    payload: BlobGetIpcPayload,
+  ): Promise<{ readonly found: boolean; readonly bytesBase64?: string; readonly bytes: number }> {
+    const bytes = await game.state.getBlob(payload.key);
+    await this.writeHistory({
+      event: "blob.get",
+      gameId: game.gameId,
+      key: payload.key,
+      found: bytes !== undefined,
+    });
+    return bytes
+      ? { found: true, bytesBase64: Buffer.from(bytes).toString("base64"), bytes: bytes.byteLength }
+      : { found: false, bytes: 0 };
+  }
+
+  private async deleteBlob(game: BrokerGame, key: string): Promise<{ readonly ok: true }> {
+    const previousSize = game.blobSizes.get(key);
+    await game.state.deleteBlob(key);
+    if (previousSize !== undefined) {
+      game.blobSizes.delete(key);
+      game.budgets.blobBytes = Math.max(0, game.budgets.blobBytes - previousSize);
+      game.budgets.blobKeys = game.blobSizes.size;
+    }
+    await this.writeHistory({ event: "blob.delete", gameId: game.gameId, key });
+    return { ok: true };
+  }
+
+  private async listBlobs(
+    game: BrokerGame,
+    payload: BlobListIpcPayload,
+  ): Promise<{ readonly items: readonly { readonly key: string; readonly size: number }[] }> {
+    const keys = await game.state.listBlobs(payload.prefix);
+    return {
+      items: keys.map((key) => ({ key, size: game.blobSizes.get(key) ?? 0 })),
+    };
+  }
+
+  private handleWsSend(game: BrokerGame, payload: WsSendPayload): WsSendResponse {
+    const serialized = trySerializeWsBody(payload.body);
+    if (!serialized.ok) return serialized.response;
+    const targets = resolveWsSendTargets(payload.target, [...game.sessions.values()]);
+    if (!targets.ok) return targets.response;
+
+    const bytes = Buffer.byteLength(serialized.text, "utf8") * targets.sessions.length;
+    const now = this.now();
+    if (game.budgets.wsBytes.sum(now) + bytes > this.budgetLimits.bandwidthBytesPerSec) {
+      return { ok: false, error: "bandwidthExceeded", detail: { limit: this.budgetLimits.bandwidthBytesPerSec } };
+    }
+    if (game.budgets.wsMessages.sum(now) + 1 > this.budgetLimits.wsMessagesPerSec) {
+      return { ok: false, error: "rateExceeded", detail: { limit: this.budgetLimits.wsMessagesPerSec } };
+    }
+    game.budgets.wsBytes.add(bytes, now);
+    game.budgets.wsMessages.add(1, now);
+
+    let sent = 0;
+    for (const session of targets.sessions) {
+      if (session.ws.readyState !== WebSocket.OPEN) continue;
+      this.sendJson(session.ws, {
+        type: "message",
+        sessionId: session.sessionId,
+        body: payload.body,
+      });
+      sent += 1;
+    }
+    void this.writeHistory({
+      event: "ws.send",
+      gameId: game.gameId,
+      target: payload.target,
+      sent,
+      bytes,
+    });
+    return { ok: true, sent, bytes };
+  }
+
+  private async invokeGateway(game: BrokerGame, payload: ApiInvokeRequest): Promise<ApiInvokeResponse> {
+    const now = this.now();
+    game.budgets.apiInvocations.add(1, now);
+    const triggeringSession =
+      game.currentDispatch?.sessionId ? game.sessions.get(game.currentDispatch.sessionId) : undefined;
+    try {
+      const result = await this.deps.gateway.invoke({
+        ...payload,
+        gameId: game.gameId,
+        triggeringSessionId: triggeringSession?.sessionId ?? null,
+        triggeringJwtClaims: triggeringSession?.jwtClaims ?? null,
+        connectedSessions: this.connectedSessions(game),
+        bundleName: game.bundleName,
+        bundleCompatTag: game.bundleCompatTag,
+        runId: game.runId,
+        traceId: game.currentDispatch?.traceId ?? null,
+      });
+      if (result.wireRecord) await this.writeHistory({ ...result.wireRecord, event: "api.invoke.wire" });
+      return result.response;
+    } catch (err) {
+      await this.writeHistory({
+        event: "api.invoke.error",
+        gameId: game.gameId,
+        kind: payload.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { ok: false, error: "providerError" };
+    }
+  }
+
+  private connectedSessions(game: BrokerGame): readonly ConnectedSessionSnapshot[] {
+    return [...game.sessions.values()].map((session) => ({
+      sessionId: session.sessionId,
+      playerId: session.playerId,
+      connectedAt: session.connectedAt,
+    }));
+  }
+
+  private computeBudgetSnapshot(game: BrokerGame): ComputeBudgetSnapshot {
+    const now = this.now();
+    return {
+      "cpu-ms-per-tick": {
+        currentUsage: game.budgets.cpuMs,
+        limit: this.budgetLimits.cpuMsPerTick,
+      },
+      "memory-bytes": {
+        currentUsage: game.budgets.memoryBytes,
+        limit: this.budgetLimits.memoryBytes,
+      },
+      "bandwidth-bytes-per-sec": {
+        currentUsage: game.budgets.wsBytes.sum(now),
+        limit: this.budgetLimits.bandwidthBytesPerSec,
+        windowMs: 1_000,
+      },
+      "ws-messages-per-sec": {
+        currentUsage: game.budgets.wsMessages.sum(now),
+        limit: this.budgetLimits.wsMessagesPerSec,
+        windowMs: 1_000,
+      },
+      "state-bytes": {
+        currentUsage: game.budgets.stateBytes,
+        limit: this.budgetLimits.stateBytes,
+      },
+      "blob-bytes": {
+        currentUsage: game.budgets.blobBytes,
+        limit: this.budgetLimits.blobBytes,
+      },
+      "blob-keys": {
+        currentUsage: game.budgets.blobKeys,
+        limit: this.budgetLimits.blobKeys,
+      },
+      "api-invocations-per-min": {
+        currentUsage: game.budgets.apiInvocations.sum(now),
+        limit: this.budgetLimits.apiInvocationsPerMin,
+        windowMs: 60_000,
+      },
+    };
+  }
+
+  private async materializeBlobSizes(state: GameStateSession): Promise<Map<string, number>> {
+    const sizes = new Map<string, number>();
+    for (const key of await state.listBlobs()) {
+      const bytes = await state.getBlob(key);
+      sizes.set(key, bytes?.byteLength ?? 0);
+    }
+    return sizes;
+  }
+
+  private verifyPlacementToken(token: string): VerifiedPlacementClaims {
+    const decoded = jwt.verify(token, this.config.jwtSecret, { algorithms: ["HS256"] });
+    if (!decoded || typeof decoded !== "object") throw new Error("placement token payload is not an object");
+    const claims = decoded as PlacementClaims;
+    if (typeof claims.gameId !== "string") throw new Error("placement token missing gameId");
+    if (typeof claims.playerId !== "string") throw new Error("placement token missing playerId");
+    if (typeof claims.shardId !== "string") throw new Error("placement token missing shardId");
+    return {
+      ...claims,
+      gameId: claims.gameId,
+      playerId: claims.playerId,
+      shardId: claims.shardId,
+    } as VerifiedPlacementClaims;
+  }
+
+  private ensureRuntimeContract(required: number): void {
+    const [min, max] = this.config.runtimeContractsSupported;
+    if (required < min || required > max) {
+      throw new Error(`runtime contract ${required} outside shard range [${min}, ${max}]`);
+    }
+  }
+
+  private ensureCapacity(): void {
+    if (!this.acceptingWakes) throw new Error("broker is not accepting wakes");
+    if (this.games.size >= this.config.capacity.maxActiveGames) {
+      throw new Error("broker capacity exhausted");
+    }
+  }
+
+  private sendJson(ws: WebSocket, value: unknown): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(value));
   }
 
   private async publishCapacity(): Promise<void> {
     await this.deps.directory.publishCapacity(this.snapshotCapacity());
   }
 
+  private async writeHistory(event: Record<string, unknown>): Promise<void> {
+    await this.deps.history.write({
+      ts: new Date(this.now()).toISOString(),
+      shardId: this.config.shardId,
+      ...event,
+    });
+  }
+
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
   private ensureStarted(): void {
     if (!this.started) throw new Error("broker is not started");
   }
+}
+
+class SlidingWindowCounter {
+  private readonly samples: { readonly at: number; readonly value: number }[] = [];
+
+  constructor(private readonly windowMs: number) {}
+
+  add(value: number, at: number): void {
+    this.prune(at);
+    this.samples.push({ at, value });
+  }
+
+  sum(at: number): number {
+    this.prune(at);
+    return this.samples.reduce((total, sample) => total + sample.value, 0);
+  }
+
+  private prune(now: number): void {
+    const cutoff = now - this.windowMs;
+    while (this.samples.length > 0 && this.samples[0]!.at < cutoff) this.samples.shift();
+  }
+}
+
+function encodeJsonState(
+  value: unknown,
+): { readonly ok: true; readonly bytes: Uint8Array } | { readonly ok: false; readonly response: StorageWriteResponse } {
+  try {
+    const json = JSON.stringify(value);
+    if (typeof json !== "string") {
+      return {
+        ok: false,
+        response: { ok: false, error: "storageUnavailable", detail: { message: "state must be JSON-serializable" } },
+      };
+    }
+    return { ok: true, bytes: Buffer.from(json, "utf8") };
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        ok: false,
+        error: "storageUnavailable",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      },
+    };
+  }
+}
+
+function decodeJsonState(bytes: Uint8Array): unknown | null {
+  if (bytes.byteLength === 0) return null;
+  return JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown;
+}
+
+function validateBlobKey(key: string): StorageWriteResponse {
+  if (key.length === 0) {
+    return { ok: false, error: "storageUnavailable", detail: { message: "blob key is empty" } };
+  }
+  if (Buffer.byteLength(key, "utf8") > 256) {
+    return { ok: false, error: "storageUnavailable", detail: { message: "blob key exceeds 256 bytes" } };
+  }
+  return { ok: true };
+}
+
+function rawDataToString(data: RawData): string {
+  if (typeof data === "string") return data;
+  if (data instanceof Buffer) return data.toString("utf8");
+  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
+  return Buffer.from(new Uint8Array(data)).toString("utf8");
+}
+
+function trySerializeWsBody(
+  body: unknown,
+): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly response: WsSendResponse } {
+  try {
+    const text = JSON.stringify(body);
+    if (typeof text !== "string") {
+      return {
+        ok: false,
+        response: { ok: false, error: "serializationFailed", detail: { message: "body is not JSON-serializable" } },
+      };
+    }
+    return { ok: true, text };
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        ok: false,
+        error: "serializationFailed",
+        detail: { message: err instanceof Error ? err.message : String(err) },
+      },
+    };
+  }
+}
+
+type WsTargetResolution =
+  | { readonly ok: true; readonly sessions: readonly BrokerSession[] }
+  | { readonly ok: false; readonly response: WsSendResponse };
+
+function resolveWsSendTargets(target: WsTarget, sessions: readonly BrokerSession[]): WsTargetResolution {
+  if (target === "all") return { ok: true, sessions };
+  if (typeof target === "string") {
+    const matched = sessions.filter((session) => session.playerId === target);
+    return matched.length > 0
+      ? { ok: true, sessions: matched }
+      : { ok: false, response: { ok: false, error: "targetNotConnected", detail: { target } } };
+  }
+  if (!Array.isArray(target)) {
+    return { ok: false, response: { ok: false, error: "targetInvalid" } };
+  }
+  const requested = new Set(target);
+  const missing = [...requested].filter((playerId) => !sessions.some((session) => session.playerId === playerId));
+  if (missing.length > 0) {
+    return { ok: false, response: { ok: false, error: "targetNotConnected", detail: { missing } } };
+  }
+  return {
+    ok: true,
+    sessions: sessions.filter((session) => requested.has(session.playerId)),
+  };
+}
+
+function sumMapValues(values: ReadonlyMap<string, number>): number {
+  let total = 0;
+  for (const value of values.values()) total += value;
+  return total;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }

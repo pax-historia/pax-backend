@@ -58,3 +58,21 @@ payloads, and the state/blob/ws/api/lifecycle channels as one contract. The old
 compatibility aliases so the pre-Broker runtime packages keep typechecking while
 their dedicated Phase 7 tasks replace the implementation. A few gateway and URL
 service call sites were adjusted for docs-next's `runId: null` production shape.
+
+## 2026-05-29 02:00 PDT
+
+Started the credential-holding Broker core. The Broker package now has a real
+stateful shard owner instead of a package-boundary stub: JWT placement-token
+verification, allowed-player checks, websocket session records, ready frames,
+player-message sequencing, sleep-grace release, Runner assignment validation,
+and request dispatch for `state.*`, `blob.*`, `ws.send`, `players.*`,
+`compute.budget`, `api.invoke`, logs, metrics, lifecycle, handler telemetry,
+and isolate counters.
+
+Budget enforcement is still deliberately simple but production-shaped: sliding
+windows for websocket bytes/messages and API invokes, state/blob size and key
+counts, and per-isolate CPU/memory samples from Runner telemetry. The Broker
+now writes capacity rows and history events for these paths and checkpoints via
+the state-store session before release. This does not yet start a server or
+wire real child process IPC; those belong to the remaining Broker, Runner, and
+packaging tasks.
