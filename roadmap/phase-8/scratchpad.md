@@ -14,3 +14,10 @@ Opened Phase 8 after Phase 7 verification passed. The next task is the local
 build/smoke surface audit: check the current build matrix, local stack scripts,
 smoke bot, and audit commands before trying to run `pnpm smoke` on the new
 Broker/Runner runtime.
+
+The audit expanded the phase into four execution tasks. First, rebuild active
+workspace packages plus router and bundle artifacts after the legacy runtime
+path removal. Second, bring up the local Broker/Runner stack and drive
+`pnpm smoke` against it without production secrets. Third, rerun dependency
+audits (`pnpm audit`, and `cargo audit` if installed) and either fix or log
+residual findings. Finally, rerun the Phase 8 exit checks and close the phase.
