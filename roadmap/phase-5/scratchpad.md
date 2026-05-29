@@ -376,3 +376,7 @@ Nineteenth detached monitor snapshot landed at `2026-05-29T02:25:34.237Z`. The r
 ## 2026-05-28 19:34 PDT
 
 Twentieth detached monitor snapshot landed at `2026-05-29T02:30:34.359Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported twenty clean monitor snapshots and `gates_ok=true`, putting the retry roughly 69 minutes into the 1000-game no-faults hold.
+
+## 2026-05-28 19:39 PDT
+
+Twenty-first detached monitor snapshot landed at `2026-05-29T02:35:34.481Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported twenty-one clean monitor snapshots and `gates_ok=true`, putting the retry roughly 74 minutes into the 1000-game no-faults hold.
