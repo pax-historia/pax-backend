@@ -368,7 +368,10 @@ checkpoint).
 | Field | Notes |
 |---|---|
 | `gameId` | |
-| `byteSize` | for write |
+| `ok` | true for accepted writes/flushes |
+| `byteSize` | for writes and checkpoint-producing flushes |
+| `checkpointSeq?` | for flushes that wrote a new root |
+| `trigger?` | `'flush' | 'sleep'` on flush events |
 
 ### `state.checkpoint`
 

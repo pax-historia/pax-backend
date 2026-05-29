@@ -88,6 +88,10 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
         env["PAX_BROKER_CAPACITY_HEARTBEAT_MS"] ?? "10000",
         10_000,
       ),
+      checkpointIntervalMs: parseNonNegativeInteger(
+        env["PAX_STATE_CHECKPOINT_INTERVAL_MS"] ?? "0",
+        0,
+      ),
     },
     {
       runners,

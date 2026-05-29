@@ -75,6 +75,7 @@ export interface BrokerConfig {
   readonly sleepDeadlineMs?: number;
   readonly maxInboundFrameBytes?: number;
   readonly capacityHeartbeatMs?: number;
+  readonly checkpointIntervalMs?: number;
 }
 
 export interface BrokerWakeInput {
@@ -239,6 +240,7 @@ export class Broker {
   private drainCompleted = false;
   private readonly games = new Map<string, BrokerGame>();
   private readonly wakingGames = new Map<string, Promise<void>>();
+  private readonly checkpointTimers = new Map<string, NodeJS.Timeout>();
   private readonly budgetLimits: BrokerBudgetLimits;
   private capacityHeartbeat?: NodeJS.Timeout;
 
@@ -582,7 +584,7 @@ export class Broker {
         return;
       case RUNNER_TO_BROKER.stateFlush:
         await this.respond(game, "state.flush.response", {
-          response: await this.flushState(game, "state.flush", envelope.requestId),
+          response: await this.flushState(game, "state.flush", envelope.requestId, "flush"),
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.blobPut:
@@ -957,8 +959,9 @@ export class Broker {
   private async releaseGame(game: BrokerGame, reason: string): Promise<void> {
     if (!this.games.delete(game.gameId)) return;
     this.clearSleepTimer(game, reason);
+    this.cancelCheckpointTimer(game.gameId);
     this.closeSessions(game, reason);
-    const response = await this.flushState(game, "state.flush.plannedTransition");
+    const response = await this.flushState(game, "state.flush.plannedTransition", undefined, "sleep");
     await game.runner.release(game.gameId);
     await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
     await this.writeHistory({
@@ -978,6 +981,7 @@ export class Broker {
 
     this.games.delete(gameId);
     this.clearSleepTimer(game, "runnerCrash");
+    this.cancelCheckpointTimer(gameId);
     this.closeSessions(game, "runnerCrash");
     await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
     await this.writeHistory({
@@ -1133,19 +1137,34 @@ export class Broker {
       event: "state.write",
       gameId: game.gameId,
       requestId,
+      ok: true,
       byteSize: encoded.bytes.byteLength,
     });
+    this.scheduleCheckpoint(game);
     return { ok: true };
   }
 
-  private async flushState(game: BrokerGame, event: string, requestId?: string): Promise<StorageWriteResponse> {
+  private async flushState(
+    game: BrokerGame,
+    event: string,
+    requestId?: string,
+    trigger?: string,
+  ): Promise<StorageWriteResponse> {
+    this.cancelCheckpointTimer(game.gameId);
     try {
+      const startedAt = this.now();
       const root = await game.state.flush();
+      if (!root && event === "state.checkpoint") return { ok: true };
       await this.writeHistory({
         event,
         gameId: game.gameId,
         requestId,
+        ok: true,
         checkpointSeq: root?.checkpointSeq,
+        codec: root?.codec,
+        byteSize: root?.stateRef.size ?? 0,
+        trigger,
+        durationMs: this.now() - startedAt,
       });
       return { ok: true };
     } catch (err) {
@@ -1206,8 +1225,10 @@ export class Broker {
       gameId: game.gameId,
       requestId,
       key: payload.key,
+      ok: true,
       byteSize: bytes.byteLength,
     });
+    this.scheduleCheckpoint(game);
     return { ok: true };
   }
 
@@ -1239,6 +1260,7 @@ export class Broker {
       game.budgets.blobKeys = game.blobSizes.size;
     }
     await this.writeHistory({ event: "blob.delete", gameId: game.gameId, requestId, key });
+    this.scheduleCheckpoint(game);
     return { ok: true };
   }
 
@@ -1612,6 +1634,34 @@ export class Broker {
     if (!this.capacityHeartbeat) return;
     clearInterval(this.capacityHeartbeat);
     this.capacityHeartbeat = undefined;
+  }
+
+  private scheduleCheckpoint(game: BrokerGame): void {
+    const intervalMs = this.config.checkpointIntervalMs ?? 0;
+    if (intervalMs <= 0 || this.checkpointTimers.has(game.gameId)) return;
+    const timer = setTimeout(() => {
+      this.checkpointTimers.delete(game.gameId);
+      const current = this.games.get(game.gameId);
+      if (!current || current !== game) return;
+      void this.flushState(current, "state.checkpoint", undefined, "interval").catch((err: unknown) => {
+        this.deps.logger?.warn?.(
+          {
+            err,
+            gameId: game.gameId,
+          },
+          "checkpoint interval flush failed",
+        );
+      });
+    }, intervalMs);
+    timer.unref();
+    this.checkpointTimers.set(game.gameId, timer);
+  }
+
+  private cancelCheckpointTimer(gameId: string): void {
+    const timer = this.checkpointTimers.get(gameId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.checkpointTimers.delete(gameId);
   }
 
   private async writeHistory(event: Record<string, unknown>): Promise<void> {

@@ -89,6 +89,7 @@ const REQUIRED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "session.opened": ["gameId", "sessionId", "playerId"],
   "state.flush": ["gameId", "requestId"],
   "state.flush.plannedTransition": ["gameId"],
+  "state.checkpoint": ["gameId"],
   "state.read": ["gameId", "requestId"],
   "state.write": ["gameId", "requestId"],
   "state.write.rejected": ["gameId", "error"],

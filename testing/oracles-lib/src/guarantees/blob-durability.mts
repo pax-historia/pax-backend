@@ -17,7 +17,7 @@ export function blobDurability(history: readonly HistoryEvent[]): OracleResult {
       findings.push(finding("missing-gameid", `${event.event} must include gameId`, event));
       continue;
     }
-    if (event.event === "blob.put" && booleanField(event, "ok") === true) {
+    if (event.event === "blob.put" && booleanField(event, "ok") !== false) {
       hasSuccessfulWrite.add(gameId);
       continue;
     }
