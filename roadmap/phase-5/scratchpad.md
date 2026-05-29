@@ -328,3 +328,7 @@ Eighth detached monitor snapshot landed at `2026-05-29T01:30:33.467Z`. The run r
 ## 2026-05-28 18:36 PDT
 
 Ninth detached monitor snapshot landed at `2026-05-29T01:35:33.564Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported nine clean monitor snapshots and `gates_ok=true`.
+
+## 2026-05-28 18:41 PDT
+
+Tenth detached monitor snapshot landed at `2026-05-29T01:40:33.664Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported ten clean monitor snapshots and `gates_ok=true`.
