@@ -109,22 +109,56 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
       return;
     }
     void (async () => {
-      if (!req.headers["fly-replay-failed"]) {
-        const replay = await broker!.resolveWebSocketReplay(req.url ?? "/");
-        if (replay) {
-          logger.info(replay, "websocket replaying to target Fly machine");
+      if (req.headers["fly-replay-failed"]) {
+        logger.warn(
+          { flyReplayFailed: req.headers["fly-replay-failed"] },
+          "websocket replay returned to source machine",
+        );
+        socket.end(
+          [
+            "HTTP/1.1 503 Service Unavailable",
+            "Connection: close",
+            "Content-Length: 0",
+            "",
+            "",
+          ].join("\r\n"),
+        );
+        return;
+      }
+      const replay = await broker!.resolveWebSocketReplay(req.url ?? "/");
+      if (replay) {
+        logger.info(replay, "websocket replaying to target Fly machine");
+        const deleteHeaders = ["fly-force-instance-id", "fly-prefer-instance-id"].filter(
+          (header) => req.headers[header] !== undefined,
+        );
+        if (deleteHeaders.length > 0) {
+          const body = JSON.stringify({
+            instance: replay.flyMachineId,
+            transform: { delete_headers: deleteHeaders },
+          });
           socket.end(
             [
-              "HTTP/1.1 307 Temporary Redirect",
-              `Fly-Replay: instance=${replay.flyMachineId}`,
+              "HTTP/1.1 200 OK",
+              "Content-Type: application/vnd.fly.replay+json",
               "Connection: close",
-              "Content-Length: 0",
+              `Content-Length: ${Buffer.byteLength(body, "utf8")}`,
               "",
-              "",
+              body,
             ].join("\r\n"),
           );
           return;
         }
+        socket.end(
+          [
+            "HTTP/1.1 307 Temporary Redirect",
+            `Fly-Replay: instance=${replay.flyMachineId}`,
+            "Connection: close",
+            "Content-Length: 0",
+            "",
+            "",
+          ].join("\r\n"),
+        );
+        return;
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
         void broker!.acceptWebSocket(ws, req.url ?? "/").catch((err) => {

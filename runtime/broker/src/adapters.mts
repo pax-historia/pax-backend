@@ -80,6 +80,7 @@ export class RedisBrokerDirectory {
       refreshedAt: input.refreshedAt,
       generation: input.generation,
       brokerId: input.shardId,
+      flyMachineId: this.options.flyMachineId,
     };
     const created = await this.redis.set(
       key,
