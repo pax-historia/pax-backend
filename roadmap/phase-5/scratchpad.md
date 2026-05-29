@@ -236,3 +236,7 @@ Eleventh detached monitor snapshot landed at `2026-05-28T23:57:24.049Z`. The hea
 ## 2026-05-28 16:59 PDT
 
 Tightened the duration proof to check completed phase durations, not only whole-case span. `scripts/fly/summarize-soak.mts` now records `completed_phase_durations_ms`, and `scripts/fly/verify-v1-soak.sh` requires a completed `send-json` duration of at least 28,700,000 ms per case. Verification: `git diff --check`, the default in-progress summary still passed and now shows the completed `seed-fixtures`/`open-sessions` durations, `scripts/fly/verify-v1-soak.sh` still failed the active partial soak with the new missing `send-json` duration gate, and `pnpm typecheck` passed.
+
+## 2026-05-28 17:04 PDT
+
+Twelfth detached monitor snapshot landed at `2026-05-29T00:02:24.174Z`. The heartbeat `ivm` no-faults case remained alive in `send-json` with no `exit.code`, 1000 active games across 10 healthy accepting shards, zero workload failures/session closes/session errors, and no monitor parse errors. The first artifact pull hit a transient Fly API connection reset; the retry succeeded, and the local summary now has twelve clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true` for the non-final default gates.
