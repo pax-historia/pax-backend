@@ -137,6 +137,10 @@ const MEMORY_BYTES_LIMIT = parsePositiveInteger(
   process.env["PAX_MEMORY_BYTES_LIMIT"] ?? "134217728",
   134_217_728,
 );
+const PROCFS_PAGE_SIZE_BYTES = parsePositiveInteger(
+  process.env["PAX_PROCFS_PAGE_SIZE_BYTES"] ?? "4096",
+  4_096,
+);
 const CHILD_MEMORY_LIMIT_MB = Math.max(
   1,
   Math.floor(MEMORY_BYTES_LIMIT / (1024 * 1024)),
@@ -2967,7 +2971,7 @@ function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
       limit: CPU_MS_PER_TICK_LIMIT,
     },
     "memory-bytes": {
-      currentUsage: process.memoryUsage().rss,
+      currentUsage: childRssBytes(inst.child),
       limit: MEMORY_BYTES_LIMIT,
     },
     "bandwidth-bytes-per-sec": {
@@ -2998,6 +3002,20 @@ function computeBudgetSnapshot(inst: GameInstance): ComputeBudgetSnapshot {
       windowMs: 60_000,
     },
   };
+}
+
+function childRssBytes(child: ChildProcess | null): number {
+  const pid = child?.pid;
+  if (!pid || pid <= 0) return 0;
+  try {
+    const fields = readFileSync(`/proc/${pid}/statm`, "utf8").trim().split(/\s+/);
+    const rssPages = Number.parseInt(fields[1] ?? "", 10);
+    return Number.isFinite(rssPages) && rssPages >= 0
+      ? rssPages * PROCFS_PAGE_SIZE_BYTES
+      : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function pruneUsageSamples(
