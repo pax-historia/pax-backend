@@ -130,6 +130,7 @@ Each shard pushes a capacity row to Redis every N seconds (default
   status: 'healthy' | 'draining' | 'unhealthy',
   acceptingWakes: bool,
   currentGameCount: int,
+  maxGames: int,
   lastSeenAt: ISO timestamp,
   runtimeContractsSupported: [min, max]
 }
@@ -137,17 +138,56 @@ Each shard pushes a capacity row to Redis every N seconds (default
 
 The router considers a shard fresh if `lastSeenAt` is within the
 freshness window (30s default). Stale shards are excluded from
-placement.
+placement. `maxGames` is the shard's capacity ceiling; step 4(e) drops a
+shard once `currentGameCount` reaches it.
+
+## Exclusivity (one live shard per game)
+
+The active-game directory is not just a placement cache; its claim is the
+substrate's **cluster-wide single-writer guarantee**. A shard's Broker can only
+enforce uniqueness among the games it hosts, so only the directory layer can
+ensure exactly one shard runs a given `gameId` at a time. The claim is therefore
+written atomically (decision-flow step 7) and carries a **monotonic generation
+token**.
+
+That generation is the fencing token the rest of the substrate carries through:
+the per-game checkpoint commits with a conditional root PUT (`If-Match` on
+`checkpointSeq`), so a superseded shard's late write is rejected rather than
+corrupting state — see [`contract/storage.md`](../contract/storage.md)
+("Engineering latitude") and [`subsystems/state-store.md`](../subsystems/state-store.md).
+Placement grants the generation; the Broker and checkpoint enforce it.
 
 ## Stickiness
 
-A game's previous shard is preferred on re-placement if still healthy
-and accepting. Stickiness reduces cold-load churn (re-materializing the
-game's state root from Tigris).
+Stickiness is a performance optimization layered on the exclusivity claim above:
+a game's previous shard is preferred on re-placement if still healthy and
+accepting, which reduces cold-load churn (re-materializing the game's state root
+from Tigris).
 
 If the previous shard is unhealthy/draining/full, the router picks a
 fresh shard; the next `onWake` sees `cold-restart-from-storage` and
 hydrates from Tigris.
+
+## Scalability
+
+The router is **stateless** — every input comes from Redis and the control
+plane — so it scales **horizontally** behind a load balancer, and a restart
+loses nothing. Two things keep per-instance throughput high:
+
+- **Cached shard table.** The router holds the shard capacity rows in memory and
+  refreshes them on the capacity-push cadence, so a placement is two keyed
+  lookups (game, bundle) plus a signature.
+- **Shardable directory.** The active-game directory and its per-game claim
+  partition cleanly by `gameId` (the claim is per-game, with no global
+  contention), so the directory store can be sharded when one instance is no
+  longer enough. The directory is the throughput ceiling, not the router.
+
+Placement is a **once-per-session control-plane event**, not the WS data path
+(clients talk to the Broker directly). Steady-state placement rate tracks
+wake/reconnect frequency, not message volume; the load that actually sizes the
+router is **migration bursts** — a shard loss re-placing its games, or a rolling
+drain re-placing many at once. The cached path holds the `p99 ≤ 100 ms` target
+well into the hundred-thousand-concurrent range.
 
 ## Failure model
 
