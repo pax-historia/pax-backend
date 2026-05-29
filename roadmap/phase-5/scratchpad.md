@@ -499,3 +499,14 @@ rung with `ivm`, a 1536 MiB Node old-space cap, the same pinned internal
 control/router/gateway URLs, and per-shard metrics labels. The no-fault case is
 first; the launch check found the wrapper alive, the no-fault history file
 created, and the shard registry still at 10 healthy accepting empty shards.
+
+## 2026-05-28 22:38 PDT
+
+The post-fix `ivm` target-density validation reached 1000 placements and
+entered the no-fault heartbeat hold. The no-fault case completed
+`open-sessions` at `2026-05-29T05:25:32.982Z` after 1,543,212 ms, then started
+`send-json`. The checkpoint showed the wrapper still alive, 1000 placements,
+zero workload failures, zero runner-side session closes, zero
+`onCapacityWarning.sent` events, and all 10 shards healthy and accepting wakes
+with 98-102 active games each. The scenario-runner Node process was still about
+179 MB RSS, so the driver-side reservoir cap is not showing early heap growth.
