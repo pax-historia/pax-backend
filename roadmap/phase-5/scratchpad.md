@@ -630,3 +630,15 @@ chunked pull of the new validation directory. The older failed directory was no
 longer present after the driver redeploy, so its preserved evidence is the
 recorded remote OOM log line, monitor status, history size, and event-count
 attribution above.
+
+## 2026-05-28 23:54 PDT
+
+Fifteen-minute checkpoint on the scale-history retry stayed clean. The remote
+monitor line at `20260529T065308Z` had the wrapper alive, no `exit.code`, 551
+placements, zero workload failures, zero runner-side closes, zero session
+errors, zero capacity warnings, and zero budget rejects. A live history tail
+moments later showed 617 placements and the control-plane registry had all 10
+shards healthy and accepting with 61-63 active games each. The local replay
+history file was 617 lines / 266,928 bytes at that point, which confirms the
+new run is not accumulating the prior Vector-envelope-shaped archive bloat
+during placement.
