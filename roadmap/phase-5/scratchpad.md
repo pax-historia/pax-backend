@@ -320,3 +320,7 @@ The local pull immediately after caught the target transition: 1000 placements a
 Seventh detached monitor snapshot landed at `2026-05-29T01:25:33.345Z`. The run remained alive with no `exit.code`; no-faults was in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported seven clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true`.
 
 Post-hold-entry spot checks stayed clean. All 10 shard volumes were still 3% used with `/data/observability` at 4096 bytes and zero local JSONL files. A driver-side metrics sweep passed for control `:9070`, router `:9080`, gateway `:9081`, and parent `:7700` plus engine `:6430` on every shard machine.
+
+## 2026-05-28 18:31 PDT
+
+Eighth detached monitor snapshot landed at `2026-05-29T01:30:33.467Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported eight clean monitor snapshots and `gates_ok=true`.
