@@ -428,3 +428,7 @@ The exit signal is met:
   `urlsvc.mock-ai.v1.invoke` records.
 
 No additional Phase 9 work remains.
+
+Post-closeout cleanup: stopped both driver machines
+`1854539b257768` and `d895e95fe09768` after the proof artifacts and Better
+Stack lookup were complete. Control and shard machines remain up for Phase 10.
