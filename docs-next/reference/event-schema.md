@@ -369,6 +369,7 @@ Bundle's `c.ws.send` rejected by substrate.
 | `gameId` | |
 | `target` | |
 | `error` | `'bandwidthExceeded' \| 'rateExceeded' \| 'serializationFailed' \| 'targetInvalid' \| 'targetNotConnected'` |
+| `detail?` | typed rejection detail, e.g. `missingTargets` for `targetNotConnected` |
 
 ## Storage events
 

@@ -1443,6 +1443,7 @@ export class Broker {
         requestId,
         target: payload.target,
         error: response.ok ? "targetInvalid" : response.error,
+        detail: response.ok ? undefined : response.detail,
       });
       return response;
     }
@@ -2058,7 +2059,14 @@ function resolveWsSendTargets(target: WsTarget, sessions: readonly BrokerSession
     const matched = sessions.filter((session) => session.playerId === target);
     return matched.length > 0
       ? { ok: true, sessions: matched }
-      : { ok: false, response: { ok: false, error: "targetNotConnected", detail: { target } } };
+      : {
+          ok: false,
+          response: {
+            ok: false,
+            error: "targetNotConnected",
+            detail: { target, missingTargets: [target] },
+          },
+        };
   }
   if (!Array.isArray(target)) {
     return { ok: false, response: { ok: false, error: "targetInvalid" } };
