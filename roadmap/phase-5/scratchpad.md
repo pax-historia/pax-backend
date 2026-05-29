@@ -298,3 +298,9 @@ Second detached monitor snapshot for `/data/phase-5/soak/ivm-20260529T005416Z` l
 ## 2026-05-28 18:06 PDT
 
 Third detached monitor snapshot landed at `2026-05-29T01:05:32.899Z`. The run and monitor processes remained alive with no `exit.code`; no-faults was still in `open-sessions` with 377 monitor placements across all 10 shards, zero workload failures, zero session closes, zero session errors, and 10 healthy accepting shards with 376 active games. A local pull immediately after caught 400 placements, still across all 10 shards, with `gates_ok=true`.
+
+## 2026-05-28 18:12 PDT
+
+Fourth detached monitor snapshot landed at `2026-05-29T01:10:33.021Z`. The run and monitor processes remained alive with no `exit.code`; no-faults was still in `open-sessions` with 574 monitor placements across all 10 shards, zero workload failures, zero session closes, zero session errors, and 10 healthy accepting shards with 573 active games. A local pull immediately after caught 620 placements, still across all 10 shards, with four clean monitor snapshots and `gates_ok=true`.
+
+A disk spot check across all 10 shard machines showed `/data` still only 2-3% used, `/data/observability` at 4096 bytes, and zero local JSONL files per shard. That confirms the Better Stack-backed run is no longer accumulating the unbounded local observability files that filled shard-fly-iad-1 during the previous retry.
