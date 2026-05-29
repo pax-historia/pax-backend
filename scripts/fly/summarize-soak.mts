@@ -65,6 +65,8 @@ interface MonitorSummary {
   readonly last_failures?: number;
   readonly last_session_closed?: number;
   readonly last_session_errors?: number;
+  readonly last_capacity_warnings?: number;
+  readonly last_budget_rejects?: number;
 }
 
 interface SoakSummary {
@@ -97,7 +99,8 @@ const historyPaths = files.filter((path) => path.endsWith(".history.jsonl")).sor
 const runExitCode = await readOptionalText(join(soakDir, "exit.code"));
 const monitor = await summarizeMonitor(
   soakDir,
-  files.find((path) => path === join(soakDir, "monitor", "status.jsonl")),
+  files.find((path) => path === join(soakDir, "monitor", "status.jsonl")) ??
+    files.find((path) => path === join(soakDir, "monitor", "status.tsv")),
 );
 const resultByCase = new Map(
   files
@@ -265,6 +268,7 @@ async function readScenarioResult(
 
 async function summarizeMonitor(root: string, path: string | undefined): Promise<MonitorSummary | undefined> {
   if (!path) return undefined;
+  if (path.endsWith(".tsv")) return summarizeTsvMonitor(root, path);
   const raw = await readFile(path, "utf8");
   const parseErrors: string[] = [];
   let snapshots = 0;
@@ -307,6 +311,94 @@ async function summarizeMonitor(root: string, path: string | undefined): Promise
     last_session_closed: sumNumeric(lastHistoryRows, "sessionClosed"),
     last_session_errors: sumNumeric(lastHistoryRows, "sessionErrors"),
   };
+}
+
+async function summarizeTsvMonitor(root: string, path: string): Promise<MonitorSummary> {
+  const raw = await readFile(path, "utf8");
+  const parseErrors: string[] = [];
+  let snapshots = 0;
+  let firstSnapshotAt: string | undefined;
+  let lastSnapshotAt: string | undefined;
+  let lastSnapshot: Readonly<Record<string, string>> | undefined;
+
+  for (const [index, line] of raw.split(/\r?\n/).entries()) {
+    if (line.trim().length === 0) continue;
+    try {
+      const snapshot = parseMonitorTsvLine(line);
+      snapshots += 1;
+      const timestamp = snapshot["ts"];
+      if (timestamp && !firstSnapshotAt) firstSnapshotAt = timestamp;
+      if (timestamp) lastSnapshotAt = timestamp;
+      lastSnapshot = snapshot;
+    } catch (err) {
+      parseErrors.push(`${relative(root, path)}:${index + 1}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const shardSnapshot = lastSnapshotAt
+    ? await readMonitorShardSnapshot(join(dirname(path), `shards-${lastSnapshotAt}.json`))
+    : undefined;
+
+  return {
+    path: relative(root, path),
+    snapshots,
+    parse_errors: parseErrors,
+    first_snapshot_at: firstSnapshotAt,
+    last_snapshot_at: lastSnapshotAt,
+    last_process_alive: booleanString(lastSnapshot?.["alive"]),
+    last_exit_code: lastSnapshot?.["exit"] ? lastSnapshot["exit"] : undefined,
+    last_shard_count: shardSnapshot?.count,
+    last_active_games: shardSnapshot?.total,
+    last_failures: intString(lastSnapshot?.["failures"]),
+    last_session_closed: intString(lastSnapshot?.["closes"]),
+    last_session_errors: intString(lastSnapshot?.["errors"]),
+    last_capacity_warnings: intString(lastSnapshot?.["capacity_warnings"]),
+    last_budget_rejects: intString(lastSnapshot?.["budget_rejects"]),
+  };
+}
+
+function parseMonitorTsvLine(line: string): Readonly<Record<string, string>> {
+  const parts = line.trim().split(/\s+/);
+  const ts = parts.shift();
+  if (!ts) throw new Error("monitor line missing timestamp");
+  const out: Record<string, string> = { ts };
+  for (const part of parts) {
+    const separator = part.indexOf("=");
+    if (separator < 0) throw new Error(`monitor field missing '=': ${part}`);
+    out[part.slice(0, separator)] = part.slice(separator + 1);
+  }
+  return out;
+}
+
+async function readMonitorShardSnapshot(
+  path: string,
+): Promise<{ readonly count: number; readonly total: number } | undefined> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    const rows = Array.isArray(parsed)
+      ? parsed
+      : isRecord(parsed) && Array.isArray(parsed["shards"])
+        ? parsed["shards"]
+        : undefined;
+    if (!rows) return undefined;
+    const rowRecords = rows.filter(isRecord);
+    return {
+      count: rowRecords.length,
+      total: rowRecords.reduce(
+        (sum, row) =>
+          sum +
+          (numberValue(row["activeGames"]) ??
+            numberValue(row["active_games"]) ??
+            numberValue(row["currentGameCount"]) ??
+            0),
+        0,
+      ),
+    };
+  } catch (err) {
+    if (isErrorWithCode(err) && err.code === "ENOENT") return undefined;
+    throw err;
+  }
 }
 
 function gateFailuresFor(
@@ -557,6 +649,18 @@ function booleanValue(value: unknown): boolean | undefined {
 function scalarOrNull(value: unknown): string | number | null | undefined {
   if (value === null) return null;
   return typeof value === "string" || typeof value === "number" ? value : undefined;
+}
+
+function intString(value: string | undefined): number | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function booleanString(value: string | undefined): boolean | undefined {
+  if (value === "1" || value === "true") return true;
+  if (value === "0" || value === "false") return false;
+  return undefined;
 }
 
 function sumNumeric(rows: readonly Record<string, unknown>[], key: string): number | undefined {

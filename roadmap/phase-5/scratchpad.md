@@ -529,3 +529,16 @@ collection, checked `/data/history/history.jsonl` directly on all 10 shard
 machines for the current run prefix. Every shard reported
 `onCapacityWarning.sent=0` and `compute.budget.rejected=0`, which is the direct
 target-density evidence for the child-RSS fix during the no-fault hold.
+
+## 2026-05-28 22:45 PDT
+
+Tightened the validation artifact summarizer while the hold continued.
+`scripts/fly/summarize-soak.mts` now treats `monitor/status.tsv` as a supported
+fallback when the older `monitor/status.jsonl` is absent, parses the latest
+`alive`, `exit`, placement, failure, close, capacity-warning, and budget-reject
+counters, and joins the matching `monitor/shards-<timestamp>.json` snapshot for
+last shard count and active games. Verification: `git diff --check`,
+`pnpm typecheck`, and a summary over
+`var/phase-5/validation/ivm-v1scale-20260529T045623Z` showing two monitor
+snapshots, 10 shards, 1000 active games, zero failures, zero closes, zero
+capacity warnings, and zero budget rejects.
