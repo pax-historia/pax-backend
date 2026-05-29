@@ -21,6 +21,8 @@ interface HistoryEvent {
   readonly phaseType?: unknown;
   readonly phaseIndex?: unknown;
   readonly durationMs?: unknown;
+  readonly code?: unknown;
+  readonly reason?: unknown;
   readonly placedShardId?: unknown;
   readonly shardId?: unknown;
   readonly error?: unknown;
@@ -38,6 +40,9 @@ interface CaseSummary {
   readonly phases_started: readonly string[];
   readonly phases_completed: readonly string[];
   readonly completed_phase_durations_ms: Readonly<Record<string, readonly number[]>>;
+  readonly session_closed_count: number;
+  readonly session_close_code_distribution: Readonly<Record<string, number>>;
+  readonly session_close_reason_distribution: Readonly<Record<string, number>>;
   readonly error_events: readonly string[];
   readonly first_event_at?: string;
   readonly last_event_at?: string;
@@ -147,6 +152,8 @@ async function summarizeCase(
   const phasesStarted: string[] = [];
   const phasesCompleted: string[] = [];
   const completedPhaseDurations = new Map<string, number[]>();
+  const closeCodeCounts = new Map<string, number>();
+  const closeReasonCounts = new Map<string, number>();
   const parseErrors: string[] = [];
   const errorEvents: string[] = [];
   let historyEvents = 0;
@@ -187,6 +194,13 @@ async function summarizeCase(
         completedPhaseDurations.set(phase, durations);
       }
     }
+    if (event.event === "workload.session.closed") {
+      const code = scalarOrNull(event.code);
+      const reason = closeReasonPrefix(stringValue(event.reason));
+      const codeKey = code === undefined || code === null ? "<missing>" : String(code);
+      closeCodeCounts.set(codeKey, (closeCodeCounts.get(codeKey) ?? 0) + 1);
+      closeReasonCounts.set(reason, (closeReasonCounts.get(reason) ?? 0) + 1);
+    }
     if (String(event.event ?? "").includes("error") || event.error !== undefined) {
       errorEvents.push(`${String(event.event ?? "unknown")}: ${stringValue(event.error) ?? ""}`.trim());
     }
@@ -210,6 +224,9 @@ async function summarizeCase(
     completed_phase_durations_ms: Object.fromEntries(
       Array.from(completedPhaseDurations.entries()).sort(([left], [right]) => left.localeCompare(right)),
     ),
+    session_closed_count: Array.from(closeCodeCounts.values()).reduce((sum, count) => sum + count, 0),
+    session_close_code_distribution: sortedCountRecord(closeCodeCounts),
+    session_close_reason_distribution: sortedCountRecord(closeReasonCounts),
     error_events: errorEvents,
     first_event_at: firstEventAt,
     last_event_at: lastEventAt,
@@ -426,6 +443,16 @@ function phaseLabel(event: HistoryEvent): string {
 function phaseName(label: string): string {
   const colon = label.indexOf(":");
   return colon >= 0 ? label.slice(colon + 1) : label;
+}
+
+function closeReasonPrefix(reason: string | undefined): string {
+  if (!reason) return "<empty>";
+  const hashIndex = reason.indexOf("#");
+  return hashIndex >= 0 ? reason.slice(0, hashIndex) : reason;
+}
+
+function sortedCountRecord(counts: ReadonlyMap<string, number>): Readonly<Record<string, number>> {
+  return Object.fromEntries(Array.from(counts.entries()).sort(([left], [right]) => left.localeCompare(right)));
 }
 
 function parseArgs(argv: readonly string[]): CliOptions {

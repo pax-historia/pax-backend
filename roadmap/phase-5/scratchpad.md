@@ -256,3 +256,7 @@ After failure cleanup, `/admin/shards` returned 10 healthy accepting shards with
 Restarted all ten shard machines before retrying, then verified `/admin/shards` returned 10 healthy accepting shards with `total_active_games=0`. A full driver-side metrics preflight passed for control, router, gateway, and parent `:7700/metrics` plus vendored engine `:6430/metrics` on every shard machine.
 
 Launched the next heartbeat `ivm` retry at `/data/phase-5/soak/ivm-20260529T001941Z`, reusing the pinned internal control/router/gateway URLs and per-shard metrics labels from the failed run. The run wrapper is PID 3282 and the detached monitor is PID 3313. The first monitor snapshot landed at `2026-05-29T00:19:43.705Z` with process alive, no `exit.code`, one in-progress no-faults history, and 10 healthy empty shards while `seed-fixtures` had just started.
+
+## 2026-05-28 17:21 PDT
+
+Added session-close distributions to `scripts/fly/summarize-soak.mts` so failure summaries include close counts by WebSocket code and reason prefix instead of requiring ad hoc parsing. Verification against the failed `ivm-20260528T222045Z` artifacts now reports 1000 closes split as code 1000=900, 1006=66, 1011=34, with reason prefixes `scenarioRunnerAbort`=900, `core.internal_error`=18, `guard.websocket_service_timeout`=16, and `<empty>`=66. `git diff --check` and `pnpm typecheck` passed.
