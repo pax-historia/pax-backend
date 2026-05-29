@@ -356,3 +356,50 @@ Final topology proof:
 - no workload phase failures, no workload session errors, no history parse
   errors, no capacity warnings, no budget rejects, and no failing scenario
   oracles
+
+## 2026-05-29 06:56 PDT
+
+Task 7 is complete. The first trace-exemplar attempt proved placement/session
+trace propagation but failed the URL-service oracle because the deployed API
+gateway rejected Broker invokes where `runId` was protocol-null before emitting
+a wire record. Commit `1206514` changed the gateway parser to accept nullable
+`runId` and nullable/omitted idempotency keys, matching the shared protocol.
+The control app was redeployed as
+`registry.fly.io/pax-backend-control:deployment-gateway-null-runid-20260529135000`
+with digest
+`sha256:40e432ed2a7c8c44ec2836716f4fa4853cb69552ced1a3537264b829644f6d2e`;
+both control machines passed Fly checks. A live Broker-shaped probe with
+`runId: null` returned a gateway `wireRecord`.
+
+Focused trace run:
+
+- run ID: `phase9-trace-20260529T135059Z`
+- remote dir: `/data/phase-9/trace/phase9-trace-20260529T135059Z`
+- local dir: `var/phase-9/trace/phase9-trace-20260529T135059Z`
+- driver machine: `d895e95fe09768`
+- scenario: `api-partition-adversarial`
+- trace ID: `f40d0b0e10154668cf9e84793f3e8c25`
+- exit status: `0`
+
+The scenario result passed `G5_faithful_api_dispatch`,
+`G8_crash_blast_radius`, `G14_history_completeness`, and
+`G0_api_partition_adversarial`. The pulled history has one
+`placement.accepted`, one `session.opened`, 40 `api.invoke.request`, 40
+`api.invoke.wire`, 40 `api.invoke.response`, and one `session.closed` under the
+same trace ID. The API partition produced eight typed provider failures with
+wire `statusCode=0`, then recovered to 32 successful `statusCode=200`
+responses after restore.
+
+Better Stack lookup used the newly stored Infisical API token to create
+short-lived ClickHouse connections, query the source, and then delete both
+temporary connections. No query credentials or source tokens were printed.
+Evidence in `t527589_pax_backend_v1_soak_2_logs`:
+
+- 229 rows containing trace `f40d0b0e10154668cf9e84793f3e8c25`
+- history events: 40 `api.invoke.request`, 40 `api.invoke.wire`, 40
+  `api.invoke.response`, one `session.opened`, and one `session.closed`
+- OTLP names in the same trace: one `router.placement`, 40 `gateway.invoke`,
+  and 32 `urlsvc.mock-ai.v1.invoke`
+
+The continuous placement-through-URL-service exemplar is visible in the
+production observability sink.
