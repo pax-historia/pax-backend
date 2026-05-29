@@ -21,3 +21,15 @@ path removal. Second, bring up the local Broker/Runner stack and drive
 `pnpm smoke` against it without production secrets. Third, rerun dependency
 audits (`pnpm audit`, and `cargo audit` if installed) and either fix or log
 residual findings. Finally, rerun the Phase 8 exit checks and close the phase.
+
+## 2026-05-29 03:12 PDT
+
+The local build matrix is green. `pnpm -r --if-present run build` completed
+for the active workspace after the old parent/child packages were removed.
+Then `scripts/build/build-router.sh` produced a release placement-router binary
+at `.cache/router/router`, and `scripts/build/build-bundles.sh` rebuilt every
+creator bundle under `examples/bundles/*/dist/bundle.js`.
+
+No code changes were needed from the build pass. One attempted
+`pnpm -r --if-present run build --dry-run` probe failed because `--dry-run`
+was forwarded into `tsc -b`; the real build command above is the useful signal.
