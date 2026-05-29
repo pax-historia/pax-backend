@@ -300,7 +300,7 @@ See `scripts/observability/` for the BetterStack-specific Vector configs.
 | Value | Behavior |
 |---|---|
 | `on` (default) | Full pipeline; fail fast if Vector can't reach sink within 10s |
-| `buffer` | Vector starts with disk-buffer sink (default cap 500 MB); drains when network returns |
+| `buffer` | Vector starts with local JSONL buffer sinks and prunes them to `PAX_VECTOR_LOCAL_BUFFER_MAX_BYTES` (default 512 MiB); for offline/dev fallback, not scale-soak evidence |
 | `off` | Skip Vector entirely; services log to stdout and history to `var/history.jsonl`; `pnpm smoke` still works |
 
 This keeps the local-mac dev loop working from a plane / hotel / no

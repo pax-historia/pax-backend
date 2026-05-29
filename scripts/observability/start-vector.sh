@@ -27,6 +27,8 @@ case "$mode" in
     ;;
   buffer)
     export VECTOR_REQUIRE_HEALTHY="${VECTOR_REQUIRE_HEALTHY:-false}"
+    export PAX_VECTOR_LOCAL_BUFFER_MAX_BYTES="${PAX_VECTOR_LOCAL_BUFFER_MAX_BYTES:-536870912}"
+    export PAX_VECTOR_LOCAL_BUFFER_PRUNE_INTERVAL_SECS="${PAX_VECTOR_LOCAL_BUFFER_PRUNE_INTERVAL_SECS:-60}"
     if [[ -n "${PAX_VECTOR_CONFIG:-}" ]]; then
       config_args=(--config "$PAX_VECTOR_CONFIG")
     elif [[ -n "${PAX_VECTOR_PROFILE:-}" ]] \
@@ -57,6 +59,15 @@ mkdir -p \
   "$VECTOR_DATA_DIR" \
   "${PAX_VECTOR_BUFFER_DIR:-/data/observability}" \
   "$(dirname "${PAX_HISTORY_PATH:-/app/var/history.jsonl}")"
+
+if [[ "$mode" == "buffer" ]]; then
+  (
+    while true; do
+      bash "$APP_ROOT/scripts/observability/prune-local-buffer.sh" || true
+      sleep "$PAX_VECTOR_LOCAL_BUFFER_PRUNE_INTERVAL_SECS"
+    done
+  ) &
+fi
 
 echo "[observability] vector args: ${config_args[*]}"
 exec vector "${config_args[@]}"

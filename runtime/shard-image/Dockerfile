@@ -89,7 +89,7 @@ COPY --chown=node:node --from=app-builder /app/shared ./shared
 COPY --chown=node:node --from=app-builder /app/sdk/runtime-sdk ./sdk/runtime-sdk
 COPY --chown=node:node --from=app-builder /app/examples/bundles ./examples/bundles
 COPY --chown=node:node --from=app-builder /app/scripts/observability ./scripts/observability
-RUN chmod 0755 /app/scripts/observability/start-vector.sh
+RUN chmod 0755 /app/scripts/observability/start-vector.sh /app/scripts/observability/prune-local-buffer.sh
 
 EXPOSE 4317 4318 6420 6421 6430 7700 8686
 USER node

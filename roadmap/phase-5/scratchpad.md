@@ -288,3 +288,5 @@ Preflight is green again after clearing the stale drain flag on `shard-fly-iad-2
 ## 2026-05-28 17:55 PDT
 
 Launched the next detached heartbeat `ivm` retry at `/data/phase-5/soak/ivm-20260529T005416Z`. The run wrapper is PID 968 and the detached monitor is PID 1007. The first monitor snapshot at `2026-05-29T00:55:32.626Z` found the process alive, no `exit.code`, the no-faults history started in `seed-fixtures`, and all 10 shards healthy, accepting wakes, and empty.
+
+Closed the code-side fallback gap that let this failure mode happen. `PAX_OBSERVABILITY=buffer` now starts a local pruner that enforces `PAX_VECTOR_LOCAL_BUFFER_MAX_BYTES` (default 512 MiB) across local JSONL buffer sinks, and the observability desired-state doc now calls buffer mode an offline/dev fallback rather than scale-soak evidence. Verification: `bash -n scripts/observability/start-vector.sh scripts/observability/prune-local-buffer.sh`, a local three-file prune smoke, and `git diff --check`.
