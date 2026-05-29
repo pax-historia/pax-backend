@@ -461,3 +461,14 @@ the shared parent process crossing the 128 MiB budget and receive repeated
 reads `/proc/<child-pid>/statm` for the child RSS and falls back to `0` when the
 child is unavailable or procfs cannot be read. Verification:
 `pnpm --filter @pax-backend/parent-actor check-types` and `git diff --check`.
+
+## 2026-05-28 21:49 PDT
+
+Closed a driver-side soak-memory risk before the next retry. The failed
+`ivm-20260529T005416Z` run also ended with the scenario-runner process hitting
+the Node heap limit after the shard failure, so the metrics collector now keeps
+256 scalar samples per series by default instead of 2048 while still allowing
+`PAX_METRICS_SCALAR_RESERVOIR_SAMPLES` to raise the reservoir for targeted
+debug runs. This keeps long-soak percentile attribution useful without holding
+as much per-series JS heap across ten shard metric surfaces. Verification:
+`pnpm --filter @pax-backend/scenario-runner check-types` and `git diff --check`.

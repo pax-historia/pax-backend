@@ -66,6 +66,10 @@ const DEFAULT_GATEWAY_METRICS_URL = "http://127.0.0.1:9081/metrics";
 const DEFAULT_PARENT_METRICS_URL = "http://127.0.0.1:7700/metrics";
 const DEFAULT_ENGINE_METRICS_URL = "http://127.0.0.1:6430/metrics";
 const DEFAULT_SCRAPE_TIMEOUT_MS = 2_000;
+const SCALAR_SERIES_RESERVOIR_SAMPLES = positiveInt(
+  process.env["PAX_METRICS_SCALAR_RESERVOIR_SAMPLES"],
+  256,
+);
 
 export class ScenarioMetricsCollector {
   readonly #endpoints: readonly MetricEndpoint[];
@@ -199,7 +203,7 @@ class ScalarSeriesAccumulator {
     this.last = value;
     this.min = Math.min(this.min, value);
     this.max = Math.max(this.max, value);
-    if (this.values.length < 2_048) {
+    if (this.values.length < SCALAR_SERIES_RESERVOIR_SAMPLES) {
       this.values.push(value);
     } else {
       this.values[this.count % this.values.length] = value;
@@ -418,6 +422,12 @@ function scrapeIntervalMs(profile: SamplingProfile): number {
     case "ramp":
       return 30_000;
   }
+}
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim().length === 0) return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function metricAllowedForProfile(
