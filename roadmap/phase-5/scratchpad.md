@@ -250,3 +250,9 @@ Failure attribution is localized to shard-fly-iad-1. Before scenario-runner abor
 Tightened `scripts/fly/summarize-soak.mts` default gates so a failed in-progress summary no longer reports green: non-zero `exit.code`, case error events, and monitor-observed workload failures now make `gates_ok=false` even without final-gate options. Verification: `git diff --check`, default summary over the failed artifacts exits 2 with those three failures, `scripts/fly/verify-v1-soak.sh` exits 2 with the full final-gate failure list, and `pnpm typecheck` passed.
 
 After failure cleanup, `/admin/shards` returned 10 healthy accepting shards with `total_active_games=0`. The failed run wrapper PID 798 and monitor PID 2039 were both dead, and the remote failed-run directory retained `exit.code=134`.
+
+## 2026-05-28 17:19 PDT
+
+Restarted all ten shard machines before retrying, then verified `/admin/shards` returned 10 healthy accepting shards with `total_active_games=0`. A full driver-side metrics preflight passed for control, router, gateway, and parent `:7700/metrics` plus vendored engine `:6430/metrics` on every shard machine.
+
+Launched the next heartbeat `ivm` retry at `/data/phase-5/soak/ivm-20260529T001941Z`, reusing the pinned internal control/router/gateway URLs and per-shard metrics labels from the failed run. The run wrapper is PID 3282 and the detached monitor is PID 3313. The first monitor snapshot landed at `2026-05-29T00:19:43.705Z` with process alive, no `exit.code`, one in-progress no-faults history, and 10 healthy empty shards while `seed-fixtures` had just started.
