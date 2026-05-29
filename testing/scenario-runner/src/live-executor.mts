@@ -223,6 +223,9 @@ async function executePhase(
     case "evict-games":
       await evictGames(ctx, phase.targetGameCount, phase.reason ?? "scenarioEvict");
       return;
+    case "inject-fence-winner":
+      await injectFenceWinner(ctx, phase.targetGameCount, phase.marker);
+      return;
     case "close-sessions":
       await closeAllSessions(ctx, phase.reason);
       return;
@@ -872,6 +875,32 @@ async function evictGames(
   }
 
   await Promise.all(closing);
+}
+
+async function injectFenceWinner(
+  ctx: LiveExecutorContext,
+  targetGameCount: number,
+  marker: string,
+): Promise<void> {
+  const shardUrlByGame = new Map(ctx.sessions.map((session) => [session.gameId, session.shardUrl]));
+  for (const gameId of targetGameIds(ctx.workload, targetGameCount)) {
+    const shardUrl = shardUrlByGame.get(gameId) ?? await firstShardUrl(ctx);
+    const url = new URL(
+      `${trimTrailingSlash(shardUrl)}/admin/games/${encodeURIComponent(gameId)}/fence-winner`,
+    );
+    url.searchParams.set("marker", marker);
+    const response = await requestJson<{ readonly checkpointSeq?: number }>(url.toString(), {
+      method: "POST",
+    });
+    ctx.historyWriter.append("workload.fence-winner.injected", {
+      scenarioId: ctx.scenario.scenarioId,
+      runId: ctx.input.runId ?? null,
+      gameId,
+      marker,
+      shardUrl,
+      checkpointSeq: response.checkpointSeq ?? null,
+    });
+  }
 }
 
 async function waitForSessionClosed(session: ScenarioSession): Promise<void> {

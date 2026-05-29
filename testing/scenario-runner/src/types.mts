@@ -162,6 +162,11 @@ export type ScenarioWorkloadPhase =
       readonly reason?: string;
     }
   | {
+      readonly type: "inject-fence-winner";
+      readonly targetGameCount: number;
+      readonly marker: string;
+    }
+  | {
       readonly type: "await-nemesis";
       readonly action: "kill-shard" | "api-kind-partition" | "crash-runner";
       readonly minimumOccurrences: number;

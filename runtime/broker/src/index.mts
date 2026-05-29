@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import WebSocket, { type RawData } from "ws";
 
 import type { RunnerCrashEvent, RunnerPool, RunnerProcess } from "@pax-backend/runner";
-import type { GameStateSession, StateStore } from "@pax-backend/state-store";
+import { ConditionalPutConflict, type GameStateSession, type StateRoot, type StateStore } from "@pax-backend/state-store";
 import {
   DEFAULT_BLOB_BYTES_LIMIT,
   DEFAULT_BLOB_KEYS_LIMIT,
@@ -312,6 +312,37 @@ export class Broker {
     return this.deps.runners.crashRunnerForTest(runnerId);
   }
 
+  async writeFenceWinnerForTest(gameId: string, marker: string): Promise<StateRoot | undefined> {
+    this.ensureStarted();
+    const active = this.games.get(gameId);
+    const session = await this.deps.stateStore.openSession({
+      gameId,
+      bundleCompatTag: active?.bundleCompatTag,
+      blobCompatTag: active?.blobCompatTag,
+    });
+    const snapshot = {
+      version: 1,
+      marker,
+      writes: 10_000,
+    };
+    const encoded = encodeJsonState(snapshot);
+    if (!encoded.ok) {
+      throw new Error("fence winner snapshot was not JSON-serializable");
+    }
+    session.writeState(encoded.bytes);
+    await session.putBlob("snapshot.json", encoded.bytes);
+    const root = await session.flush();
+    await this.writeHistory({
+      event: "state.fence.winner",
+      gameId,
+      marker,
+      checkpointSeq: root?.checkpointSeq,
+      codec: root?.codec,
+      byteSize: root?.stateRef.size ?? 0,
+    });
+    return root;
+  }
+
   async handleRunnerCrash(input: RunnerCrashEvent): Promise<void> {
     this.ensureStarted();
     const affectedGameIds = input.affectedGameIds
@@ -583,9 +614,13 @@ export class Broker {
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.stateFlush:
-        await this.respond(game, "state.flush.response", {
-          response: await this.flushState(game, "state.flush", envelope.requestId, "flush"),
-        }, envelope.requestId);
+        {
+          const response = await this.flushState(game, "state.flush", envelope.requestId, "flush");
+          await this.respond(game, "state.flush.response", { response }, envelope.requestId);
+          if (isFenceConflictResponse(response)) {
+            await this.standDownSupersededGame(game, "state.flush");
+          }
+        }
         return;
       case RUNNER_TO_BROKER.blobPut:
         await this.respond(game, "blob.put.response", {
@@ -874,17 +909,28 @@ export class Broker {
       seq,
       body,
     });
-    await this.invokeGameHandler(
-      game,
-      "onPlayerMessage",
-      {
-        playerId: session.playerId,
-        sessionId: session.sessionId,
-        seq,
-        body,
-      },
-      { sessionId: session.sessionId, traceId: stringOrNull(session.jwtClaims["traceId"]) },
-    );
+    try {
+      await this.invokeGameHandler(
+        game,
+        "onPlayerMessage",
+        {
+          playerId: session.playerId,
+          sessionId: session.sessionId,
+          seq,
+          body,
+        },
+        { sessionId: session.sessionId, traceId: stringOrNull(session.jwtClaims["traceId"]) },
+      );
+    } catch (err) {
+      if (
+        !this.games.has(session.gameId) &&
+        err instanceof Error &&
+        err.message === `game ${session.gameId} was released`
+      ) {
+        return;
+      }
+      throw err;
+    }
   }
 
   private async handleSessionClosed(session: BrokerSession, reason: OnSleepPayload["reason"] | "left"): Promise<void> {
@@ -973,6 +1019,24 @@ export class Broker {
     });
     await this.publishCapacity();
     await this.maybeWriteDrainCompleted(reason);
+  }
+
+  private async standDownSupersededGame(game: BrokerGame, operation: string): Promise<void> {
+    if (this.games.get(game.gameId) !== game) return;
+    this.games.delete(game.gameId);
+    this.clearSleepTimer(game, "supersededByCheckpointConflict");
+    this.cancelCheckpointTimer(game.gameId);
+    this.closeSessions(game, "supersededByCheckpointConflict");
+    await game.runner.release(game.gameId);
+    await this.deps.directory.releaseActiveGame?.(game.gameId, game.generation);
+    await this.writeHistory({
+      event: "game.stoodDown",
+      gameId: game.gameId,
+      runnerId: game.runner.id,
+      reason: "supersededByCheckpointConflict",
+      operation,
+    });
+    await this.publishCapacity();
   }
 
   private async restartGameAfterRunnerCrash(gameId: string, runnerId: string): Promise<void> {
@@ -1168,6 +1232,21 @@ export class Broker {
       });
       return { ok: true };
     } catch (err) {
+      if (err instanceof ConditionalPutConflict) {
+        await this.writeHistory({
+          event: "state.fence.conflict",
+          gameId: game.gameId,
+          requestId,
+          operation: event,
+          trigger,
+          error: err.message,
+        });
+        return {
+          ok: false,
+          error: "storageUnavailable",
+          detail: { code: "conditionalPutConflict", operation: event },
+        };
+      }
       await this.writeHistory({
         event: "storage.unavailable",
         gameId: game.gameId,
@@ -1643,7 +1722,12 @@ export class Broker {
       this.checkpointTimers.delete(game.gameId);
       const current = this.games.get(game.gameId);
       if (!current || current !== game) return;
-      void this.flushState(current, "state.checkpoint", undefined, "interval").catch((err: unknown) => {
+      void (async () => {
+        const response = await this.flushState(current, "state.checkpoint", undefined, "interval");
+        if (isFenceConflictResponse(response)) {
+          await this.standDownSupersededGame(current, "state.checkpoint");
+        }
+      })().catch((err: unknown) => {
         this.deps.logger?.warn?.(
           {
             err,
@@ -1732,6 +1816,17 @@ async function handleBrokerAdminRequest(
   if (method === "POST" && evictMatch) {
     const evicted = await broker.evictGame(decodeURIComponent(evictMatch[1]!));
     writeJson(res, evicted ? 202 : 404, evicted ? { ok: true } : { error: "gameNotFound" });
+    return;
+  }
+  const fenceWinnerMatch = /^\/admin\/games\/([^/]+)\/fence-winner$/.exec(url.pathname);
+  if (method === "POST" && fenceWinnerMatch) {
+    const marker = url.searchParams.get("marker") ?? "fence-winner";
+    const root = await broker.writeFenceWinnerForTest(decodeURIComponent(fenceWinnerMatch[1]!), marker);
+    writeJson(res, 202, {
+      ok: true,
+      marker,
+      checkpointSeq: root?.checkpointSeq,
+    });
     return;
   }
   const runnerCrashMatch = /^\/admin\/runners\/([^/]+)\/crash$/.exec(url.pathname);
@@ -1830,6 +1925,19 @@ function validateBlobKey(key: string): StorageWriteResponse {
     return { ok: false, error: "storageUnavailable", detail: { message: "blob key exceeds 256 bytes" } };
   }
   return { ok: true };
+}
+
+function isFenceConflictResponse(response: StorageWriteResponse): boolean {
+  return (
+    !response.ok &&
+    response.error === "storageUnavailable" &&
+    isRecord(response.detail) &&
+    response.detail["code"] === "conditionalPutConflict"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function rawDataToString(data: RawData): string {

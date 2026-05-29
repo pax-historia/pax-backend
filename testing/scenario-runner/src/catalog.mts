@@ -408,6 +408,10 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
         requireString(value["reason"], path, `${prefix}.reason`);
       }
       return normalized;
+    case "inject-fence-winner":
+      requirePositiveNumber(value["targetGameCount"], path, `${prefix}.targetGameCount`);
+      requireString(value["marker"], path, `${prefix}.marker`);
+      return normalized;
     case "await-nemesis":
       requireOneOf(value["action"], path, `${prefix}.action`, [
         "kill-shard",

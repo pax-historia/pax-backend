@@ -10,20 +10,41 @@ export function blobDurability(history: readonly HistoryEvent[]): OracleResult {
   let observed = 0;
 
   for (const event of history) {
-    if (event.event !== "blob.put" && event.event !== "blob.get") continue;
+    if (
+      event.event !== "blob.put" &&
+      event.event !== "blob.get" &&
+      event.event !== "blob.delete" &&
+      event.event !== "state.fence.conflict" &&
+      event.event !== "state.fence.winner"
+    ) {
+      continue;
+    }
     observed += 1;
     const gameId = stringField(event, "gameId");
     if (!gameId) {
       findings.push(finding("missing-gameid", `${event.event} must include gameId`, event));
       continue;
     }
+    if (event.event === "state.fence.conflict" || event.event === "state.fence.winner") {
+      clearGame(hasSuccessfulWrite, gameId);
+      continue;
+    }
+    const key = stringField(event, "key");
+    if (!key) {
+      findings.push(finding("missing-key", `${event.event} must include key`, event));
+      continue;
+    }
     if (event.event === "blob.put" && booleanField(event, "ok") !== false) {
-      hasSuccessfulWrite.add(gameId);
+      hasSuccessfulWrite.add(blobScope(gameId, key));
+      continue;
+    }
+    if (event.event === "blob.delete") {
+      hasSuccessfulWrite.delete(blobScope(gameId, key));
       continue;
     }
     if (
       event.event === "blob.get" &&
-      hasSuccessfulWrite.has(gameId) &&
+      hasSuccessfulWrite.has(blobScope(gameId, key)) &&
       booleanField(event, "found") === false
     ) {
       findings.push(
@@ -33,4 +54,15 @@ export function blobDurability(history: readonly HistoryEvent[]): OracleResult {
   }
 
   return result(ORACLE, GUARANTEE, history, observed, findings);
+}
+
+function blobScope(gameId: string, key: string): string {
+  return `${gameId}\0${key}`;
+}
+
+function clearGame(values: Set<string>, gameId: string): void {
+  const prefix = `${gameId}\0`;
+  for (const value of values) {
+    if (value.startsWith(prefix)) values.delete(value);
+  }
 }

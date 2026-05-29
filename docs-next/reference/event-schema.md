@@ -129,6 +129,18 @@ planned sleep transition.
 | `gameId` | |
 | `reason` | sleep reason |
 
+### `game.stoodDown`
+
+The Broker stopped hosting a game because the storage root was advanced
+elsewhere and the local checkpoint hit the conditional PUT fence.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `runnerId` | Runner that had hosted the stale isolate |
+| `reason` | `'supersededByCheckpointConflict'` |
+| `operation` | checkpoint operation that hit the fence |
+
 ### `broker.start`
 
 A Broker process started on a shard. Shard-scoped (no `gameId`).
@@ -386,6 +398,29 @@ emits nothing.
 | `byteSize` | bytes written this checkpoint |
 | `trigger` | `'interval' \| 'flush' \| 'sleep'` |
 | `durationMs` | |
+
+### `state.fence.conflict`
+
+A checkpoint root PUT failed its conditional write because another owner
+advanced the durable root first. The stale Broker must stand down.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `operation` | checkpoint operation that attempted the root PUT |
+| `trigger?` | `'interval' \| 'flush' \| 'sleep'` |
+| `error` | adapter error message |
+
+### `state.fence.winner`
+
+Test/admin evidence that an alternate owner advanced a root to force a
+fencing race.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `marker` | test marker written into the winning root |
+| `checkpointSeq?` | winning root sequence |
 
 ### `state.restore`
 

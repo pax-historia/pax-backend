@@ -166,3 +166,33 @@ Verification:
 - `PAX_SCENARIO_SUITE_RUNTIMES=ivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
 - `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
 - `PAX_SCENARIO_SUITE_RUNTIMES=ivm PAX_SCENARIO_SUITE_SCENARIOS=checkpoint-durability-consistency PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+
+## 2026-05-29 07:57 PDT
+
+Completed Task 4's conditional-PUT fencing proof. Added an admin/test
+`/admin/games/:gameId/fence-winner` hook that writes a fresh state-store root
+through an independent session, emits `state.fence.winner`, and lets the active
+owner discover the stale root with the real conditional PUT guard. The Broker
+now records `state.fence.conflict`, returns a structured
+`conditionalPutConflict` storage response to the Runner, stands the superseded
+game down, releases its active directory claim, closes sessions, releases the
+Runner assignment, emits `game.stoodDown`, and preserves the winning root for
+cold wake.
+
+The scenario-runner has a matching `inject-fence-winner` workload phase. The new
+`conditional-put-fencing` scenario commits a base marker, leaves a stale dirty
+marker in the active owner, injects the independent winning root, forces the
+stale owner to flush and stand down, then reconnects and proves both state and
+blob reads observe the winner marker. Shared history, singleton, state
+durability, and blob durability oracles now understand the fence winner/conflict
+boundary so they do not treat the intentional supersession as data loss.
+
+Verification:
+
+- `pnpm --filter @pax-backend/oracles-lib check-types`
+- `pnpm --filter @pax-backend/broker check-types`
+- `pnpm --filter @pax-backend/scenario-runner check-types`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm,ivm PAX_SCENARIO_SUITE_SCENARIOS=conditional-put-fencing PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `pnpm typecheck`
+- `pnpm build:bundles`
+- `git diff --check`

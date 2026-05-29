@@ -16,7 +16,9 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
       event.event !== "state.read" &&
       event.event !== "state.flush" &&
       event.event !== "state.flush.plannedTransition" &&
-      event.event !== "state.checkpoint"
+      event.event !== "state.checkpoint" &&
+      event.event !== "state.fence.conflict" &&
+      event.event !== "state.fence.winner"
     ) {
       continue;
     }
@@ -28,6 +30,10 @@ export function stateDurability(history: readonly HistoryEvent[]): OracleResult 
     }
     if (event.event === "state.write" && booleanField(event, "ok") !== false) {
       hasSuccessfulWrite.add(gameId);
+      continue;
+    }
+    if (event.event === "state.fence.conflict" || event.event === "state.fence.winner") {
+      hasSuccessfulWrite.delete(gameId);
       continue;
     }
     if (

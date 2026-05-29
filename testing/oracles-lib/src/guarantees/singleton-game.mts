@@ -42,6 +42,7 @@ export function singletonGame(history: readonly HistoryEvent[]): OracleResult {
       event.event === "child.exit" ||
       event.event === "actor.stop" ||
       event.event === "game.released" ||
+      event.event === "game.stoodDown" ||
       event.event === "isolate.disposed"
     ) {
       const gameId = stringField(event, "gameId");
