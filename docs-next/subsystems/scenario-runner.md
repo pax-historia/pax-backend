@@ -287,7 +287,9 @@ is the M1+ release gate. The configured catalogs are first-party proof
 surfaces: the substrate catalog plus bundle proof catalogs such as
 `historia-default`. Suite-mode workload game IDs include a per-suite nonce so
 local release-gate reruns cannot observe stale Redis or Tigris-local state from
-earlier invocations.
+earlier invocations. The local suite wrapper also points each runtime at
+output-scoped history, API-record, and local Tigris paths so proof artifacts are
+self-contained.
 
 ## Trust position
 

@@ -34,7 +34,18 @@ for runtime in "${RUNTIME_LIST[@]}"; do
     continue
   fi
   cleanup
-  PAX_RUNNER_KIND="$runtime" "$REPO_ROOT/scripts/dev/local-up.sh"
+  runtime_output_root="$OUTPUT_ROOT/$runtime"
+  runtime_history_path="$runtime_output_root/history.jsonl"
+  runtime_api_records_path="$runtime_output_root/api-invoke-records.jsonl"
+  runtime_tigris_dir="$runtime_output_root/tigris-local"
+  mkdir -p "$runtime_output_root" "$runtime_tigris_dir"
+  : > "$runtime_history_path"
+  : > "$runtime_api_records_path"
+  PAX_RUNNER_KIND="$runtime" \
+    PAX_HISTORY_PATH="$runtime_history_path" \
+    PAX_API_WIRE_RECORDS_PATH="$runtime_api_records_path" \
+    PAX_LOCAL_TIGRIS_DIR="$runtime_tigris_dir" \
+    "$REPO_ROOT/scripts/dev/local-up.sh"
   for catalog in "${CATALOG_LIST[@]}"; do
     catalog="$(printf '%s' "$catalog" | xargs)"
     if [[ -z "$catalog" ]]; then

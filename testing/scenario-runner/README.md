@@ -89,7 +89,8 @@ PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios,examples/bundles/historia-default/
 
 The script restarts the local stack once with `PAX_RUNNER_KIND=ivm` and
 once with `PAX_RUNNER_KIND=noivm`, then invokes suite mode for each
-catalog. Output directories use a sanitized catalog path so catalogs with the
+catalog. Each runtime gets output-scoped history, API-record, and local Tigris
+paths, and output directories use a sanitized catalog path so catalogs with the
 same basename do not collide. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`,
 `PAX_SCENARIO_SUITE_NEMESES`, or `PAX_SCENARIO_SUITE_ORACLES` when iterating
 locally. CI uses the same contract.
