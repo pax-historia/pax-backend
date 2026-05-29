@@ -16,3 +16,12 @@ from Rivet / parent actor / per-game child process to a trusted per-shard
 Broker, credential-less Runner pool, async `c.*` bridge, and Broker-owned
 one-state-object state store. The first task is a surface audit that turns this
 new target into concrete code edits before implementation starts.
+
+The audit found the old runtime assumptions spread across the expected
+surfaces: `runtime/parent-actor`, `runtime/child-runner-*`, `runtime/shard-image`,
+`shared/ipc-protocol`, `orchestration/placement-router`, control-plane host-event
+helpers, scenario-runner and smoke-bot Rivet subprotocols, Fly TOML/env, Vector
+metric sources, local dev scripts, and vendor build scripts. The next work is
+not a small rename: the code needs a production-shaped Broker, Runner pool,
+async IPC contract, and state-store path before Phase 7 can typecheck against
+the new `docs-next/` target.
