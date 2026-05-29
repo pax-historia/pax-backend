@@ -28,6 +28,7 @@ case_prefix="${RUNTIME}-${SCENARIO_ID}-${RUNG_ID}"
 expected_case_ids="${case_prefix}-no-faults,${case_prefix}-shard-death-every-5m,${case_prefix}-api-kind-partition-burst"
 expected_phases="seed-fixtures,open-sessions,send-json,close-sessions,expect-history-events"
 expected_min_case_duration_ms=28800000
+# The 8-hour hold is 480 one-minute waves; the final 30s fanout completes just under 28,800,000 ms.
 expected_min_hold_duration_ms=28700000
 
 pnpm exec tsx scripts/fly/summarize-soak.mts \
