@@ -101,3 +101,34 @@ meaningful when more than one shard machine can receive an initial upgrade.
 Validation: scenario-runner's `loadScaleLadderPlan` successfully loaded the new
 plan, `pnpm --filter @pax-backend/scenario-runner check-types` passed, and
 `git diff --check` passed.
+
+## 2026-05-29 03:53 PDT
+
+Bootstrap and deploy health are complete for the Phase 9 Fly topology:
+
+- `scripts/bootstrap/spin-up.sh` converged idempotently against the existing
+  `pax-backend` Fly org, Tigris bucket, Upstash Redis directory, and Infisical
+  `dev` project. Secret drift verification passed, including Better Stack
+  source token and ingest host checks, without printing secret values.
+- Built and deployed the control image
+  `pax-backend-control:deployment-01KSSN2QRCRXGV9YDWDTHP9XQM`; both control
+  machines are started with all three Fly checks passing.
+- Built and deployed the driver image
+  `pax-backend-driver:deployment-01KSSN6HB5G6K59GKJF8Y8QRAH`. Driver machines
+  remain stopped until the scenario proof run needs them.
+- Built the shard image
+  `pax-backend-shards:deployment-01KSSN7ZQ6FNS45WJ7EBZ47DTF`. `fly deploy`
+  could not replace the old stopped shard machines non-interactively because
+  they still carried Phase 5 RocksDB volumes, so created three fresh explicit
+  Machines-config Broker machines instead, then destroyed the ten stale
+  volume-backed machines and their obsolete `pax_backend_rocks` volumes. The
+  shard app now has exactly three started machines, no volumes, service port
+  7700, and all TCP checks passing.
+- Live length-only env checks on one control machine and one shard machine show
+  `BETTERSTACK_SOURCE_TOKEN`, `BETTERSTACK_INGESTING_HOST`, `REDIS_URL`, and
+  `AWS_ACCESS_KEY_ID` are present. Values were not printed.
+- The first shard start surfaced `PAX_BROKER_BIND=:::7700` as invalid for the
+  Broker bind parser. Fixed Fly config and `scale-shards.sh` to use
+  `0.0.0.0:7700`, updated the live shard machines, and verified public
+  `https://pax-backend-shards.fly.dev/healthz` returns healthy Broker capacity
+  with private per-machine admin URLs.
