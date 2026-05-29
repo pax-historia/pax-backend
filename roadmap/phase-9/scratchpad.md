@@ -230,3 +230,53 @@ The scale plan contains both Phase 9 cases. It runs `no-faults` first, then
 and Task 6 can close if the second case also passes. Initial `/admin/shards`
 from the driver showed active games already distributed evenly, two per shard
 at the first check.
+
+## 2026-05-29 05:26 PDT
+
+The first topology run at
+`/data/phase-9/topology/ivm-20260529T114309Z` was stopped after it proved the
+no-fault sustained window but before it could become Task 5 evidence. It opened
+100 games across all three shards, held `send-json` for 1,770,375 ms, closed
+100 sessions normally with code `1000` / `scenarioComplete`, and had zero
+workload session errors. The final workload phase then failed because
+`expect-history-events` polled the control-plane-local `/admin/history` file,
+which does not contain Broker shard history on Fly until the post-workload
+Tigris archive append runs.
+
+Two fixes were committed before rerunning:
+
+- `b45a512` changes planned Broker drain to match
+  `docs-next/subsystems/redeploy-and-drain.md`: it stops accepting new wakes
+  but does not sleep active connected games. This prevents the
+  `shard-death-every-5m` drain profile from closing steady-state sockets.
+- `fc5de53` and `c76aba4` let scale runs select nemeses and default scale-profile
+  live history checks to delayed mode, so post-run archive/control-plane history
+  append feeds the replay/oracle step instead of a premature control-plane-only
+  poll.
+
+Built and deployed patched images:
+
+- shards:
+  `registry.fly.io/pax-backend-shards:deployment-planned-drain-20260529121004`
+- driver:
+  `registry.fly.io/pax-backend-driver:deployment-scale-history-delay-20260529122225`
+
+All three shard machines and the active driver machine passed checks after the
+image updates. Private shard metrics were reachable from the driver, and
+`/admin/shards` showed all three shards healthy/accepting with zero active
+games before relaunch.
+
+Fresh detached run:
+
+- remote dir: `/data/phase-9/topology/ivm-20260529T122658Z`
+- driver PID: `806`
+- monitor PID: `807`
+- command: `phase9-topology.mts` rung `100g-3shards-30m-topology`
+- runtime: `ivm`
+- oracles: `scenario`
+- history profile: `PAX_SCENARIO_HISTORY_PROFILE=scale`
+- live history wait: `PAX_SCENARIO_EXPECT_HISTORY_MODE=delay`
+
+Initial status line at `20260529T122658Z` showed the run alive with zero
+failures; the no-fault case had started placement and reached 13 placements by
+the first spot check.
