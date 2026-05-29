@@ -452,3 +452,12 @@ the 100-games-per-shard IVM steady-state profile can still push the child path
 past memory warning and CPU tick limits, stall websocket sends, trip gateway
 service timeouts, and temporarily remove the shard from the control-plane
 registry.
+
+Applied the first targeted fix for this failure family. The parent actor was
+reporting `memory-bytes` from the shard parent process RSS, not from the
+per-game child process RSS. At 100 games per shard, that made every child see
+the shared parent process crossing the 128 MiB budget and receive repeated
+`onCapacityWarning` handlers during steady-state traffic. `memory-bytes` now
+reads `/proc/<child-pid>/statm` for the child RSS and falls back to `0` when the
+child is unavailable or procfs cannot be read. Verification:
+`pnpm --filter @pax-backend/parent-actor check-types` and `git diff --check`.
