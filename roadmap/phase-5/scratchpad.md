@@ -284,3 +284,7 @@ Corrected the Better Stack credential shape. The user-provided value was a valid
 Applied the `PAX_OBSERVABILITY=on` configs with the existing Fly images, then cleaned every shard volume's stale `/data/observability/*.jsonl` files. Disk baseline is now 2-3% used per 20 GB shard volume with zero local observability JSONL files. The deploy briefly reset every shard machine's per-machine env to `PAX_SHARD_ID=shard-fly-iad-1`; reran `PAX_SHARD_CHILD_RUNNER_KIND=ivm scripts/fly/scale-shards.sh 10`, which restored distinct `shard-fly-iad-1` through `shard-fly-iad-10` identities and internal machine URLs.
 
 Preflight is green again after clearing the stale drain flag on `shard-fly-iad-2`: `/admin/shards` reports 10 healthy accepting shards, `totalActive=0`, and all control/router/gateway plus per-shard parent `:7700/metrics` and engine `:6430/metrics` endpoints answer from the driver. The next retry can start from a clean registry and disk baseline.
+
+## 2026-05-28 17:55 PDT
+
+Launched the next detached heartbeat `ivm` retry at `/data/phase-5/soak/ivm-20260529T005416Z`. The run wrapper is PID 968 and the detached monitor is PID 1007. The first monitor snapshot at `2026-05-29T00:55:32.626Z` found the process alive, no `exit.code`, the no-faults history started in `seed-fixtures`, and all 10 shards healthy, accepting wakes, and empty.
