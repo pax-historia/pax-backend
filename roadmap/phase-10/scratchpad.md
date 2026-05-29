@@ -234,3 +234,29 @@ Verification:
 - `pnpm typecheck`
 - `pnpm build:bundles`
 - `git diff --check`
+
+## 2026-05-29 08:35 PDT
+
+Completed Task 6's `historia-default` checkpoint revalidation. The first
+focused no-fault pass showed 9/10 scenarios green and isolated one oracle bug:
+`host-event-durability` keyed durable receipts by payload fingerprint, but
+`onHostEvent.delivered` correctly carries the durable `eventId` and does not
+repeat the payload. Updated the oracle to prefer `eventId`, which matches the
+control-plane receipt to the Broker delivery without weakening the delivery
+attempt checks.
+
+After that fix, the full ten-scenario catalog passed under all four nemeses on
+both runtimes with the local checkpoint interval and retained checkpoint chain
+enabled. Proof matrix:
+
+- `noivm`: 40 total, 40 passed, 0 failed, 0 errored
+- `ivm`: 40 total, 40 passed, 0 failed, 0 errored
+
+Verification:
+
+- `pnpm --filter @pax-backend/oracles-lib check-types`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_CATALOGS=examples/bundles/historia-default/scenarios PAX_SCENARIO_SUITE_NEMESES=no-faults PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm,ivm PAX_SCENARIO_SUITE_CATALOGS=examples/bundles/historia-default/scenarios PAX_SCENARIO_SUITE_NEMESES=all PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `pnpm typecheck`
+- `pnpm build:bundles`
+- `git diff --check`

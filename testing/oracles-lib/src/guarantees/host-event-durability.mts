@@ -65,6 +65,8 @@ export function hostEventDurability(history: readonly HistoryEvent[]): OracleRes
 }
 
 function hostEventKey(event: HistoryEvent, gameId: string, eventType: string): string {
+  const eventId = stringField(event, "eventId");
+  if (eventId) return `${gameId}\0${eventType}\0${eventId}`;
   return `${gameId}\0${eventType}\0${stableFingerprint(event["payload"])}`;
 }
 
