@@ -40,7 +40,7 @@ for runtime in "${RUNTIME_LIST[@]}"; do
     if [[ -z "$catalog" ]]; then
       continue
     fi
-    catalog_name="$(basename "$catalog")"
+    catalog_name="$(printf '%s' "$catalog" | sed -E 's#^\./##; s#[^A-Za-z0-9._-]+#-#g; s#^-+|-+$##g')"
     output_dir="$OUTPUT_ROOT/$runtime/$catalog_name"
     pnpm exec tsx testing/scenario-runner/src/cli.mts \
       --suite "$catalog" \

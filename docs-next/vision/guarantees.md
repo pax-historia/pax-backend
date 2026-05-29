@@ -59,8 +59,10 @@ Those properties are real and important. They're not the substrate's job.
   declared oracle set plus scenario-local oracles. A selected oracle failure
   on **any** scenario fails CI.
 - The smoke-bot vertical test is M0 only — the actual release gate is the
-  scenario-selected oracle suite on the canonical `testing/scenarios`
-  catalog across both Runner kinds (ivm, noivm) and every nemesis profile.
+  scenario-selected oracle suite on the configured first-party catalogs,
+  currently `testing/scenarios` plus
+  `examples/bundles/historia-default/scenarios`, across both Runner kinds
+  (ivm, noivm) and every nemesis profile.
 
 See [`subsystems/scenario-runner.md`](../subsystems/scenario-runner.md) for
 mechanics.

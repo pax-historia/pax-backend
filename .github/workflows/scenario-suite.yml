@@ -1,7 +1,7 @@
 # Full adversarial scenario-suite release gate.
 #
 # Boots the local substrate stack for each child runtime and runs the
-# first-party scenario catalog against every nemesis profile. Result JSON,
+# first-party scenario catalogs against every nemesis profile. Result JSON,
 # histories, and local service logs are uploaded for failed runs.
 name: scenario-suite
 
@@ -73,7 +73,7 @@ jobs:
         env:
           PAX_SCENARIO_SUITE_OUTPUT_ROOT: var/scenario-suite
           PAX_SCENARIO_SUITE_RUNTIMES: ivm,noivm
-          PAX_SCENARIO_SUITE_CATALOGS: testing/scenarios
+          PAX_SCENARIO_SUITE_CATALOGS: testing/scenarios,examples/bundles/historia-default/scenarios
           PAX_SCENARIO_SUITE_NEMESES: all
           PAX_SCENARIO_SUITE_ORACLES: scenario
           PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS: "60000"

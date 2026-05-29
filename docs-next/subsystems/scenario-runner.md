@@ -272,23 +272,22 @@ ladder writes `scale-ladder.result.json`.
 
 ```yaml
 # .github/workflows/scenario-suite.yml
-strategy:
-  matrix:
-    runtime: [ivm, noivm]
 steps:
-  - run: PAX_RUNNER_KIND=${{ matrix.runtime }} ./scripts/dev/local-up.sh
-  - run: |
-      pnpm exec tsx testing/scenario-runner/src/cli.mts \
-        --suite testing/scenarios \
-        --runtime ${{ matrix.runtime }} \
-        --nemeses all \
-        --oracles scenario \
-        --output-dir var/scenario-suite/${{ matrix.runtime }}/testing
+  - run: ./scripts/test/scenario-suite-local.sh
+    env:
+      PAX_SCENARIO_SUITE_RUNTIMES: ivm,noivm
+      PAX_SCENARIO_SUITE_CATALOGS: testing/scenarios,examples/bundles/historia-default/scenarios
+      PAX_SCENARIO_SUITE_NEMESES: all
+      PAX_SCENARIO_SUITE_ORACLES: scenario
 ```
 
 Any oracle failure exits non-zero. The smoke bot
 (`testing/smoke-bot/`) is the M0 vertical smoke gate; the scenario suite
-is the M1+ release gate.
+is the M1+ release gate. The configured catalogs are first-party proof
+surfaces: the substrate catalog plus bundle proof catalogs such as
+`historia-default`. Suite-mode workload game IDs include a per-suite nonce so
+local release-gate reruns cannot observe stale Redis or Tigris-local state from
+earlier invocations.
 
 ## Trust position
 

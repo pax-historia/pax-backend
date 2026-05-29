@@ -76,19 +76,23 @@ pnpm exec tsx testing/scenario-runner/src/cli.mts \
 
 `--nemeses all` discovers every `testing/nemeses/*/fault-profile.mts`; use a
 comma-separated list such as `--nemeses no-faults,shard-death-every-5m` to
-pin the matrix. `--scenarios` can likewise narrow the catalog.
+pin the matrix. `--scenarios` can likewise narrow the catalog. Each suite
+invocation salts workload game IDs with the suite start timestamp, so repeated
+local runs do not collide with prior Redis or Tigris-local state.
 
 For the local runtime matrix:
 
 ```bash
-PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios \
+PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios,examples/bundles/historia-default/scenarios \
   scripts/test/scenario-suite-local.sh
 ```
 
 The script restarts the local stack once with `PAX_RUNNER_KIND=ivm` and
 once with `PAX_RUNNER_KIND=noivm`, then invokes suite mode for each
-catalog. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`, `PAX_SCENARIO_SUITE_NEMESES`,
-or `PAX_SCENARIO_SUITE_ORACLES` when iterating locally. CI uses the same contract.
+catalog. Output directories use a sanitized catalog path so catalogs with the
+same basename do not collide. Narrow it with `PAX_SCENARIO_SUITE_SCENARIOS`,
+`PAX_SCENARIO_SUITE_NEMESES`, or `PAX_SCENARIO_SUITE_ORACLES` when iterating
+locally. CI uses the same contract.
 
 ## Scale ladder mode
 

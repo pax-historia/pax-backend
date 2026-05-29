@@ -17,6 +17,7 @@ export async function runScenarioSuite(
   input: ScenarioSuiteRunnerInput,
 ): Promise<ScenarioSuiteResult> {
   const startedAtMs = Date.now();
+  const suiteRunNonce = safeCaseId(String(startedAtMs));
   const scenarioCatalogDir = resolve(input.scenarioCatalogDir ?? "testing/scenarios");
   const nemesisCatalogDir = resolve(input.nemesisCatalogDir ?? "testing/nemeses");
   const outputDir = resolve(input.outputDir);
@@ -50,7 +51,9 @@ export async function runScenarioSuite(
           nemesisId,
           scenarioCatalogDir,
           nemesisCatalogDir,
-          workloadGameIdPrefix: safeCaseId(`${scenarioId}-${nemesisId}-${input.runtimeKind}`),
+          workloadGameIdPrefix: safeCaseId(
+            `${scenarioId}-${nemesisId}-${input.runtimeKind}-${suiteRunNonce}`,
+          ),
           controlPlaneUrl: input.controlPlaneUrl,
           apiGatewayUrl: input.apiGatewayUrl,
           routerUrl: input.routerUrl,
