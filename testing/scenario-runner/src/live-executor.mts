@@ -727,7 +727,9 @@ async function expectHistoryEvents(
   events: readonly string[],
   minimumPerGame: number,
 ): Promise<void> {
-  const waitMode = process.env["PAX_SCENARIO_EXPECT_HISTORY_MODE"] ?? "control-plane";
+  const waitMode =
+    process.env["PAX_SCENARIO_EXPECT_HISTORY_MODE"] ??
+    (process.env["PAX_SCENARIO_HISTORY_PROFILE"] === "scale" ? "delay" : "control-plane");
   if (waitMode === "delay") {
     const delayMs = parsePositiveInt(
       process.env["PAX_SCENARIO_EXPECT_HISTORY_DELAY_MS"],
