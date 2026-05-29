@@ -678,3 +678,12 @@ remote monitor line at `20260529T072308Z` had the wrapper alive, no
 closes, zero session errors, zero capacity warnings, and zero budget rejects.
 The no-fault replay history remained 1006 lines / 435,476 bytes during the
 hold, as expected before the post-case archive/control-plane append.
+
+## 2026-05-29 00:46 PDT
+
+The late no-fault hold checkpoint is still clean. Monitor snapshots through
+`20260529T074308Z` show the wrapper alive with no `exit.code`, 1000 placements,
+zero workload failures, zero runner-side session closes, zero session errors,
+zero capacity warnings, and zero budget rejects. The no-fault local replay
+history is still 1006 lines / 435,476 bytes; the memory-fix proof point remains
+the upcoming close/history/replay transition after the one-hour hold completes.
