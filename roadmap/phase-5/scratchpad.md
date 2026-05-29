@@ -642,3 +642,20 @@ shards healthy and accepting with 61-63 active games each. The local replay
 history file was 617 lines / 266,928 bytes at that point, which confirms the
 new run is not accumulating the prior Vector-envelope-shaped archive bloat
 during placement.
+
+## 2026-05-29 00:05 PDT
+
+The scale-history retry reached target density. The no-fault case completed
+`open-sessions` at `2026-05-29T07:04:50.079Z` after 1,574,208 ms and entered
+`send-json` with 1000 placements. The registry showed all 10 shards healthy and
+accepting with exactly 1000 active games distributed 99-102 per shard:
+`shard-fly-iad-1=100`, `-2=102`, `-3=101`, `-4=99`, `-5=100`, `-6=99`,
+`-7=99`, `-8=100`, `-9=100`, `-10=100`. The runner history was still only
+1,006 lines / 435,476 bytes at target density.
+
+Checked the shard-local `/data/history/history.jsonl` files for the current
+run prefix (`chat-steady-state-1000g-10shards-ivm-no-faults-1780036690610`);
+all 10 shard machines reported `onCapacityWarning.sent=0` and
+`compute.budget.rejected=0`. This repeats the direct child-RSS validation at
+target density while the new scale history profile keeps the driver artifact
+bounded.
