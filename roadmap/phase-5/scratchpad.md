@@ -314,3 +314,9 @@ Fifth detached monitor snapshot landed at `2026-05-29T01:15:33.150Z`. The run re
 Sixth detached monitor snapshot landed at `2026-05-29T01:20:33.272Z`. The run remained alive with no `exit.code`; no-faults was still in `open-sessions` with 966 monitor placements across all 10 shards, zero workload failures, zero session closes, zero session errors, and 10 healthy accepting shards with 965 active games.
 
 The local pull immediately after caught the target transition: 1000 placements across all 10 shards, `open-sessions` completed after 1,530,038 ms, `send-json` started, and the in-progress summary remained `gates_ok=true`. A direct control-plane registry snapshot then showed 10 accepting shards, `total_active_games=1000`, and 99-102 active games per shard.
+
+## 2026-05-28 18:26 PDT
+
+Seventh detached monitor snapshot landed at `2026-05-29T01:25:33.345Z`. The run remained alive with no `exit.code`; no-faults was in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported seven clean monitor snapshots, 1000 placements across all 10 shards, and `gates_ok=true`.
+
+Post-hold-entry spot checks stayed clean. All 10 shard volumes were still 3% used with `/data/observability` at 4096 bytes and zero local JSONL files. A driver-side metrics sweep passed for control `:9070`, router `:9080`, gateway `:9081`, and parent `:7700` plus engine `:6430` on every shard machine.
