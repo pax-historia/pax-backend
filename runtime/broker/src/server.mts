@@ -217,12 +217,29 @@ function bundleSourceStoreFromEnv(env: NodeJS.ProcessEnv): LocalBundleSourceStor
 }
 
 function parseBind(value: string): { readonly host: string; readonly port: number } {
-  const [host, rawPort] = value.includes(":") ? value.split(":") : ["0.0.0.0", value];
+  const parsed = parseHostPort(value);
+  const host = parsed.host;
+  const rawPort = parsed.port;
   const port = Number.parseInt(rawPort ?? "", 10);
   if (!host || !Number.isFinite(port) || port <= 0) {
     throw new Error(`invalid bind address: ${value}`);
   }
   return { host, port };
+}
+
+function parseHostPort(value: string): { readonly host: string; readonly port: string } {
+  if (value.startsWith("[")) {
+    const closeBracket = value.indexOf("]");
+    const host = closeBracket > 0 ? value.slice(1, closeBracket) : "";
+    const separator = value.slice(closeBracket + 1, closeBracket + 2);
+    const port = value.slice(closeBracket + 2);
+    return { host, port: separator === ":" ? port : "" };
+  }
+  const separator = value.lastIndexOf(":");
+  if (separator < 0) return { host: "0.0.0.0", port: value };
+  const host = value.slice(0, separator);
+  if (host.includes(":")) return { host: "", port: "" };
+  return { host, port: value.slice(separator + 1) };
 }
 
 function parseRuntimeContracts(value: string | undefined): readonly [number, number] {

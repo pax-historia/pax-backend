@@ -74,7 +74,7 @@ normalize_machine_env() {
     --env "PAX_SHARD_ID=$shard_id"
     --env "PAX_SHARD_PUBLIC_URL=$internal_url"
     --env "PAX_SHARD_PUBLIC_WS_URL=$public_ws_url"
-    --env "PAX_BROKER_BIND=0.0.0.0:7700"
+    --env "PAX_BROKER_BIND=[::]:7700"
     --env "PAX_BROKER_WS_PATH=/gateway"
     --env "PAX_RUNNER_KIND=$RUNNER_KIND"
     --yes
@@ -108,7 +108,7 @@ create_machine_config() {
     | del(.mounts)
     | .env.PAX_SHARD_PUBLIC_URL = ("https://" + $app + ".fly.dev")
     | .env.PAX_SHARD_PUBLIC_WS_URL = ("https://" + $app + ".fly.dev")
-    | .env.PAX_BROKER_BIND = "0.0.0.0:7700"
+    | .env.PAX_BROKER_BIND = "[::]:7700"
     | .env.PAX_BROKER_WS_PATH = "/gateway"
   ' <<<"$source_machine" > "$output_path"
 }
