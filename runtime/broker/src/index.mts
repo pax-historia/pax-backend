@@ -145,7 +145,7 @@ export interface BrokerGatewayInvokeInput extends ApiInvokeRequest {
 export interface BrokerCapacityRow {
   readonly shardId: string;
   readonly url: string;
-  readonly status: "healthy" | "draining" | "unhealthy";
+  readonly status: "healthy" | "draining" | "drained" | "unhealthy";
   readonly healthy: boolean;
   readonly acceptingWakes: boolean;
   readonly runtimeContractsSupported: readonly [number, number];
@@ -231,6 +231,8 @@ interface GameBudgetState {
 export class Broker {
   private started = false;
   private acceptingWakes = true;
+  private drainRequested = false;
+  private drainCompleted = false;
   private readonly games = new Map<string, BrokerGame>();
   private readonly budgetLimits: BrokerBudgetLimits;
   private capacityHeartbeat?: NodeJS.Timeout;
@@ -245,6 +247,8 @@ export class Broker {
   async start(): Promise<void> {
     this.started = true;
     this.acceptingWakes = true;
+    this.drainRequested = false;
+    this.drainCompleted = false;
     await this.publishCapacity();
     this.startCapacityHeartbeat();
     await this.writeHistory({
@@ -256,6 +260,8 @@ export class Broker {
 
   async stop(): Promise<void> {
     this.acceptingWakes = false;
+    this.drainRequested = false;
+    this.drainCompleted = false;
     this.stopCapacityHeartbeat();
     await this.publishCapacity();
     await Promise.all([...this.games.values()].map((game) => this.releaseGame(game, "shutdown")));
@@ -271,15 +277,18 @@ export class Broker {
 
   async requestDrain(reason = "admin"): Promise<void> {
     this.acceptingWakes = false;
+    this.drainRequested = true;
+    this.drainCompleted = false;
     await this.publishCapacity();
-    await this.writeHistory({ event: "broker.drain.started", reason });
-    await Promise.all([...this.games.values()].map((game) => this.sleepGame(game, "shardEvicted")));
-    await this.writeHistory({ event: "broker.drain.completed", reason });
+    await this.writeHistory({ event: "broker.drain.started", reason, activeGames: this.games.size });
+    await this.maybeWriteDrainCompleted(reason);
   }
 
   async resumeWakes(reason = "admin"): Promise<void> {
     this.ensureStarted();
     this.acceptingWakes = true;
+    this.drainRequested = false;
+    this.drainCompleted = false;
     await this.publishCapacity();
     await this.writeHistory({ event: "broker.drain.cancelled", reason });
   }
@@ -676,10 +685,17 @@ export class Broker {
   snapshotCapacity(): BrokerCapacityRow {
     const activeGames = this.games.size;
     const hardLimit = Math.floor(this.config.capacity.maxActiveGames * this.config.capacity.hardWatermarkPct);
+    const status = !this.started
+      ? "unhealthy"
+      : this.drainRequested
+        ? activeGames === 0
+          ? "drained"
+          : "draining"
+        : "healthy";
     return {
       shardId: this.config.shardId,
       url: this.config.publicUrl,
-      status: this.started ? "healthy" : "unhealthy",
+      status,
       healthy: this.started,
       acceptingWakes: this.acceptingWakes && activeGames < hardLimit,
       runtimeContractsSupported: this.config.runtimeContractsSupported,
@@ -906,6 +922,7 @@ export class Broker {
       checkpointOk: response.ok,
     });
     await this.publishCapacity();
+    await this.maybeWriteDrainCompleted(reason);
   }
 
   private closeSessions(game: BrokerGame, reason: string): void {
@@ -1470,6 +1487,12 @@ export class Broker {
 
   private async publishCapacity(): Promise<void> {
     await this.deps.directory.publishCapacity(this.snapshotCapacity());
+  }
+
+  private async maybeWriteDrainCompleted(reason: string): Promise<void> {
+    if (!this.drainRequested || this.drainCompleted || this.games.size > 0) return;
+    this.drainCompleted = true;
+    await this.writeHistory({ event: "broker.drain.completed", reason, activeGames: 0 });
   }
 
   private startCapacityHeartbeat(): void {
