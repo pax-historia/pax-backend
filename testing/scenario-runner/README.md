@@ -119,6 +119,12 @@ vendored-engine metric-family allowlist to keep 24-hour soaks bounded. Override
 cadence with `--metrics-scrape-interval-ms` when a short local run needs denser
 samples.
 
+After each live case, the runner appends archived and control-plane history
+before running oracles. Control-plane history is fetched with bounded concurrency
+so 1000-game rungs do not pay a fully serial post-run tail; tune it with
+`PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY` when the control plane needs a lower
+or higher request fanout.
+
 By default the collector uses one parent and one vendored-engine endpoint. For
 multi-shard rungs, set `PAX_PARENT_METRICS_URLS` and `PAX_RIVET_METRICS_URLS` to
 comma-separated `label=url` entries so `metrics.per_surface` keeps each shard's

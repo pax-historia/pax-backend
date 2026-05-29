@@ -43,6 +43,7 @@ export interface ControlPlaneHistoryInput {
   readonly startedAtMs: number;
   readonly finishedAtMs: number;
   readonly windowPaddingMs?: number;
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 export async function appendArchivedHistory(input: ArchivedHistoryInput): Promise<ArchivedHistoryCollection> {
@@ -119,17 +120,21 @@ export async function appendControlPlaneHistory(
   if (!input.controlPlaneUrl) {
     return controlPlaneDisabled("control-plane URL is required");
   }
+  const controlPlaneUrl = input.controlPlaneUrl;
+  const env = input.env ?? process.env;
+  const concurrency = Math.max(
+    1,
+    positiveInt(env["PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY"], 16),
+  );
   const paddingMs = input.windowPaddingMs ?? 1_000;
   const from = new Date(input.startedAtMs - paddingMs).toISOString();
   const to = new Date(input.finishedAtMs + paddingMs).toISOString();
   const existing = loadExistingEventKeys(input.historyPath);
   const events: HistoryEvent[] = [];
   try {
-    for (const gameId of input.gameIds) {
-      events.push(
-        ...(await fetchControlPlaneHistory(input.controlPlaneUrl, gameId, from, to)),
-      );
-    }
+    await forEachConcurrent(input.gameIds, concurrency, async (gameId) => {
+      events.push(...(await fetchControlPlaneHistory(controlPlaneUrl, gameId, from, to)));
+    });
   } catch (err) {
     return controlPlaneDisabled(err instanceof Error ? err.message : String(err));
   }
@@ -206,6 +211,25 @@ async function fetchControlPlaneHistory(
     cursor = typeof body["nextCursor"] === "number" ? body["nextCursor"] : null;
   } while (cursor !== null);
   return events;
+}
+
+async function forEachConcurrent<T>(
+  values: readonly T[],
+  concurrency: number,
+  fn: (value: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, values.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= values.length) return;
+        await fn(values[index] as T);
+      }
+    }),
+  );
 }
 
 async function listHistoryObjects(

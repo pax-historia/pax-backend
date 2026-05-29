@@ -563,3 +563,16 @@ snapshots through `20260529T060452Z`: wrapper alive, 1000 placements across all
 failures, zero runner-side session closes, zero capacity warnings, zero budget
 rejects, and no history or monitor parse errors. This is still short
 target-density validation, not the 24-hour exit soak.
+
+## 2026-05-28 23:29 PDT
+
+The no-fault validation workload completed its one-hour `send-json` hold and
+closed the 1000 sessions normally, then entered the post-workload
+`expect-history-events` gate. While waiting for the case result to be written,
+found that the runner's control-plane history append path still fetched one
+game at a time after each live case. Updated it to use bounded concurrency
+(`PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY`, default 16) and documented the knob
+in `testing/scenario-runner/README.md`; this should reduce the post-case tail
+for future 1000-game and 24-hour runs without changing oracle semantics.
+Verification: `pnpm --filter @pax-backend/scenario-runner check-types` and
+`git diff --check`.
