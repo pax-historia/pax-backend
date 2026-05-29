@@ -23,6 +23,7 @@ import {
   type BrokerToRunnerEnvelope,
   type ComputeBudgetSnapshot,
   type ConnectedSessionSnapshot,
+  type HostEventRecord,
   type OnSleepPayload,
   type RunnerToBrokerEnvelope,
   type RuntimeHandlerName,
@@ -104,6 +105,9 @@ export interface BrokerDependencies {
   };
   readonly gateway: {
     invoke(input: BrokerGatewayInvokeInput): Promise<ApiGatewayInvokeResult>;
+  };
+  readonly hostEvents?: {
+    drain(gameId: string): Promise<readonly HostEventRecord[]>;
   };
   readonly bundles?: {
     resolveForGame(gameId: string): Promise<BrokerWakeInput | undefined>;
@@ -333,6 +337,7 @@ export class Broker {
       blobCompatTag: game.blobCompatTag,
       state: decodeJsonState(stateBytes),
     });
+    await this.deliverQueuedHostEvents(game);
     await this.publishCapacity();
   }
 
@@ -559,6 +564,13 @@ export class Broker {
     }
   }
 
+  async deliverQueuedHostEventsForGame(gameId: string): Promise<number> {
+    this.ensureStarted();
+    const game = this.games.get(gameId) ?? await this.ensureGameForConnection(gameId);
+    if (!game) return 0;
+    return await this.deliverQueuedHostEvents(game);
+  }
+
   snapshotCapacity(): BrokerCapacityRow {
     const activeGames = this.games.size;
     const hardLimit = Math.floor(this.config.capacity.maxActiveGames * this.config.capacity.hardWatermarkPct);
@@ -619,6 +631,32 @@ export class Broker {
     if (!wake) return undefined;
     await this.wakeGame(wake);
     return this.games.get(gameId);
+  }
+
+  private async deliverQueuedHostEvents(game: BrokerGame): Promise<number> {
+    const records = await this.deps.hostEvents?.drain(game.gameId) ?? [];
+    for (const record of records) {
+      await this.deliverHostEventRecord(game, record);
+    }
+    return records.length;
+  }
+
+  private async deliverHostEventRecord(game: BrokerGame, record: HostEventRecord): Promise<void> {
+    await this.invokeGameHandler(game, "onHostEvent", {
+      eventType: record.eventType,
+      payload: record.payload,
+      receivedAt: record.receivedAt,
+      eventId: record.eventId,
+      deliveryAttempts: record.deliveryAttempts,
+    });
+    await this.writeHistory({
+      event: "onHostEvent.delivered",
+      gameId: game.gameId,
+      eventId: record.eventId,
+      eventType: record.eventType,
+      wakeOnDelivery: record.wakeOnDelivery,
+      deliveryAttempts: record.deliveryAttempts,
+    });
   }
 
   private attachWebSocketHandlers(session: BrokerSession): void {
@@ -1122,6 +1160,12 @@ async function handleBrokerAdminRequest(
   if (method === "POST" && url.pathname === "/admin/drain") {
     await broker.requestDrain("admin-http");
     writeJson(res, 202, broker.healthSnapshot());
+    return;
+  }
+  const hostEventsDrainMatch = /^\/admin\/games\/([^/]+)\/host-events\/drain$/.exec(url.pathname);
+  if (method === "POST" && hostEventsDrainMatch) {
+    const delivered = await broker.deliverQueuedHostEventsForGame(decodeURIComponent(hostEventsDrainMatch[1]!));
+    writeJson(res, 202, { ok: true, delivered });
     return;
   }
   const evictMatch = /^\/admin\/games\/([^/]+)\/evict$/.exec(url.pathname);

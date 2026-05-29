@@ -7,10 +7,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Redis } from "ioredis";
-import WebSocket from "ws";
 
 import { startPaxNodeTelemetry } from "@pax-backend/node-telemetry";
 import {
+  type ActiveGamePlacement,
   type ApiKindRegistration,
   DEFAULT_BLOB_BYTES_LIMIT,
   DEFAULT_STATE_BYTES_LIMIT,
@@ -755,22 +755,65 @@ async function handleHostEvent(
 
   await store.enqueueHostEvent(record, HOST_EVENT_QUEUE_TTL_SECONDS);
   let wakeTriggered = false;
-  if (wakeOnDelivery && !activeGame) {
-    await triggerHostEventWake(config, gameId);
-    wakeTriggered = true;
+  let deliveryTriggered = false;
+  if (activeGame || wakeOnDelivery) {
+    const delivery = await triggerHostEventDelivery(config, store, gameId, activeGame);
+    wakeTriggered = delivery.wakeTriggered;
+    deliveryTriggered = true;
   }
   writeJson(res, 202, {
     ok: true,
     eventId: record.eventId,
     status: "queued",
     wakeTriggered,
+    deliveryTriggered,
   });
 }
 
-async function triggerHostEventWake(
+async function triggerHostEventDelivery(
+  config: ControlPlaneConfig,
+  store: ControlPlaneStore,
+  gameId: string,
+  activeGame: ActiveGamePlacement | undefined,
+): Promise<{ readonly wakeTriggered: boolean }> {
+  const target = activeGame
+    ? await activeHostEventTarget(store, activeGame)
+    : await placementHostEventTarget(config, gameId);
+  const deliveryUrl = new URL(
+    `/admin/games/${encodeURIComponent(gameId)}/host-events/drain`,
+    target.shardUrl,
+  );
+  const deliveryResponse = await fetch(deliveryUrl, { method: "POST" });
+  if (!deliveryResponse.ok) {
+    throw new HttpError(503, "hostEventDeliveryFailed", {
+      gameId,
+      shardUrl: target.shardUrl,
+      status: deliveryResponse.status,
+      body: await deliveryResponse.text(),
+    });
+  }
+  appendControlHistory(config, target.wakeTriggered ? "onHostEvent.wakeRequested" : "onHostEvent.deliveryRequested", {
+    gameId,
+    shardId: target.shardId,
+    shardUrl: target.shardUrl,
+    deliveryUrl: deliveryUrl.toString(),
+  });
+  return { wakeTriggered: target.wakeTriggered };
+}
+
+async function activeHostEventTarget(
+  store: ControlPlaneStore,
+  activeGame: ActiveGamePlacement,
+): Promise<{ readonly shardId: string; readonly shardUrl: string; readonly wakeTriggered: false }> {
+  const shard = await store.getShard(activeGame.shardId);
+  if (!shard) throw new HttpError(503, "activeShardMissing", { shardId: activeGame.shardId });
+  return { shardId: shard.shardId, shardUrl: shard.url, wakeTriggered: false };
+}
+
+async function placementHostEventTarget(
   config: ControlPlaneConfig,
   gameId: string,
-): Promise<void> {
+): Promise<{ readonly shardId: string; readonly shardUrl: string; readonly wakeTriggered: true }> {
   const placementUrl = new URL("/placement", config.routerUrl);
   const placementResponse = await fetch(placementUrl, {
     method: "POST",
@@ -788,54 +831,17 @@ async function triggerHostEventWake(
       body: await placementResponse.text(),
     });
   }
-  const placement = (await placementResponse.json()) as { readonly webSocketUrl?: unknown };
-  if (typeof placement.webSocketUrl !== "string") {
+  const placement = (await placementResponse.json()) as {
+    readonly shardId?: unknown;
+    readonly shardUrl?: unknown;
+  };
+  if (typeof placement.shardId !== "string" || typeof placement.shardUrl !== "string") {
     throw new HttpError(503, "hostEventWakePlacementFailed", {
       gameId,
-      detail: "placement response missing webSocketUrl",
+      detail: "placement response missing shardId or shardUrl",
     });
   }
-  await openWakeWebSocket(placement.webSocketUrl);
-  appendControlHistory(config, "onHostEvent.wakeRequested", {
-    gameId,
-    placementUrl: placementUrl.toString(),
-  });
-}
-
-function openWakeWebSocket(webSocketUrl: string): Promise<void> {
-  return new Promise<void>((resolveWake, rejectWake) => {
-    const ws = new WebSocket(webSocketUrl);
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try {
-        ws.close();
-      } catch {
-        // Ignore close races; timeout already decides the result.
-      }
-      rejectWake(new Error("host-event wake websocket timed out"));
-    }, 5_000);
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      try {
-        ws.close(1000, "host-event wake complete");
-      } catch {
-        // The shard may already have closed the synthetic connection.
-      }
-      resolveWake();
-    };
-    ws.once("open", finish);
-    ws.once("close", finish);
-    ws.once("error", (err: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      rejectWake(err);
-    });
-  });
+  return { shardId: placement.shardId, shardUrl: placement.shardUrl, wakeTriggered: true };
 }
 
 async function handleShardsCollection(

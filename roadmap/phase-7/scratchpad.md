@@ -186,3 +186,17 @@ host-event wake trigger calls the new `POST /placement` shape without Rivet
 subprotocols. This does not finish host-event delivery yet; the next slice
 needs to connect queued host events to the active Broker and tighten the
 Broker/control admin wake/drain path.
+
+## 2026-05-29 02:36 PDT
+
+Connected the host-event queue to the Broker model. The Broker dependency
+surface now accepts a host-event queue adapter, wakes a game through the same
+bundle resolver path when asked to drain host events, drains Redis
+`host_events:<gameId>` records, invokes the bundle's `onHostEvent` handler for
+each record, and writes `onHostEvent.delivered` history. The Broker admin
+surface exposes `POST /admin/games/:id/host-events/drain` for the control plane.
+
+The control plane now queues both active and wake-on-delivery host events, uses
+the active shard row or a fresh `POST /placement` response to find the Broker,
+and asks that Broker to drain the queue. This removes the synthetic WebSocket
+wake path and the old Rivet subprotocols from control-plane host-event wake.

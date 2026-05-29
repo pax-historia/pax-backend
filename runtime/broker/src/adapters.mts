@@ -10,6 +10,8 @@ import {
   ALLOWED_PLAYERS_KEY_PREFIX,
   BUNDLE_KEY_PREFIX,
   GAME_KEY_PREFIX,
+  HOST_EVENT_QUEUE_KEY_PREFIX,
+  type HostEventRecord,
   SHARD_REGISTRY_KEY_PREFIX,
   SHARD_REGISTRY_TTL_SECONDS,
   type ActiveGamePlacement,
@@ -111,6 +113,31 @@ export class RedisAllowedPlayers {
 
   async list(gameId: string): Promise<readonly string[]> {
     return (await this.redis.smembers(`${ALLOWED_PLAYERS_KEY_PREFIX}${gameId}`)).sort();
+  }
+}
+
+export class RedisHostEventQueue {
+  constructor(
+    private readonly redis: Redis,
+    private readonly maxDrainBatch = 100,
+  ) {}
+
+  async drain(gameId: string): Promise<readonly HostEventRecord[]> {
+    const key = `${HOST_EVENT_QUEUE_KEY_PREFIX}${gameId}`;
+    const raws = await this.redis.lrange(key, 0, this.maxDrainBatch - 1);
+    if (raws.length === 0) return [];
+    await this.redis.ltrim(key, raws.length, -1);
+    return raws.flatMap((raw) => {
+      try {
+        const parsed = JSON.parse(raw) as HostEventRecord;
+        return [{
+          ...parsed,
+          deliveryAttempts: parsed.deliveryAttempts + 1,
+        }];
+      } catch {
+        return [];
+      }
+    });
   }
 }
 
