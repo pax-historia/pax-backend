@@ -225,3 +225,17 @@ and Broker-readable JWT claims. Remaining old-runtime references found by
 audit are in scenario-runner/oracle/metrics compatibility areas that belong to
 the later tests/scenarios task, plus the old parent-actor package that belongs
 to the packaging removal task.
+
+## 2026-05-29 02:43 PDT
+
+Started the dev/Fly packaging task by adding a Broker-native shard runtime
+entrypoint. `runtime/broker/src/server.mts` now composes Redis-backed
+directory/allowed-player/host-event/bundle adapters, local or S3/Tigris state
+storage, JSONL history, the API gateway client, a child-process Runner pool,
+Broker admin routes, and Broker WebSocket upgrades on one HTTP server.
+
+The shard Dockerfile no longer has a Rust `rivet-engine` build stage or vendor
+TypeScript build step. It builds the shared protocol, runtime SDK, state-store,
+Runner, Broker, and bundles, then the shard image entrypoint starts Vector plus
+the Broker server directly. The next packaging slice is to move the local dev
+scripts and Fly env/TOML off parent/Rivet naming.

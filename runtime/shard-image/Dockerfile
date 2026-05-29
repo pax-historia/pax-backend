@@ -1,31 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1-bookworm AS engine-builder
-
-WORKDIR /src
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    binutils \
-    ca-certificates \
-    clang \
-    cmake \
-    lld \
-    libssl-dev \
-    make \
-    pkg-config \
-    protobuf-compiler \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY vendor/rivet ./vendor/rivet
-WORKDIR /src/vendor/rivet
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-  --mount=type=cache,target=/usr/local/cargo/registry \
-  --mount=type=cache,target=/src/vendor/rivet/target \
-  cargo build -p rivet-engine --bin rivet-engine --profile=quick \
-  && mkdir -p /out \
-  && cp target/quick/rivet-engine /out/rivet-engine \
-  && (strip /out/rivet-engine || true)
-
 FROM node:22-bookworm-slim AS app-builder
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -47,15 +21,13 @@ RUN apt-get update \
 
 COPY . .
 RUN --mount=type=cache,target=/pnpm/store \
-  pnpm build:vendor-ts
-RUN --mount=type=cache,target=/pnpm/store \
   pnpm install --frozen-lockfile
 RUN --mount=type=cache,target=/pnpm/store \
   pnpm --filter @pax-backend/ipc-protocol build \
   && pnpm --filter @pax-backend/runtime-sdk build \
-  && pnpm --filter @pax-backend/child-runner-noivm build \
-  && pnpm --filter @pax-backend/child-runner-ivm build \
-  && pnpm --filter @pax-backend/parent-actor build \
+  && pnpm --filter @pax-backend/state-store build \
+  && pnpm --filter @pax-backend/runner build \
+  && pnpm --filter @pax-backend/broker build \
   && pnpm build:bundles
 
 FROM timberio/vector:0.55.0-debian AS vector
@@ -76,7 +48,6 @@ RUN apt-get update \
   && mkdir -p /data \
   && chown node:node /data
 
-COPY --from=engine-builder /out/rivet-engine /usr/local/bin/rivet-engine
 COPY --from=vector /usr/bin/vector /usr/local/bin/vector
 COPY --chown=node:node --from=app-builder /app/package.json ./package.json
 COPY --chown=node:node --from=app-builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
