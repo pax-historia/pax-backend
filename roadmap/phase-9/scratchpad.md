@@ -309,3 +309,21 @@ The same run is still active for Task 6. It started
 `shard-death-every-5m` immediately after the no-fault result and had already
 placed early games evenly across the three shards at the first post-advance
 artifact pull.
+
+## 2026-05-29 06:17 PDT
+
+Task 6 is in progress on the same detached run. The shard-death case completed
+its 100-game placement ramp at `2026-05-29T13:02:35Z` and entered the
+30-minute `send-json` hold. The first three nemesis cycles drained
+`shard-fly-iad-1`, `shard-fly-iad-2`, then `shard-fly-iad-3`; each recorded a
+matching `nemesis.kill-shard.replacement-ready` event 60 seconds later. Through
+the third replacement, the workload history still had zero phase failures,
+zero session errors, and zero non-final session closes.
+
+Prepared Task 7 without touching the active proof driver: committed
+`8203c4d` so future live scenario-runner placements propagate a generated
+W3C trace context into the router, built and pushed driver image
+`registry.fly.io/pax-backend-driver:deployment-trace-context-20260529130302`,
+and updated only the stopped driver machine `d895e95fe09768` to that image.
+The active driver machine `1854539b257768` remains on the topology-proof image
+until the run finishes.
