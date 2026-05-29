@@ -83,12 +83,20 @@ export class IvmRunnerProcess implements RunnerProcess {
 
   async invoke(input: RunnerInvoke): Promise<unknown> {
     const game = this.requireGame(input.gameId);
+    const started = performance.now();
     const fnRef = (await game.bundleExports.get(input.handler, { reference: true })) as ivm.Reference | undefined;
-    if (!fnRef || fnRef.typeof === "undefined" || fnRef.typeof === "null") return undefined;
+    if (!fnRef || fnRef.typeof === "undefined" || fnRef.typeof === "null") {
+      await this.bridge.emit(input.gameId, "handler.complete", {
+        handler: input.handler,
+        durationMs: performance.now() - started,
+        timeoutMs: input.timeoutMs,
+      });
+      this.emitTelemetry(game);
+      return undefined;
+    }
     if (fnRef.typeof !== "function") throw new Error(`${input.handler} is ${fnRef.typeof}, not a function`);
     const cRef = (await game.context.global.get("c", { reference: true })) as ivm.Reference;
     const startedCpu = game.isolate.cpuTime;
-    const started = performance.now();
     try {
       await fnRef.apply(
         undefined,

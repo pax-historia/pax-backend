@@ -91,11 +91,19 @@ export class NoIvmRunnerProcess implements RunnerProcess {
 
   async invoke(input: RunnerInvoke): Promise<unknown> {
     const game = this.requireGame(input.gameId);
+    const started = performance.now();
     const handler = game.bundle[input.handler];
-    if (handler === undefined) return undefined;
+    if (handler === undefined) {
+      await this.bridge.emit(input.gameId, "handler.complete", {
+        handler: input.handler,
+        durationMs: performance.now() - started,
+        timeoutMs: input.timeoutMs,
+      });
+      this.emitTelemetry(game);
+      return undefined;
+    }
     if (typeof handler !== "function") throw new Error(`${input.handler} is not a function`);
     const invokeHandler = handler as (c: SubstrateContext, payload: unknown) => unknown | Promise<unknown>;
-    const started = performance.now();
     try {
       await withTimeout(
         Promise.resolve(invokeHandler(game.c, jsonClone(input.payload))),
