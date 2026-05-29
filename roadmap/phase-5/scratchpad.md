@@ -669,3 +669,12 @@ the release verifier from becoming the next memory cliff once the 8-hour
 nemesis histories include steady-state scale-profile events. Verification:
 `pnpm typecheck`, `git diff --check`, and a streaming summary smoke over the
 current pulled validation directory.
+
+## 2026-05-29 00:25 PDT
+
+The scale-history retry stayed clean through the mid-hold checkpoint. The
+remote monitor line at `20260529T072308Z` had the wrapper alive, no
+`exit.code`, 1000 placements, zero workload failures, zero runner-side session
+closes, zero session errors, zero capacity warnings, and zero budget rejects.
+The no-fault replay history remained 1006 lines / 435,476 bytes during the
+hold, as expected before the post-case archive/control-plane append.
