@@ -1,9 +1,34 @@
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readSync } from "node:fs";
 
 import type { HistoryEvent, OracleFinding, OracleResult } from "./types.mjs";
 
 export function readHistoryJsonl(path: string): readonly HistoryEvent[] {
-  return parseHistoryJsonl(readFileSync(path, "utf8"));
+  const fd = openSync(path, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const events: HistoryEvent[] = [];
+  let carry = "";
+  let lineNumber = 0;
+  try {
+    while (true) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      carry += buffer.toString("utf8", 0, bytesRead);
+      let newlineIndex = carry.indexOf("\n");
+      while (newlineIndex >= 0) {
+        lineNumber += 1;
+        parseHistoryLine(carry.slice(0, newlineIndex), lineNumber, events);
+        carry = carry.slice(newlineIndex + 1);
+        newlineIndex = carry.indexOf("\n");
+      }
+    }
+    if (carry.trim().length > 0) {
+      lineNumber += 1;
+      parseHistoryLine(carry, lineNumber, events);
+    }
+    return events;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function parseHistoryJsonl(raw: string): readonly HistoryEvent[] {
@@ -18,6 +43,15 @@ export function parseHistoryJsonl(raw: string): readonly HistoryEvent[] {
     events.push(parsed as HistoryEvent);
   }
   return events;
+}
+
+function parseHistoryLine(line: string, lineNumber: number, events: HistoryEvent[]): void {
+  if (line.trim().length === 0) return;
+  const parsed = JSON.parse(line) as unknown;
+  if (!isRecord(parsed) || typeof parsed["event"] !== "string") {
+    throw new Error(`history line ${lineNumber} is not a history event`);
+  }
+  events.push(parsed as HistoryEvent);
 }
 
 export function result(

@@ -77,38 +77,26 @@ export async function appendArchivedHistory(input: ArchivedHistoryInput): Promis
   });
 
   const existing = loadExistingEventKeys(input.historyPath);
-  const events: HistoryEvent[] = [];
+  const filter = historyEventFilter(env);
+  let appendedEvents = 0;
   const matchedObjects: string[] = [];
   for (const row of selectedObjects) {
     if (!row.Key) continue;
     const objectEvents = await readHistoryObject(client, bucket, row.Key);
     const inWindow = objectEvents.filter(
-      (event) => eventInWindow(event, fromMs, toMs) && eventMatchesGameFilter(event, gameIdFilter),
+      (event) =>
+        eventInWindow(event, fromMs, toMs) &&
+        eventMatchesGameFilter(event, gameIdFilter) &&
+        filter(event),
     );
     if (inWindow.length === 0) continue;
     matchedObjects.push(row.Key);
-    events.push(...inWindow);
-  }
-
-  const uniqueEvents = events
-    .filter((event) => {
-      const key = eventKey(event);
-      if (existing.has(key)) return false;
-      existing.add(key);
-      return true;
-    })
-    .sort(compareHistoryEvents);
-  if (uniqueEvents.length > 0) {
-    appendFileSync(
-      input.historyPath,
-      uniqueEvents.map((event) => JSON.stringify(event)).join("\n") + "\n",
-      "utf8",
-    );
+    appendedEvents += appendUniqueEvents(input.historyPath, inWindow, existing);
   }
 
   return {
     enabled: true,
-    appendedEvents: uniqueEvents.length,
+    appendedEvents,
     scannedObjects: selectedObjects.length,
     matchedObjects,
   };
@@ -130,34 +118,26 @@ export async function appendControlPlaneHistory(
   const from = new Date(input.startedAtMs - paddingMs).toISOString();
   const to = new Date(input.finishedAtMs + paddingMs).toISOString();
   const existing = loadExistingEventKeys(input.historyPath);
-  const events: HistoryEvent[] = [];
+  const filter = historyEventFilter(env);
+  let appendedEvents = 0;
+  let scannedEvents = 0;
   try {
     await forEachConcurrent(input.gameIds, concurrency, async (gameId) => {
-      events.push(...(await fetchControlPlaneHistory(controlPlaneUrl, gameId, from, to)));
+      const events = await fetchControlPlaneHistory(controlPlaneUrl, gameId, from, to);
+      scannedEvents += events.length;
+      appendedEvents += appendUniqueEvents(
+        input.historyPath,
+        events.filter((event) => filter(event)),
+        existing,
+      );
     });
   } catch (err) {
     return controlPlaneDisabled(err instanceof Error ? err.message : String(err));
   }
-
-  const uniqueEvents = events
-    .filter((event) => {
-      const key = eventKey(event);
-      if (existing.has(key)) return false;
-      existing.add(key);
-      return true;
-    })
-    .sort(compareHistoryEvents);
-  if (uniqueEvents.length > 0) {
-    appendFileSync(
-      input.historyPath,
-      uniqueEvents.map((event) => JSON.stringify(event)).join("\n") + "\n",
-      "utf8",
-    );
-  }
   return {
     enabled: true,
-    appendedEvents: uniqueEvents.length,
-    scannedEvents: events.length,
+    appendedEvents,
+    scannedEvents,
     gameIds: input.gameIds,
   };
 }
@@ -292,11 +272,18 @@ function parseHistoryLine(line: string): readonly unknown[] {
 function normalizeHistoryEntry(entry: unknown): readonly HistoryEvent[] {
   if (!isRecord(entry)) return [];
   const message = typeof entry["message"] === "string" ? parseEmbeddedMessage(entry["message"]) : undefined;
-  const merged = message ? { ...entry, ...message } : entry;
+  const merged = message ? message : entry;
   if (typeof merged["event"] !== "string") return [];
-  const ts = stringField(merged, "ts") ?? stringField(merged, "timestamp");
-  const shardId = stringField(merged, "shardId") ?? stringField(merged, "shard_id");
-  const paxSeq = numberField(merged, "pax_seq");
+  const ts =
+    stringField(merged, "ts") ??
+    stringField(entry, "ts") ??
+    stringField(entry, "timestamp");
+  const shardId =
+    stringField(merged, "shardId") ??
+    stringField(merged, "shard_id") ??
+    stringField(entry, "shardId") ??
+    stringField(entry, "shard_id");
+  const paxSeq = numberField(merged, "pax_seq") ?? numberField(entry, "pax_seq");
   if (!ts || !shardId || paxSeq === undefined) return [];
   return [
     {
@@ -307,6 +294,76 @@ function normalizeHistoryEntry(entry: unknown): readonly HistoryEvent[] {
       event: merged["event"],
     } as HistoryEvent,
   ];
+}
+
+function appendUniqueEvents(
+  path: string,
+  events: readonly HistoryEvent[],
+  existing: Set<string>,
+): number {
+  const uniqueEvents = events
+    .filter((event) => {
+      const key = eventKey(event);
+      if (existing.has(key)) return false;
+      existing.add(key);
+      return true;
+    })
+    .sort(compareHistoryEvents);
+  if (uniqueEvents.length === 0) return 0;
+  appendFileSync(
+    path,
+    uniqueEvents.map((event) => JSON.stringify(event)).join("\n") + "\n",
+    "utf8",
+  );
+  return uniqueEvents.length;
+}
+
+function historyEventFilter(env: NodeJS.ProcessEnv): (event: HistoryEvent) => boolean {
+  const rawAllowlist = env["PAX_SCENARIO_HISTORY_EVENT_ALLOWLIST"];
+  if (rawAllowlist) {
+    const allowed = new Set(
+      rawAllowlist
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    );
+    if (allowed.size > 0) return (event) => criticalHistoryEvent(event) || allowed.has(event.event);
+  }
+  if (env["PAX_SCENARIO_HISTORY_PROFILE"] === "scale") {
+    return (event) => criticalHistoryEvent(event) || SCALE_HISTORY_EVENTS.has(event.event);
+  }
+  return () => true;
+}
+
+const SCALE_HISTORY_EVENTS = new Set([
+  "actor.stop",
+  "api.invoke.request",
+  "api.invoke.response",
+  "api.invoke.wire",
+  "child.exit",
+  "connection.refused",
+  "game.created",
+  "onPlayerMessage",
+  "parent.ready",
+  "placement.accepted",
+  "placement.rejected",
+  "session.closed",
+  "session.forceDisconnect",
+  "session.opened",
+  "ws.send",
+]);
+
+function criticalHistoryEvent(event: HistoryEvent): boolean {
+  const name = event.event.toLowerCase();
+  return (
+    name.includes("error") ||
+    name.includes("fail") ||
+    name.includes("fatal") ||
+    name.includes("reject") ||
+    name.includes("refus") ||
+    name.includes("warning") ||
+    name.includes("budget")
+  );
 }
 
 function parseEmbeddedMessage(raw: string): Record<string, unknown> | undefined {

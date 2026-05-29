@@ -123,7 +123,10 @@ After each live case, the runner appends archived and control-plane history
 before running oracles. Control-plane history is fetched with bounded concurrency
 so 1000-game rungs do not pay a fully serial post-run tail; tune it with
 `PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY` when the control plane needs a lower
-or higher request fanout.
+or higher request fanout. For long scale soaks, set
+`PAX_SCENARIO_HISTORY_PROFILE=scale` to keep the local oracle replay history to
+contract events needed by the scale oracles plus failure/capacity/budget events;
+the full raw history remains in the observability archive.
 
 By default the collector uses one parent and one vendored-engine endpoint. For
 multi-shard rungs, set `PAX_PARENT_METRICS_URLS` and `PAX_RIVET_METRICS_URLS` to

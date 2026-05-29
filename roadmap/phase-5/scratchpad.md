@@ -576,3 +576,28 @@ in `testing/scenario-runner/README.md`; this should reduce the post-case tail
 for future 1000-game and 24-hour runs without changing oracle semantics.
 Verification: `pnpm --filter @pax-backend/scenario-runner check-types` and
 `git diff --check`.
+
+## 2026-05-28 23:38 PDT
+
+The post-fix target-density validation still failed after the clean no-fault
+hold, but the failure moved to the driver post-run path. The runner completed
+`send-json`, closed all 1000 sessions with normal `scenarioComplete` closes,
+completed `expect-history-events`, then exited `137` before writing a case
+result. Fly logs on driver machine `1854539b257768` show the kernel OOM-killed
+node at `2026-05-29T06:29:50Z` with about 1.8 GB RSS. The case history had
+already grown to 256,458 lines / 275,712,449 bytes; event counts were dominated
+by 63,000 `log.emit`, 63,000 `child.handlerComplete`, 61,000 `ws.send`, and
+60,000 `onPlayerMessage` rows. The archived rows preserved the whole Vector
+envelope plus the embedded history JSON in `message`, which made the local
+replay artifact much larger than the contract event stream.
+
+Landed the next runner-side fix locally: archived rows now normalize to the
+embedded contract event instead of keeping Vector envelope fields, archive and
+control-plane appenders write unique batches instead of retaining the whole
+post-run history in memory, `readHistoryJsonl` parses files incrementally
+instead of splitting a giant string, and `PAX_SCENARIO_HISTORY_PROFILE=scale`
+keeps scale-run local replay history to the events needed by the scale oracles
+plus failure/capacity/budget events. Verification:
+`pnpm --filter @pax-backend/oracles-lib check-types`,
+`pnpm --filter @pax-backend/scenario-runner check-types`, and
+`git diff --check`.
