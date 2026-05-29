@@ -1288,3 +1288,5 @@ function sumMapValues(values: ReadonlyMap<string, number>): number {
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
+
+export * from "./adapters.mjs";

@@ -89,3 +89,17 @@ server factory with `/healthz`, `/readyz`, `/metrics`, `POST /admin/drain`, and
 These routes are not wired into a shard image yet; the point of this slice is
 to make the Broker core's operational surface concrete before the later
 packaging task decides bind addresses, auth, and Fly process layout.
+
+## 2026-05-29 02:04 PDT
+
+Closed the Broker-core task by adding the production adapter layer around the
+core class. Redis adapters now publish shard capacity rows, claim/release active
+games, and read allowed-player sets. The gateway adapter posts to the API
+gateway invoke endpoint, the JSONL history writer adds per-shard `pax_seq`, and
+the bundle resolver reads game/bundle metadata from Redis and bundle source from
+either inline records, a local object root, or an S3-compatible Tigris store.
+
+The remaining process-level IPC implementation is intentionally left for the
+Runner-pool task; Broker task 4 now has the credential-holding authority,
+egress adapters, and operational surfaces the later Runner and packaging work
+can plug into.

@@ -141,6 +141,9 @@ importers:
 
   runtime/broker:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1055.0
+        version: 3.1055.0
       '@pax-backend/ipc-protocol':
         specifier: workspace:*
         version: link:../../shared/ipc-protocol
