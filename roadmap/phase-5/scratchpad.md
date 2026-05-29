@@ -362,3 +362,9 @@ Sixteenth detached monitor snapshot landed at `2026-05-29T02:10:34.021Z`. The ru
 ## 2026-05-28 19:17 PDT
 
 Seventeenth detached monitor snapshot landed at `2026-05-29T02:15:34.053Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported seventeen clean monitor snapshots and `gates_ok=true`, putting the retry roughly 54 minutes into the 1000-game no-faults hold.
+
+## 2026-05-28 19:23 PDT
+
+Eighteenth detached monitor snapshot landed at `2026-05-29T02:20:34.175Z`. The run remained alive with no `exit.code`; no-faults was still in `send-json` with 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported eighteen clean monitor snapshots and `gates_ok=true`, putting the retry roughly one hour into the 1000-game no-faults hold.
+
+One-hour spot checks stayed green. Storage remained bounded with shard-fly-iad-1 and shard-fly-iad-7 at 4% `/data` usage, the other eight shard volumes at 3%, every `/data/observability` directory still 4096 bytes, and zero local JSONL files on every shard. A driver-side metrics sweep passed for control `:9070`, router `:9080`, gateway `:9081`, and parent `:7700` plus engine `:6430` on every shard machine.
