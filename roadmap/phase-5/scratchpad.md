@@ -601,3 +601,22 @@ plus failure/capacity/budget events. Verification:
 `pnpm --filter @pax-backend/oracles-lib check-types`,
 `pnpm --filter @pax-backend/scenario-runner check-types`, and
 `git diff --check`.
+
+## 2026-05-28 23:38 PDT
+
+Redeployed `pax-backend-driver` with image
+`deployment-01KSS74C20EDPX1FEK71CT4CQZ`, verified the built image contains
+`PAX_SCENARIO_HISTORY_PROFILE` handling and the incremental
+`parseHistoryLine` reader, and checked the driver health endpoint. The
+control-plane registry still showed 10 healthy accepting shards with
+`activeGames=0`.
+
+Started a fresh detached short v1-scale validation from driver machine
+`1854539b257768` at
+`/data/phase-5/validation/ivm-v1scale-20260529T063808Z`, wrapper PID `737`,
+monitor PID `739`. The launch uses the same `ivm` `1000g-10shards` rung and
+per-shard metric URLs as the previous validation, plus
+`PAX_SCENARIO_HISTORY_PROFILE=scale` and
+`PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY=16`. Initial check found the wrapper
+alive, the no-fault history file created, first monitor line written, no
+placements yet, and no `exit.code`.
