@@ -308,3 +308,9 @@ A disk spot check across all 10 shard machines showed `/data` still only 2-3% us
 ## 2026-05-28 18:16 PDT
 
 Fifth detached monitor snapshot landed at `2026-05-29T01:15:33.150Z`. The run remained alive with no `exit.code`; no-faults was still in `open-sessions` with 770 monitor placements across all 10 shards, zero workload failures, zero session closes, zero session errors, and 10 healthy accepting shards with 769 active games. The local pull immediately after caught 804 placements, still across all 10 shards, with five clean monitor snapshots and `gates_ok=true`.
+
+## 2026-05-28 18:22 PDT
+
+Sixth detached monitor snapshot landed at `2026-05-29T01:20:33.272Z`. The run remained alive with no `exit.code`; no-faults was still in `open-sessions` with 966 monitor placements across all 10 shards, zero workload failures, zero session closes, zero session errors, and 10 healthy accepting shards with 965 active games.
+
+The local pull immediately after caught the target transition: 1000 placements across all 10 shards, `open-sessions` completed after 1,530,038 ms, `send-json` started, and the in-progress summary remained `gates_ok=true`. A direct control-plane registry snapshot then showed 10 accepting shards, `total_active_games=1000`, and 99-102 active games per shard.
