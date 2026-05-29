@@ -33,3 +33,28 @@ creator bundle under `examples/bundles/*/dist/bundle.js`.
 No code changes were needed from the build pass. One attempted
 `pnpm -r --if-present run build --dry-run` probe failed because `--dry-run`
 was forwarded into `tsc -b`; the real build command above is the useful signal.
+
+## 2026-05-29 03:42 PDT
+
+The local Broker smoke is green. The first runs exposed three runtime issues in
+the new Broker/Runner path:
+
+- The shard registry row aged out while the local stack stayed up, so
+  `/placement` returned `noEligibleShards`. The Broker now republishes capacity
+  on a configurable heartbeat (`PAX_BROKER_CAPACITY_HEARTBEAT_MS`, default
+  10s).
+- Router placement claimed `active_games:<gameId>` with a generation, but a
+  later Broker wake resolved the bundle without that generation and rejected
+  the already-claimed game. The Redis bundle resolver now reuses the active
+  generation when the current shard owns the row.
+- The Runner handled `onPlayerMessage`, but the client never saw the echo
+  because Broker fanout wrapped bundle payloads in `{type:"message", body}`.
+  Broker fanout now preserves bundle-defined object frame fields and stamps the
+  recipient `sessionId`; primitive payloads still fall back to the generic
+  `message` wrapper.
+
+The smoke then reached the history assertions. Broker `ws.send` history now
+includes `sessionId` and `playerId` when exactly one open recipient is sent, and
+`c.log.emit` is recorded as `event: "log.emit"` with the original bundle payload
+nested. Verification for this slice: `pnpm typecheck`, `git diff --check`, and
+`pnpm smoke` all passed against the local stack.

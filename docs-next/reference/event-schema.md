@@ -327,6 +327,8 @@ Bundle → client. Substrate dispatched an outbound WS message.
 |---|---|
 | `gameId` | |
 | `target` | `'all' \| string \| string[]` |
+| `sessionId?` | present when exactly one open recipient was sent |
+| `playerId?` | present when exactly one open recipient was sent |
 | `recipientCount` | number sent |
 | `bytes` | total bytes sent |
 

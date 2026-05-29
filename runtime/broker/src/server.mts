@@ -77,6 +77,10 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
       },
       defaultMemoryLimitMb: parsePositiveInteger(env["PAX_RUNNER_MEMORY_LIMIT_MB"] ?? "256", 256),
       handlerTimeoutMs: parsePositiveInteger(env["PAX_HANDLER_TIMEOUT_MS"] ?? "1000", 1_000),
+      capacityHeartbeatMs: parsePositiveInteger(
+        env["PAX_BROKER_CAPACITY_HEARTBEAT_MS"] ?? "10000",
+        10_000,
+      ),
     },
     {
       runners,
@@ -89,7 +93,7 @@ export async function startBrokerRuntimeFromEnv(env = process.env): Promise<Brok
       allowedPlayers: new RedisAllowedPlayers(redis),
       gateway: new HttpApiGatewayClient(env["PAX_API_GATEWAY_URL"] ?? "http://127.0.0.1:9081/invoke"),
       hostEvents: new RedisHostEventQueue(redis),
-      bundles: new RedisBundleResolver(redis, bundleSourceStoreFromEnv(env)),
+      bundles: new RedisBundleResolver(redis, shardId, bundleSourceStoreFromEnv(env)),
       logger,
     },
   );

@@ -71,6 +71,7 @@ export interface BrokerConfig {
   readonly sleepGraceMs?: number;
   readonly sleepDeadlineMs?: number;
   readonly maxInboundFrameBytes?: number;
+  readonly capacityHeartbeatMs?: number;
 }
 
 export interface BrokerWakeInput {
@@ -224,6 +225,7 @@ export class Broker {
   private acceptingWakes = true;
   private readonly games = new Map<string, BrokerGame>();
   private readonly budgetLimits: BrokerBudgetLimits;
+  private capacityHeartbeat?: NodeJS.Timeout;
 
   constructor(
     private readonly config: BrokerConfig,
@@ -236,6 +238,7 @@ export class Broker {
     this.started = true;
     this.acceptingWakes = true;
     await this.publishCapacity();
+    this.startCapacityHeartbeat();
     await this.writeHistory({
       event: "broker.start",
       version: process.env["PAX_VERSION"] ?? "dev",
@@ -245,6 +248,7 @@ export class Broker {
 
   async stop(): Promise<void> {
     this.acceptingWakes = false;
+    this.stopCapacityHeartbeat();
     await this.publishCapacity();
     await Promise.all([...this.games.values()].map((game) => this.releaseGame(game, "shutdown")));
     await this.deps.runners.stop();
@@ -551,7 +555,14 @@ export class Broker {
         }, envelope.requestId);
         return;
       case RUNNER_TO_BROKER.logEmit:
-        await this.writeHistory({ ...envelope.payload, event: envelope.payload.event ?? "log.emit", gameId: game.gameId });
+        await this.writeHistory({
+          event: "log.emit",
+          gameId: game.gameId,
+          runId: game.runId,
+          bundleName: game.bundleName,
+          bundleCompatTag: game.bundleCompatTag,
+          payload: envelope.payload,
+        });
         return;
       case RUNNER_TO_BROKER.metricsEmit:
         await this.writeHistory({ event: "metrics.emit", gameId: game.gameId, ...envelope.payload });
@@ -1110,7 +1121,14 @@ export class Broker {
       return response;
     }
 
-    const bytes = Buffer.byteLength(serialized.text, "utf8") * targets.sessions.length;
+    const frames = targets.sessions.map((session) => ({
+      session,
+      serialized: JSON.stringify(wsFrameForSend(payload.body, session.sessionId)),
+    }));
+    const bytes = frames.reduce(
+      (total, frame) => total + Buffer.byteLength(frame.serialized, "utf8"),
+      0,
+    );
     const now = this.now();
     if (game.budgets.wsBytes.sum(now) + bytes > this.budgetLimits.bandwidthBytesPerSec) {
       await this.writeHistory({
@@ -1138,15 +1156,17 @@ export class Broker {
     game.budgets.wsMessages.add(1, now);
 
     let sent = 0;
-    for (const session of targets.sessions) {
+    const sentSessions: BrokerSession[] = [];
+    for (const { session, serialized: frame } of frames) {
       if (session.ws.readyState !== WebSocket.OPEN) continue;
-      this.sendJson(session.ws, {
-        type: "message",
-        sessionId: session.sessionId,
-        body: payload.body,
-      });
+      session.ws.send(frame);
+      sentSessions.push(session);
       sent += 1;
     }
+    const singleRecipient =
+      sentSessions.length === 1
+        ? { sessionId: sentSessions[0]!.sessionId, playerId: sentSessions[0]!.playerId }
+        : {};
     await this.writeHistory({
       event: "ws.send",
       gameId: game.gameId,
@@ -1154,6 +1174,7 @@ export class Broker {
       target: payload.target,
       recipientCount: sent,
       bytes,
+      ...singleRecipient,
     });
     return { ok: true, sent, bytes };
   }
@@ -1404,6 +1425,23 @@ export class Broker {
     await this.deps.directory.publishCapacity(this.snapshotCapacity());
   }
 
+  private startCapacityHeartbeat(): void {
+    this.stopCapacityHeartbeat();
+    const intervalMs = this.config.capacityHeartbeatMs ?? 10_000;
+    this.capacityHeartbeat = setInterval(() => {
+      void this.publishCapacity().catch((err) => {
+        this.deps.logger?.warn({ err }, "capacity heartbeat failed");
+      });
+    }, intervalMs);
+    this.capacityHeartbeat.unref();
+  }
+
+  private stopCapacityHeartbeat(): void {
+    if (!this.capacityHeartbeat) return;
+    clearInterval(this.capacityHeartbeat);
+    this.capacityHeartbeat = undefined;
+  }
+
   private async writeHistory(event: Record<string, unknown>): Promise<void> {
     await this.deps.history.write({
       ts: new Date(this.now()).toISOString(),
@@ -1595,6 +1633,17 @@ function trySerializeWsBody(
       },
     };
   }
+}
+
+function wsFrameForSend(body: unknown, sessionId: string): unknown {
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    return { ...(body as Record<string, unknown>), sessionId };
+  }
+  return {
+    type: "message",
+    sessionId,
+    body,
+  };
 }
 
 type WsTargetResolution =

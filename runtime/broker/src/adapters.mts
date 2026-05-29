@@ -232,6 +232,7 @@ export class LocalBundleSourceStore implements BundleSourceStore {
 export class RedisBundleResolver {
   constructor(
     private readonly redis: Redis,
+    private readonly shardId: string,
     private readonly sourceStore?: BundleSourceStore,
   ) {}
 
@@ -242,6 +243,10 @@ export class RedisBundleResolver {
     if (!bundle) return undefined;
     const bundleSource = bundle.source ?? await this.readSourceObject(bundle);
     if (!bundleSource) return undefined;
+    const active = await getJson<ActiveGamePlacement>(
+      this.redis,
+      `${ACTIVE_GAMES_KEY_PREFIX}${gameId}`,
+    );
     return {
       gameId,
       bundleName: bundle.bundleName,
@@ -249,6 +254,7 @@ export class RedisBundleResolver {
       bundleCompatTag: bundle.manifest.compatTagProduced,
       runtimeContractRequired: bundle.manifest.runtimeContractRequired,
       blobCompatTag: game.blobCompatTag,
+      generation: active?.shardId === this.shardId ? active.generation : undefined,
     };
   }
 
