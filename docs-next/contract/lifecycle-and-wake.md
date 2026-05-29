@@ -11,7 +11,7 @@ diagram.
 ```
                     ┌──────────────────────────────────────────┐
                     │ Game is asleep                           │
-                    │ (no child process, state in Tigris)      │
+                    │ (no isolate; state committed in Tigris)  │
                     └──────────────────┬───────────────────────┘
                                        │
                                        │ Player reconnects, OR
@@ -20,7 +20,7 @@ diagram.
                                        ▼
                     ┌──────────────────────────────────────────┐
                     │ onWake(c, OnWakePayload)                 │
-                    │ child process forked; isolate booted     │
+                    │ isolate created + bundle eval'd          │
                     └──────────────────┬───────────────────────┘
                                        │
               ┌────────────────────────┼──────────────────────────┐
@@ -37,7 +37,7 @@ diagram.
                                        ▼
                     ┌──────────────────────────────────────────┐
                     │ onSleep(c, OnSleepPayload)               │
-                    │ bundle flushes state, releases resources │
+                    │ bundle flushes; substrate checkpoints    │
                     └──────────────────┬───────────────────────┘
                                        │
                                        │ deadline reached
@@ -50,15 +50,16 @@ diagram.
 A game's full lifetime is a sequence of `[onWake → ... → onSleep]`
 intervals, with the game asleep between them. Cold-start is one such
 interval starting from "no state at all." Cross-shard migration is one
-such interval ending on shard A and starting on shard B with the same
-`c.state` and `c.blob`. Bundle pointer flip is one such interval ending
-on bundle X and starting on bundle Y.
+such interval ending on shard A and starting on shard B from the same
+committed checkpoint (`c.state` and any `c.blob`). Bundle pointer flip is
+one such interval ending on bundle X and starting on bundle Y.
 
 ## `onWake(c, payload)`
 
-Called once when the child process is forked and the isolate boots. The
-bundle has zero in-memory state at this point — anything from before must
-come out of `c.state` or `c.blob`.
+Called once when the game's isolate is created and the bundle is eval'd
+(no process fork, no Node boot). The bundle has zero in-memory state at
+this point — anything from before is materialized from the last committed
+checkpoint and handed in as `state` (plus lazy `c.blob` if used).
 
 `runId` is scenario-only: it carries the scenario-runner's run identifier
 when the wake is part of a test run, and is `null` in production. Bundles
@@ -72,13 +73,13 @@ interface OnWakePayload {
   bundleName: string;
   bundleCompatTag: string;       // == this bundle's manifest.compatTagProduced
   blobCompatTag?: string;        // undefined on cold-start
-  state: unknown | null;         // c.state contents (≤128 KB), already hydrated
+  state: unknown | null;         // the one state object, already hydrated
 }
 
 type WakeReason =
   | 'cold-start'                       // first wake ever for this gameId
   | 'reconnect'                        // player reconnect during the sleep-grace window
-  | 'cold-restart-after-crash'         // child died unexpectedly; substrate restarted it
+  | 'cold-restart-after-crash'         // isolate died (or its Runner crashed); substrate restarted it
   | 'cold-restart-after-eviction'      // shard reclaimed the slot; substrate replaced elsewhere
   | 'cold-restart-from-storage'        // covers cross-shard migration AND unplanned shard loss
   | 'upgrade';                         // bundle pointer was flipped while asleep
@@ -89,24 +90,24 @@ type WakeReason =
 - **`cold-start`**: this `gameId` has never been hydrated. `state` is
   `null`; `c.blob` is empty. `blobCompatTag` is undefined.
 - **`reconnect`**: a player disconnected, then reconnected within the
-  60s sleep-grace window. The child stayed alive the whole time, so
+  60s sleep-grace window. The isolate stayed resident the whole time, so
   in-process state is intact. `onWake` is **not** typically called for
-  reconnect when the child is still running — this reason fires only when
-  the substrate decided to restart the child after disconnect (rare;
-  used for "graceful refresh" patterns). For most reconnects, the
+  reconnect when the isolate is still resident — this reason fires only
+  when the substrate decided to recreate the isolate after disconnect
+  (rare; used for "graceful refresh" patterns). For most reconnects, the
   bundle sees `onPlayerConnect`, not `onWake`.
-- **`cold-restart-after-crash`**: the child died (OOM, segfault, unhandled
-  exception). `state` reflects the last durable flush — at most the flush
-  window of writes is lost. Includes `errorClass: 'oom' | 'crash' |
-  'cpuTimeout' | 'unknown'`.
+- **`cold-restart-after-crash`**: the isolate died (per-isolate OOM,
+  handler crash) or its Runner process crashed. `state` reflects the last
+  committed checkpoint — at most one checkpoint interval of writes is
+  lost. Includes `errorClass: 'oom' | 'crash' | 'cpuTimeout' | 'unknown'`.
 - **`cold-restart-after-eviction`**: the shard chose to evict this game
   (capacity pressure, drain in progress). State reflects the pre-eviction
-  flush (zero loss — eviction is planned, so the substrate flushes
-  before releasing).
+  checkpoint (zero loss — eviction is planned, so the substrate
+  checkpoints before releasing).
 - **`cold-restart-from-storage`**: covers both planned cross-shard
-  migration (zero loss) and unplanned shard loss (≤flush window loss).
-  The substrate doesn't distinguish — the bundle should treat both
-  uniformly.
+  migration (zero loss) and unplanned shard loss (≤ one checkpoint
+  interval loss). The substrate doesn't distinguish — the bundle should
+  treat both uniformly.
 - **`upgrade`**: the bundle pointer was flipped while the game was
   asleep. `blobCompatTag !== bundleCompatTag`; the bundle's own
   migration code in `onWake` reads the old tag and migrates.
@@ -164,21 +165,22 @@ type SleepReason =
 gives the bundle at least the documented per-shape minimum (configurable;
 default 30s) between the moment `onSleep` is called and the deadline.
 If the bundle's `onSleep` returns after the deadline, the substrate
-kills the child and keeps the last checkpoint.
+disposes the isolate and keeps the last committed checkpoint.
 
 The bundle should:
 
 1. Persist any pending in-memory work to `c.state` and/or `c.blob`.
-2. Call `await c.state.flush()` if guarantees-on-the-flush-window aren't
-   sufficient.
+2. Call `await c.state.flush()` if waiting for the next checkpoint
+   interval isn't acceptable.
 3. Optionally `c.ws.send` a goodbye to connected players.
 4. Return.
 
 On `idle`, `requestedBySleep`, `evicted`, `shardEvicted`, the substrate
-flushes pending `c.state` writes after the bundle returns and before
-releasing the game. Zero loss on these planned transitions (guarantee #11).
+checkpoints the game (state + any blob) after the bundle returns and
+before releasing it. Zero loss on these planned transitions
+(guarantee #11).
 
-On `shutdown`, same flush-before-release.
+On `shutdown`, same checkpoint-before-release.
 
 ## `onPlayerConnect(c, payload)`
 
@@ -292,14 +294,14 @@ are dropped with a logged warning.
 
 ## Sleep-grace and the alive-iff-connected rule
 
-A game is "alive" (child process running) only when:
+A game is "alive" (isolate resident in a Runner) only when:
 
 1. At least one player is connected, OR
 2. The 60s sleep-grace window after the last disconnect hasn't expired,
    OR
 3. A host event with `wakeOnDelivery: true` is being delivered.
 
-There are no other reasons the substrate keeps a child alive. The bundle
+There are no other reasons the substrate keeps an isolate resident. The bundle
 **cannot** schedule its own future wake (see
 [`why/why-no-scheduled-wakeups.md`](../why/why-no-scheduled-wakeups.md))
 and games do **not** progress while asleep (see
@@ -334,9 +336,9 @@ the limit is whatever the vercel backend's own cron schedules can produce.
 | Triggering condition | Wake reason |
 |---|---|
 | First-ever game create | `cold-start` |
-| Player reconnect within sleep-grace, child still alive | (no `onWake`; bundle sees `onPlayerConnect`) |
-| Player reconnect after child died gracefully | `cold-restart-from-storage` (treating sleep + reconnect as a storage round-trip) |
-| Child OOM/crash/timeout, parent restarts | `cold-restart-after-crash` |
+| Player reconnect within sleep-grace, isolate still resident | (no `onWake`; bundle sees `onPlayerConnect`) |
+| Player reconnect after the isolate was disposed gracefully | `cold-restart-from-storage` (treating sleep + reconnect as a storage round-trip) |
+| Isolate OOM/crash/timeout (or its Runner crashes), Broker restarts | `cold-restart-after-crash` |
 | Shard evicted the game | `cold-restart-after-eviction` (next wake on different shard) |
 | Cross-shard migration (drain, capacity rebalance) | `cold-restart-from-storage` |
 | Shard machine died unexpectedly | `cold-restart-from-storage` |

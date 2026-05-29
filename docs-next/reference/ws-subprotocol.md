@@ -3,9 +3,9 @@
 > Layer: **Reference catalog**
 
 The wire format between the vercel platform frontend wrapper (the
-browser app) and the parent actor on whichever shard hosts a given
-game. This sub-protocol is **not** versioned independently — it is
-governed by the substrate's runtime contract version (Axis A).
+browser app) and the Broker on whichever shard hosts a given game. This
+sub-protocol is **not** versioned independently — it is governed by the
+substrate's runtime contract version (Axis A).
 
 ## Handshake
 
@@ -36,7 +36,7 @@ headers.
 
 ## JWT verification
 
-The parent actor on the receiving shard:
+The Broker on the receiving shard:
 
 1. Reads `placementToken` from the query string. (`token` is accepted as a
    legacy alias.)
@@ -44,19 +44,19 @@ The parent actor on the receiving shard:
 3. Verifies `exp` (expiry).
 4. Extracts `gameId`, `playerId`, `traceId?`, `runId?`, `shardId`,
    plus pass-through claims (Firebase, etc.).
-5. Verifies the `gameId` from the JWT matches the actor key selected by the
-   WebSocket URL.
+5. Verifies the `gameId` from the JWT matches a game routed to this shard.
 6. Verifies `playerId ∈ allowedPlayers(gameId)`.
 
 On signature or expiry failure: WS close with code 4401. On wrong-shard,
-wrong-game, or not-allowed failure: WS close with code 4403. When the parent
-has enough game context, it emits a `connection.refused` history event.
+wrong-game, or not-allowed failure: WS close with code 4403. When the
+Broker has enough game context, it emits a `connection.refused` history
+event.
 
 See [`reference/jwt-claims.md`](jwt-claims.md) for the JWT shape.
 
 ## After accept — server-to-client `ready` frame
 
-Immediately after accepting the WS, the parent sends a `ready` frame
+Immediately after accepting the WS, the Broker sends a `ready` frame
 containing the substrate-generated `sessionId`:
 
 ```jsonc
@@ -72,9 +72,9 @@ containing the substrate-generated `sessionId`:
 The frontend uses `sessionId` for client-side correlation (it appears
 on subsequent server-sent frames).
 
-The parent emits `session.opened` to history at the same moment.
+The Broker emits `session.opened` to history at the same moment.
 
-After `ready`, the parent calls the bundle's `onPlayerConnect` hook.
+After `ready`, the Broker calls the bundle's `onPlayerConnect` hook.
 
 ## Client → server: player messages
 
@@ -92,14 +92,14 @@ The substrate doesn't impose any structure on the body — it's
 JSON-shaped and that's it. The bundle's `onPlayerMessage` handler
 receives the full parsed body.
 
-The parent:
+The Broker:
 
 1. Parses the frame as JSON. Malformed JSON → drop the message; emit
    `ws.recv.malformed` history.
 2. Assigns a per-session monotonic `seq` (starts at 0 on `session.opened`,
    increments).
-3. Calls the bundle's `onPlayerMessage(c, { playerId, sessionId, seq,
-   body })`.
+3. Dispatches to the game's isolate as `onPlayerMessage(c, { playerId,
+   sessionId, seq, body })`.
 4. Emits `onPlayerMessage` history with the body.
 
 The substrate enforces idempotency: `(playerId, seq)` is never delivered
@@ -108,8 +108,8 @@ message that was already delivered; it never duplicates.
 
 ## Server → client: bundle messages
 
-The bundle's `c.ws.send(target, body)` produces frames the parent sends
-to one or more connected sessions.
+The bundle's `c.ws.send(target, body)` produces frames the Broker sends
+to one or more connected sessions (fan-out is Broker-side).
 
 `target` is `'all'`, a `playerId`, or a `readonly string[]` of player ids.
 
@@ -157,10 +157,10 @@ reason. The substrate closes the underlying WS frame immediately after.
 
 Close codes in the `4xxx` range are substrate-defined application
 codes (per RFC 6455 §7.4.2 reserved-for-applications).
-When a parent rejects a WebSocket before the Rivet guard has established the
-client-side socket, the public client can see the guard's service-unavailable
-close instead; `connection.refused` history remains the authoritative typed
-reason when the parent had game context.
+When the Broker rejects a WebSocket before the Fly proxy has established
+the client-side socket, the public client can see the proxy's
+service-unavailable close instead; `connection.refused` history remains
+the authoritative typed reason when the Broker had game context.
 
 ## Reconnect semantics
 
@@ -174,9 +174,9 @@ If the WS closes for any reason except deliberate frontend closure or
 **Sessions are not resumable.** A reconnect always gets a fresh
 `sessionId`. The bundle sees a new `onPlayerConnect`.
 
-For reconnects within the 60s sleep-grace window, the same parent
-actor (same shard) accepts the new session; the child process stays
-alive across the brief gap.
+For reconnects within the 60s sleep-grace window, the same Broker (same
+shard) accepts the new session; the game's isolate stays resident across
+the brief gap.
 
 ## Heartbeats
 
@@ -216,6 +216,6 @@ multiple messages.
   session lifecycle hooks
 - [`jwt-claims.md`](jwt-claims.md) — JWT shape
 - [`placement-api.md`](placement-api.md) — `POST /placement` wire reference
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — WS server side
+- [`subsystems/broker.md`](../subsystems/broker.md) — WS server side
 - [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md) — placement flow
 - [`vision/guarantees.md`](../vision/guarantees.md) #2, #3, #6

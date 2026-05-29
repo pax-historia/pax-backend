@@ -65,25 +65,29 @@ Basic game info.
 Destroy the game.
 
 - Ends any active sessions.
-- Clears the per-game blob namespace.
+- Clears the game's state and any blob keys (the whole game as a unit).
 - Removes from the active-game directory.
 - Emits `game.deleted` history event.
 
-**Response**: `202 Accepted`. Force-disconnect propagates via the parent
-actor; vercel backend tails history to confirm completion.
+**Response**: `202 Accepted`. Force-disconnect propagates via the Broker;
+vercel backend tails history to confirm completion.
 
 ### `GET /admin/games/:id/snapshot`
 
-Fat introspection.
+Fat introspection, resolved from the game's committed root (or the live
+cache if awake).
 
 **Query**: `?includeBlob=false` (default `true`), `?apiLimit=N`
-(default 100; limits recent api.invoke records).
+(default 100; limits recent api.invoke records), `?at=<checkpointSeq>`
+(view the game at a past checkpoint — read-only time travel; defaults to
+current `head`).
 
 **Response**:
 
 ```jsonc
 {
   "game": { /* same as GET /admin/games/:id */ },
+  "checkpointSeq": "number",
   "allowedPlayers": ["string"],
   "connectedSessions": [{ "sessionId", "playerId", "connectedAt" }],
   "state": "<JSON value>",
@@ -91,6 +95,51 @@ Fat introspection.
   "recentApiInvokes": [{ /* api.invoke.wire shape, last N */ }]
 }
 ```
+
+## Time travel
+
+The substrate keeps a chain of immutable per-game checkpoints (when
+retention is on; see [`contract/storage.md`](../contract/storage.md)).
+These endpoints expose viewing and restoring them.
+
+### `GET /admin/games/:id/checkpoints`
+
+List the retained checkpoints (newest first), within the configured
+retention horizon.
+
+**Query**: `?cursor=<opaque>`, `?limit=N`
+
+**Response**:
+
+```jsonc
+{
+  "head": "number (current checkpointSeq)",
+  "checkpoints": [
+    { "checkpointSeq": 412, "ts": "ISO", "codec": "json-delta", "byteSize": 2048, "blobCompatTag": "historia:v5" }
+  ],
+  "nextCursor": "..." | null
+}
+```
+
+To **view** a past checkpoint, use `GET /admin/games/:id/snapshot?at=<seq>`
+(read-only, no side effects).
+
+### `POST /admin/games/:id/restore`
+
+Restore the game to a past checkpoint (**revert-forward**: writes a new
+checkpoint that references the chosen one's immutable versions and
+advances `head`; bytes are not copied, the pointer is not moved backward).
+
+**Body**: `{ "atCheckpointSeq": 380 }`
+
+**Responses**:
+
+- `200 OK { fromCheckpointSeq: 380, newCheckpointSeq: 413 }` — emits
+  `state.restore`. If the game is awake, it re-wakes
+  `cold-restart-from-storage` on the restored snapshot.
+- `404 gameNotFound`
+- `409 checkpointOutOfHorizon` — the requested checkpoint is older than
+  the retention horizon and no longer retained.
 
 ## Bundle flip
 
@@ -277,6 +326,8 @@ List shards.
       "status": "healthy" | "draining" | "unhealthy",
       "acceptingWakes": true,
       "currentGameCount": 42,
+      "runnerCount": 8,
+      "watermarks": { "cpu": "ok" | "admit-stop" | "evicting", "memory": "ok" | "admit-stop" | "evicting" },
       "version": "string",
       "runtimeContractsSupported": [1, 1],
       "lastSeenAt": "ISO"

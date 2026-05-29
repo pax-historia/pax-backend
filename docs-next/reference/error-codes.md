@@ -40,12 +40,13 @@ Returned to the bundle inside `{ ok: false, error: ... }`:
 | `apiRateExceeded` | `c.api.invoke` | `api-invocations-per-min` (also listed above) |
 
 Two budgets are not bundle-visible (the substrate enforces them by
-killing the child / handler):
+killing the handler / disposing the isolate):
 
-- `cpu-ms-per-tick` — emits `child.handlerError` with `code:
-  'handlerTimeout'`
-- `memory-bytes` — child OOM → restart with
-  `cold-restart-after-crash`, `errorClass: 'oom'`
+- `cpu-ms-per-tick` — emits `handler.error` with `code: 'handlerTimeout'`;
+  the isolate stays alive
+- `memory-bytes` — per-isolate cap hit → the isolate is disposed → restart
+  with `cold-restart-after-crash`, `errorClass: 'oom'` (co-tenants
+  unaffected)
 
 ## Storage
 
@@ -61,7 +62,7 @@ killing the child / handler):
 |---|---|
 | `bandwidthExceeded` | `bandwidth-bytes-per-sec` budget |
 | `rateExceeded` | `ws-messages-per-sec` budget |
-| `serializationFailed` | `body` is not JSON-serializable (returned synchronously before IPC) |
+| `serializationFailed` | `body` is not JSON-serializable (returned synchronously before the bridge call) |
 | `targetInvalid` | target is not `'all'`, a player id, or a player-id array |
 | `targetNotConnected` | one or more requested target player ids have no connected session |
 
@@ -159,7 +160,7 @@ WebSocket close codes:
 
 ## Handler error codes
 
-Emitted in `child.handlerError` history events:
+Emitted in `handler.error` history events:
 
 | `code` | When |
 |---|---|
@@ -185,5 +186,5 @@ Emitted in `bundle.loaded.failed` history events:
 - [`ws-subprotocol.md`](ws-subprotocol.md)
 - [`event-schema.md`](event-schema.md)
 - [`subsystems/api-gateway.md`](../subsystems/api-gateway.md)
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md)
+- [`subsystems/broker.md`](../subsystems/broker.md)
 - [`subsystems/control-plane-admin-api.md`](../subsystems/control-plane-admin-api.md)

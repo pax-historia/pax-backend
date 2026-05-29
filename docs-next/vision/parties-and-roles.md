@@ -56,10 +56,10 @@ ignorant of anything business-shaped (billing, identity, roles, metadata).
 | | |
 |---|---|
 | Lives in | `pax-backend` (this repo) |
-| Talks to | Bundle code (parent ↔ child IPC); the vercel backend (admin, URL services, host events); Rivet engine (vendored, opaque to overlays); Tigris (object storage); Redis (active-game directory + ephemeral state) |
-| Owns | Compute plane (CPU, RAM, bandwidth, message rate, state/blob bytes, API rate, blob-key count), session transport, the IPC bus, lifecycle, history, bundle object storage, the kind→URL registry, the wire-grain record/replay primitives |
+| Talks to | Bundle code (isolate ↔ Runner ↔ Broker bridge); the vercel backend (admin, URL services, host events); Tigris (object storage); Redis (active-game directory + ephemeral state) |
+| Owns | Compute plane (CPU, RAM, bandwidth, message rate, state/blob bytes, API rate, blob-key count), session transport, the runtime bridge, lifecycle, the per-game state cache + atomic checkpoint, history, bundle object storage, the kind→URL registry, the wire-grain record/replay primitives |
 | Doesn't own | Anything billing-shaped, identity, auth flows, roles, metadata, presets, marketplace, social, anything user-facing in pixels |
-| Trust position | Internally split — placement router, control plane, API gateway are platform-trusted; parent actor is shard-local-trusted; child process running creator JS is untrusted. See [`vision/trust-model.md`](trust-model.md) |
+| Trust position | Internally split — placement router, control plane, API gateway are platform-trusted; the Broker is shard-trusted (sole credential holder); the Runner is credential-less; the game isolate running creator JS is untrusted. See [`vision/trust-model.md`](trust-model.md) |
 
 ## Why exactly three names
 
@@ -77,7 +77,7 @@ Standardizing strips the ambiguity. Concretely:
 | "Creator" | Same | **Bundle author** |
 
 A "bundle author" is a person, not a party — they write code that runs inside
-the substrate's child sandbox. The bundle is the unit; the author is a human
+a Runner's per-game isolate. The bundle is the unit; the author is a human
 role.
 
 ## Implications for the architecture diagram
@@ -88,9 +88,9 @@ The canonical L1 diagram lives in
 - The **vercel platform frontend wrapper** as a single client box on the
   left.
 - The **substrate** as the central rectangle with its own internal pieces
-  (router, parent, child, gateway, control plane, etc.).
+  (router, Broker, Runner pool, gateway, control plane, etc.).
 - The **vercel backend** as a single counterparty box on the right.
-- Tigris / Redis / vendored Rivet as substrate-internal infrastructure.
+- Tigris / Redis as substrate-internal infrastructure.
 
 Anything that wants to be a fourth party (e.g. "moderation team's
 dashboard," "billing analytics service") is just the vercel backend

@@ -63,21 +63,29 @@ by adding a new feature to the contract.
 
 - **In-app Postgres.** The substrate has no ledger to back. URL services
   bring their own storage.
+- **Keyed granularity forced on authors.** The default is one byte-level
+  state object the substrate versions; keyed `c.blob` is a deferred,
+  optional escape hatch, not the default surface. See
+  [`why/why-one-state-object.md`](../why/why-one-state-object.md).
 - **Per-key blob versioning at the substrate level.** A single
-  `blobCompatTag` per game's blob namespace. Per-key versioning inside the
-  namespace is the bundle's problem.
-- **Whole-namespace blob snapshots in `onWake`.** The bundle reads what it
-  needs via `c.blob.get(key)`. See
-  [`why/why-keyed-blob-not-snapshot.md`](../why/why-keyed-blob-not-snapshot.md).
+  `blobCompatTag` per game (state object + optional blob namespace).
+  Per-key versioning inside the namespace is the bundle's problem.
+- **Whole-namespace blob snapshots in `onWake`.** When a game uses the
+  keyed tier, the bundle reads what it needs lazily via `c.blob.get(key)`.
+  See [`why/why-one-state-object.md`](../why/why-one-state-object.md).
+- **Bundle-facing multi-key transactions.** Atomicity is the substrate's
+  internal root-swap at checkpoint, not a transaction API. See
+  [`why/why-unified-durability.md`](../why/why-unified-durability.md).
 
 ## Transport
 
 - **WebSocket data path through the placement router.** The router is
-  HTTP-only. Clients connect WS directly to the shard.
+  HTTP-only. Clients connect WS directly to the Broker on the shard (the
+  Fly proxy pins the connection there).
 - **Channel-style WS subscriptions.** The substrate exposes
-  `c.ws.send(target, body)` only. Bundles route topics inside their own
-  WS handler.
-- **Cross-actor RPC.** There is no substrate primitive for one game to call
+  `c.ws.send(target, body)` only (fanned out Broker-side). Bundles route
+  topics inside their own WS handler.
+- **Cross-game RPC.** There is no substrate primitive for one game to call
   another. Cross-game work goes through URL services or admin calls.
 
 ## API channel
@@ -137,10 +145,11 @@ by adding a new feature to the contract.
 
 ## Sandboxing depth
 
-- **Defence against a Node zero-day inside `isolated-vm`.** The substrate's
-  security floor is "escape-the-ivm leaves the creator in the child
-  sandbox; escape-the-child requires a Node zero-day, which we accept." See
-  [`why/why-isolated-vm-in-child.md`](../why/why-isolated-vm-in-child.md).
+- **Defence against a Node/V8 zero-day inside a Runner.** The substrate's
+  security floor is "escape-the-isolate leaves the creator in a
+  credential-less, network-less Runner; escape-the-Runner requires a
+  Node/V8 zero-day, which we accept." See
+  [`why/why-isolated-vm.md`](../why/why-isolated-vm.md).
 
 ## Things sometimes confused with non-goals (these ARE goals)
 

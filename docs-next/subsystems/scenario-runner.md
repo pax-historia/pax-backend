@@ -27,7 +27,7 @@ Same artifact, two consumers.
   and per-surface metric snapshots.
 - Run a scenario catalog as a suite matrix, emitting one history/result pair
   per scenario × nemesis combination and a `suite.result.json` summary tagged
-  with the child runtime (`ivm` or `noivm`).
+  with the Runner kind (`ivm` or `noivm`).
 
 ## Owns
 
@@ -152,18 +152,18 @@ platform guarantee:
 
 | Guarantee # | File | Reads from history |
 |---|---|---|
-| 1 | `singleton-game.mts` | `game.created`, `actor.start`, `actor.stop` |
+| 1 | `singleton-game.mts` | `game.created`, `isolate.created`, `isolate.disposed` |
 | 2 | `allowed-only-connection.mts` | `session.opened`, `connection.refused`, allowed-players events |
 | 3 | `unique-stable-sessionid.mts` | `session.opened`, `onPlayerMessage`, `session.closed`, every event with `sessionId` |
 | 4 | `session-observability-accuracy.mts` | `session.opened`/`.closed`, `api.invoke.request` |
 | 5 | `faithful-api-dispatch.mts` | `api.invoke.request`/`.response`/`.wire` |
 | 6 | `idempotent-player-input.mts` | `onPlayerMessage` |
 | 7 | `compute-plane-quotas.mts` | `compute.budget`, `compute.budget.rejected` |
-| 8 | `crash-blast-radius.mts` | `child.exit`, `child.restart`, `child.fatal` |
-| 9 | `no-random-parent-crashes.mts` | `parent.crash` (must never appear) |
+| 8 | `crash-blast-radius.mts` | `isolate.disposed`, `isolate.restart`, `isolate.fatal`, `runner.crash` |
+| 9 | `no-random-parent-crashes.mts` | `broker.crash` / `runner.crash` without `onSleep` (must never appear) |
 | 10 | `eviction-minimum-budget.mts` | `onSleep.sent` + `lifecycle.sleepComplete` |
-| 11 | `state-durability.mts` | `state.write`, `state.flush`, `child.restart`, `onWake` |
-| 12 | `blob-durability.mts` | `blob.put`, `blob.get`, `onWake` |
+| 11 | `state-durability.mts` | `state.write`, `state.checkpoint`, `isolate.restart`, `onWake` |
+| 12 | `blob-durability.mts` | `blob.put`, `blob.get`, `state.checkpoint`, `onWake` |
 | 13 | `migration-rollback-safety.mts` | `bundle.flip.succeeded`, `onWake.failed`, `bundle.rollback.*` |
 | 14 | `history-completeness.mts` | All events; checks `pax_seq` gap-freeness and required-fields |
 | 15 | `bundle-compatibility-safety.mts` | `bundle.flip.refused`, `bundle.coldWake.rejected` |
@@ -184,9 +184,9 @@ functions) but assert bundle-specific properties.
 
 For load and stress modes, the runner emits an attribution sentence:
 
-> "Previous rung's cliff was attributed to `parent.broadcast` (metric
-> `pax_parent_broadcast_total_duration_seconds` p99 crossed 250 ms);
-> this rung's change relaxes `parent.broadcast` by 40%."
+> "Previous rung's cliff was attributed to `broker.broadcast` (metric
+> `pax_broker_broadcast_total_duration_seconds` p99 crossed 250 ms);
+> this rung's change relaxes `broker.broadcast` by 40%."
 
 The ranker is `setupBottleneckGuess`-style: compute (p99, max) per
 (surface, metric) tuple, rank top 3, identify metrics crossing
@@ -224,9 +224,9 @@ rung exhibited no cliff; all metrics within baseline").
   },
   "metrics": {
     "router": { "placement_ms": { "p50": 12, "p99": 87 } },
-    "parent": { ... },
-    "gateway": { ... },
-    "engine": { ... }
+    "broker": { ... },
+    "runner": { ... },
+    "gateway": { ... }
   },
   "attribution": {
     "sentence": "...",
@@ -242,7 +242,7 @@ rung exhibited no cliff; all metrics within baseline").
 
 Three profiles control collector behavior:
 
-| Profile | Metric scrape | Trace sampler | Engine families |
+| Profile | Metric scrape | Trace sampler | Metric families |
 |---|---|---|---|
 | `ramp` (default) | 30 s | 0.01 | all |
 | `cliff_hold` | 1 s | 1.0 | `FAST_FAMILIES` allowlist only |
@@ -250,7 +250,7 @@ Three profiles control collector behavior:
 
 The runner auto-promotes the saturation rung ±1 to `cliff_hold`. The
 allowlist exists to prevent the load-bot from OOMing on full
-high-cardinality scrapes (a sister-spike lesson).
+high-cardinality scrapes (e.g. per-isolate Runner metrics).
 
 ## Scale ladder mode
 
@@ -262,11 +262,11 @@ rung by cloning the scenario workload with rung-specific `maxGames`,
 sampling profile. Rungs can also override the `send-json` interval and fanout
 window so a concurrency soak can run at a bounded heartbeat while separate
 throughput probes exercise higher message rates. During live runs it scrapes router, control-plane,
-gateway, parent, and vendored-engine Prometheus endpoints, aggregates
-samples online, applies the `cliff_hold` fast-family allowlist to engine
-metrics, then ranks histogram/counter candidates for the attribution
-sentence. Every rung writes a `rung.result.json`; the full ladder writes
-`scale-ladder.result.json`.
+gateway, broker, and runner Prometheus endpoints, aggregates
+samples online, applies the `cliff_hold` fast-family allowlist to
+high-cardinality metrics, then ranks histogram/counter candidates for the
+attribution sentence. Every rung writes a `rung.result.json`; the full
+ladder writes `scale-ladder.result.json`.
 
 ## CI integration
 
@@ -276,7 +276,7 @@ strategy:
   matrix:
     runtime: [ivm, noivm]
 steps:
-  - run: PAX_CHILD_RUNNER_KIND=${{ matrix.runtime }} ./scripts/dev/local-up.sh
+  - run: PAX_RUNNER_KIND=${{ matrix.runtime }} ./scripts/dev/local-up.sh
   - run: |
       pnpm exec tsx testing/scenario-runner/src/cli.mts \
         --suite testing/scenarios \

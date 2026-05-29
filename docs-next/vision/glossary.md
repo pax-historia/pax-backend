@@ -19,18 +19,29 @@ Every term used elsewhere in this tree is defined exactly once, here.
 ## Substrate-owned units
 
 - **Game** — A running (or sleeping) instance of a bundle, identified by
-  `gameId`. Stateful; persists until destroyed. See
-  [`subsystems/parent-actor.md`](../subsystems/parent-actor.md).
+  `gameId`. Stateful; persists until destroyed. A live game is a Broker
+  record plus an isolate in a Runner. See
+  [`subsystems/broker.md`](../subsystems/broker.md).
 - **Bundle** — A self-contained creator-authored package containing JS code,
-  a manifest, and metadata. Loaded into the child sandbox at wake. Stored in
-  substrate-owned object storage. See
+  a manifest, and metadata. Loaded into a Runner's isolate at wake. Stored
+  in substrate-owned object storage. See
   [`subsystems/bundle-storage.md`](../subsystems/bundle-storage.md) and
   [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md).
 - **Manifest** — The bundle's declaration of `compatTagProduced`,
   `compatTagsAccepted`, `runtimeContractRequired`. See
   [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md).
-- **Shard** — A Fly machine running the runtime image. Hosts ≤ N concurrent
-  game children. See [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md).
+- **Shard** — A Fly machine running the runtime image: one Broker plus a
+  small pool of Runners. Hosts ≤ N concurrent game isolates. See
+  [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md).
+- **Broker** — The single trusted process per shard: WS termination,
+  sessions, identity stamping, the eight budgets, the per-game state cache
+  + atomic checkpoint flush, gateway egress, and all shard credentials. See
+  [`subsystems/broker.md`](../subsystems/broker.md).
+- **Runner** — A credential-less, network-less process hosting many game
+  isolates on one event loop. Reaches everything through the Broker. See
+  [`subsystems/runner.md`](../subsystems/runner.md).
+- **Isolate** — One game's `isolated-vm` sandbox inside a Runner; runs the
+  untrusted bundle JS. Separate V8 heap, per-isolate memory cap.
 - **Session** — A single WebSocket connection from a player to a game,
   identified by a substrate-generated `sessionId`. Cluster-wide unique, opaque,
   stable for the connection lifetime. See [`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md).
@@ -54,7 +65,7 @@ Every term used elsewhere in this tree is defined exactly once, here.
   unforgeable, cluster-wide unique, stable for the connection.
 - **`runId`** — Per-scenario-runner-invocation id. Absent in production
   traffic. Lets oracles slice events from one run.
-- **`traceId`** — W3C 16-byte hex. One placement → child → response round
+- **`traceId`** — W3C 16-byte hex. One placement → isolate → response round
   trip. See [`subsystems/observability.md`](../subsystems/observability.md).
 - **`pax_seq`** — Monotonic u64 per shard, stamped on every history event.
   Causal ordering for oracles.
@@ -62,48 +73,64 @@ Every term used elsewhere in this tree is defined exactly once, here.
 - **`bundleName`** — Substrate-unique identifier of a bundle. Write-once,
   immutable-by-storage-policy.
 - **`compatTag`** — Opaque string. Either `bundleCompatTag` (what a bundle
-  writes) or `blobCompatTag` (what's currently stamped on the game's blob).
-  Substrate enforces set membership only. See
+  writes) or `blobCompatTag` (what's currently stamped on the game's state
+  object + optional blob namespace). Substrate enforces set membership
+  only. See
   [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md).
 - **`kindName`** — A registered API kind name like `ai.chat.v1`. Operator
   namespace; substrate looks up by literal string.
 
-## Storage tiers
+## Storage
 
-- **`c.state`** — Managed per-game state tier, ≤ 128 KB, whole-object
-  read/write, CBOR-serializable, Tigris-canonical with a configurable flush
-  window. See [`contract/storage.md`](../contract/storage.md).
-- **`c.blob`** — Per-game keyed Tigris namespace at prefix
-  `blob/<gameId>/`. ≤ 1024 keys, ≤ 100 MB total. Lazy reads via
-  `c.blob.get(key)`. See [`contract/storage.md`](../contract/storage.md).
-- **Tigris** — S3-compatible object storage. Canonical store for `c.state`,
-  `c.blob`, bundle binaries, and history archives.
+- **`c.state`** — The one byte-level state object the author writes ("write
+  whatever, we version it"). JSON by convention; the substrate stores
+  opaque bytes. Eagerly hydrated on wake; checkpoint-durable. See
+  [`contract/storage.md`](../contract/storage.md).
+- **`c.blob`** — Optional keyed per-game namespace (escape hatch for huge
+  sparsely-touched state or large opaque binary). Lazy reads via
+  `c.blob.get(key)`; checkpoint-durable like `c.state`. See
+  [`contract/storage.md`](../contract/storage.md) and
+  [`why/why-one-state-object.md`](../why/why-one-state-object.md).
+- **Root object** — The small per-game commit object whose single
+  (conditional) PUT is the atomic checkpoint for the whole game; references
+  the current state bytes / deltas and the optional blob manifest. See
+  [`subsystems/state-store.md`](../subsystems/state-store.md).
+- **Checkpoint interval** — The tunable cost/RPO dial: a game is committed
+  atomically at this cadence (or on `flush()` / planned sleep); a clean
+  game writes nothing. Unplanned death loses at most one interval.
+- **Time travel** — Immutable chained roots + a `head` pointer; view the
+  past (free, read-only) or restore (revert-forward, one PUT). See
+  [`contract/storage.md`](../contract/storage.md).
+- **Tigris** — S3-compatible object storage. Canonical store for game state
+  (root + state/blob versions), bundle binaries, and history archives.
 - **Active-game directory** — Redis (Upstash) row index mapping `gameId` to
   `shardId` and capacity push from each shard.
-- **Per-shard volume** — Fly Volume per shard machine. Holds Rivet engine
-  internals only (pegboard, workflow rows). Not in the `c.state` durability
-  path.
 
 ## Trust positions
 
 - **Platform-trusted** — Placement router, control plane, API gateway. If
   any of these is compromised, the substrate is compromised.
-- **Shard-local-trusted** — Parent actor. If compromised, only that shard is.
-- **Untrusted** — Child process running creator JS inside `isolated-vm`. No
-  outbound network, no environment variables, CPU/memory capped.
+- **Shard-trusted** — Broker. Sole credential holder on the shard. If
+  compromised, only that shard is.
+- **Credential-less** — Runner. Holds no credentials, no network, no
+  identity authority. A native escape reaches only its co-tenant games'
+  content.
+- **Untrusted** — Game isolate running creator JS inside `isolated-vm`. No
+  outbound network, no environment variables, CPU/memory capped, no
+  visibility between siblings.
 
 See [`vision/trust-model.md`](trust-model.md).
 
 ## Channels and protocols
 
-- **IPC channel** — A typed message kind exchanged between parent actor and
-  child runner over the child_process IPC bridge. See
+- **Bridge / IPC channel** — A typed message kind crossing the runtime
+  bridge: isolate ↔ Runner in-process (async `apply`) and Runner ↔ Broker
+  cross-process (requestId IPC, one channel per Runner). See
   [`reference/ipc-protocol.md`](../reference/ipc-protocol.md) for the
   envelope and channel reference,
-  [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) for the
-  dispatcher.
+  [`subsystems/broker.md`](../subsystems/broker.md) for the dispatcher.
 - **WS sub-protocol** — The wire format between the vercel platform frontend
-  wrapper and the parent actor. See
+  wrapper and the Broker. See
   [`reference/ws-subprotocol.md`](../reference/ws-subprotocol.md).
 - **Placement API** — `POST /placement`; the only public non-WS endpoint
   outside `/admin/`. See [`reference/placement-api.md`](../reference/placement-api.md).
@@ -120,12 +147,12 @@ The eight per-game enforced budgets:
 | Budget | What it caps |
 |---|---|
 | `cpu-ms-per-tick` | Per lifecycle/player handler invocation |
-| `memory-bytes` | Steady-state child RSS |
+| `memory-bytes` | Per-isolate cap; player-scaled reservation for admission |
 | `bandwidth-bytes-per-sec` | Outbound WS bytes |
 | `ws-messages-per-sec` | Outbound WS message rate |
-| `state-bytes` | Total `c.state` size |
-| `blob-bytes` | Sum of all `c.blob` key sizes |
-| `blob-keys` | Distinct `c.blob` key count |
+| `state-bytes` | Size of the `c.state` object |
+| `blob-bytes` | Sum of all `c.blob` key sizes (if used) |
+| `blob-keys` | Distinct `c.blob` key count (if used) |
 | `api-invocations-per-min` | Sliding 1-minute window on `c.api.invoke` |
 
 See [`contract/compute-budgets.md`](../contract/compute-budgets.md).

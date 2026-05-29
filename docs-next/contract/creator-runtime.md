@@ -4,8 +4,8 @@
 
 This is the surface a bundle author programs against. It is the **only**
 surface a bundle sees of the substrate. `@pax-backend/runtime-sdk` exports
-typed wrappers around every entry in this contract; the IPC envelope and
-the parent-actor implementation enforce the contract end-to-end.
+typed wrappers around every entry in this contract; the runtime bridge and
+the Broker implementation enforce the contract end-to-end.
 
 The contract is stable. Bundles compile against a specific
 `runtimeContractRequired` integer; substrate shards advertise a supported
@@ -58,7 +58,7 @@ payload)`.
 | Hook | When called | Payload | See |
 |---|---|---|---|
 | `onWake` | The game starts, restarts, reconnects, migrates, or upgrades | `OnWakePayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
-| `onSleep` | The substrate is giving the bundle a bounded flush window before sleep, shutdown, eviction, or upgrade | `OnSleepPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
+| `onSleep` | The substrate is giving the bundle a bounded deadline to flush before sleep, shutdown, eviction, or upgrade | `OnSleepPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
 | `onPlayerConnect` | A whitelisted player connects | `OnPlayerConnectPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
 | `onPlayerDisconnect` | A connected session leaves or is forcibly removed | `OnPlayerDisconnectPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
 | `onPlayerMessage` | A player sends a WS message | `OnPlayerMessagePayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
@@ -66,13 +66,13 @@ payload)`.
 | `onHostEvent` | A `POST /admin/games/:id/host-event` was delivered | `OnHostEventPayload` | [`lifecycle-and-wake.md`](lifecycle-and-wake.md) |
 
 Deliberately not exposed: `onCreate` and `onMigrate` (folded into
-`onWake` reasons), `onDestroy` (admin action; the child just stops
-loading), `run` or `onTimer` (no background loops the substrate can't
+`onWake` reasons), `onDestroy` (admin action; the game's isolate just
+stops loading), `run` or `onTimer` (no background loops the substrate can't
 account for; see
 [`why/why-no-scheduled-wakeups.md`](../why/why-no-scheduled-wakeups.md)),
 `onWebSocket` / `onRequest` (transport is substrate-owned), `onStateChange`
-(the bundle owns its own write paths), Rivet `actions` (folded into
-`onPlayerMessage`).
+(the bundle owns its own write paths), engine-specific `actions` (folded
+into `onPlayerMessage`).
 
 ## The `c` context object
 
@@ -104,8 +104,9 @@ detail?: unknown }`.
 
 Bandwidth and rate errors come from compute budget enforcement;
 `serializationFailed` is returned synchronously if the body isn't JSON-safe
-(before IPC). `targetInvalid` and `targetNotConnected` are parent-side
-refusals; no frame is sent.
+(before the bridge call). `targetInvalid` and `targetNotConnected` are
+Broker-side refusals; no frame is sent. Fan-out (`'all'` or an array) is
+performed Broker-side — the bundle pays O(1) plus one serialization.
 
 ### Observability
 
@@ -148,20 +149,24 @@ capped at 16 distinct combinations per metric per game.
 |---|---|---|
 | `c.compute.budget()` | `Promise<ComputeBudgetSnapshot>` | Current usage and configured limits for all eight budgets |
 
-### State tier
+### State — the one object you write
 
 | Method | Returns | Notes |
 |---|---|---|
-| `c.state.read()` | `Promise<unknown>` | Whole-object read; returns the cached value (which is the canonical value mod the flush window) |
-| `c.state.write(value)` | `Promise<StorageWriteResponse>` | Whole-object write; queues a flush within the configured window |
-| `c.state.flush()` | `Promise<StorageWriteResponse>` | Forces an immediate synchronous Tigris flush |
+| `c.state.read()` | `Promise<unknown>` | Returns the cached value (== the canonical value modulo any in-flight checkpoint) |
+| `c.state.write(value)` | `Promise<StorageWriteResponse>` | Writes the one state object (JSON by convention); updates the cache, marks the game dirty, returns immediately |
+| `c.state.flush()` | `Promise<StorageWriteResponse>` | Forces an immediate checkpoint (atomic root PUT) and returns when Tigris acks |
 
-### Blob tier
+### Blob — optional keyed escape hatch
+
+The default is the single state object above; `c.blob` is the optional
+tier for huge sparsely-touched state or large opaque binary (see
+[`why/why-one-state-object.md`](../why/why-one-state-object.md)).
 
 | Method | Returns | Notes |
 |---|---|---|
-| `c.blob.put(key, bytes)` | `Promise<StorageWriteResponse>` | Async; durable on resolve |
-| `c.blob.get(key)` | `Promise<Uint8Array \| null>` | Returns `null` if the key doesn't exist |
+| `c.blob.put(key, bytes)` | `Promise<StorageWriteResponse>` | Lands in cache; **checkpoint-durable** like `c.state` (flush to force) |
+| `c.blob.get(key)` | `Promise<Uint8Array \| null>` | Lazy read; returns `null` if the key doesn't exist |
 | `c.blob.delete(key)` | `Promise<{ ok: true }>` | Idempotent |
 | `c.blob.list(prefix?)` | `Promise<readonly { key: string, size: number }[]>` | Lists keys in the per-game namespace (optionally prefix-filtered) |
 
@@ -169,7 +174,7 @@ capped at 16 distinct combinations per metric per game.
 'sizeExceeded' | 'keyCountExceeded' | 'storageUnavailable', detail?:
 unknown }`.
 
-See [`storage.md`](storage.md) for the full storage tier contract,
+See [`storage.md`](storage.md) for the full storage contract,
 [`compute-budgets.md`](compute-budgets.md) for the cap details.
 
 ## Versioning
@@ -178,7 +183,7 @@ Three independent version identifiers participate in the contract:
 
 | Axis | Boundary | Mechanism | Substrate opinion |
 |---|---|---|---|
-| **A. Bundle ↔ substrate** | Child ↔ parent actor | `runtimeContractRequired: int` (bundle) and `runtimeContractsSupported: [min, max]` (shard); placement gate | Single linear evolution |
+| **A. Bundle ↔ substrate** | Isolate ↔ Broker (via Runner) | `runtimeContractRequired: int` (bundle) and `runtimeContractsSupported: [min, max]` (shard); placement gate | Single linear evolution |
 | **B. Substrate ↔ URL service** | Gateway ↔ URL service | `X-Gateway-Envelope-Version: 2` HTTP header | Single linear evolution |
 | **C. Bundle ↔ URL service app** | Creator code ↔ URL service application logic | Version baked into kind name (`ai.chat.v1`) | Opaque |
 
@@ -197,15 +202,17 @@ Beyond the surface above, the contract commits to:
 - **Authoritative session observability.** `c.players.connected()` and the
   `connectedSessions` snapshot in `api.invoke` envelopes reflect the
   substrate's actual state (guarantee #4).
-- **No random parent crashes.** Process death without `onSleep` is a
-  substrate bug; the bundle doesn't have to defend against it
+- **No random substrate crashes.** Broker/Runner death without `onSleep`
+  is a substrate bug; the bundle doesn't have to defend against it
   (guarantee #9).
 - **Eviction minimum budget.** `onSleep` always gives the bundle at least
   the documented minimum to flush (guarantee #10).
-- **`c.state` flush window durability.** Planned transitions lose zero
-  writes; unplanned death loses at most the flush window (guarantee #11).
-- **`c.blob` survival.** Every `put` is durable on resolve; the namespace
-  survives cross-shard, cross-deploy, cross-volume-loss (guarantee #12).
+- **Checkpoint-interval durability.** Planned transitions lose zero
+  writes; unplanned death loses at most one checkpoint interval
+  (guarantee #11).
+- **One consistent snapshot.** `c.state` and any `c.blob` keys commit and
+  roll back together — never a torn state-vs-blob skew; the game survives
+  cross-shard, cross-deploy, cross-volume-loss (guarantee #12).
 
 See [`vision/guarantees.md`](../vision/guarantees.md) for the full list.
 
@@ -218,9 +225,10 @@ See [`vision/guarantees.md`](../vision/guarantees.md) for the full list.
   redeliver; bundles should treat `seq` as a dedup key.
 - **Be idempotent on `(eventType, payload)` for host events.** Same
   reason; guarantee #17 is at-least-once.
-- **Flush before relying on durability.** Reads after writes within the
-  flush window see the new value (cache is read-through). Crash safety
-  before durability requires `await c.state.flush()`.
+- **Flush before relying on durability.** Reads after writes see the new
+  value (cache is read-through). Crash safety before the next checkpoint
+  requires `await c.state.flush()` — which commits the whole game,
+  `c.state` and any `c.blob` together.
 - **Honor `onSleep`'s deadline.** Returning past the deadline = killed
   and last checkpoint kept.
 

@@ -76,9 +76,9 @@ for (const d of fired) {
 ```
 
 This is what Pax-historia's round timers already do. It's idempotent (the
-check runs every tick), durable (`c.state` is Tigris-canonical), and
-self-recovering (deadlines that fire while nobody is connected just resolve
-on the next reconnect).
+check runs every tick), durable (`c.state` is checkpoint-committed to
+Tigris), and self-recovering (deadlines that fire while nobody is
+connected just resolve on the next reconnect).
 
 ## What would change our mind
 
@@ -104,6 +104,6 @@ deferring.
 - [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md)
   — what the substrate does on host-event-driven wake
 - [`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md) —
-  the six lifecycle hooks (not seven)
+  the seven lifecycle hooks
 - [`reference/admin-api.md`](../reference/admin-api.md) — the host-event
   POST endpoint

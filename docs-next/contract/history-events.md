@@ -57,12 +57,12 @@ Eight categories cover everything:
 
 | Category | Example events | What they record |
 |---|---|---|
-| **Lifecycle** | `onWake.sent`, `onWake.succeeded`, `onWake.failed`, `onSleep.sent`, `lifecycle.sleepComplete`, `actor.start`, `actor.stop`, `child.exit`, `child.restart` | Process and bundle lifecycle |
+| **Lifecycle** | `onWake.sent`, `onWake.succeeded`, `onWake.failed`, `onSleep.sent`, `lifecycle.sleepComplete`, `broker.start`, `broker.stop`, `isolate.created`, `isolate.disposed`, `runner.crash` | Process, isolate, and bundle lifecycle |
 | **Session** | `session.opened`, `session.closed`, `session.forceDisconnect`, `connection.refused` | WS session edges |
 | **Player I/O** | `onPlayerMessage`, `ws.send`, `ws.send.rejected` | Per-message I/O |
-| **Storage** | `state.read`, `state.write`, `state.flush`, `blob.put`, `blob.get`, `blob.delete`, `blob.list`, `*.rejected` variants | All `c.state` and `c.blob` operations |
+| **Storage** | `state.read`, `state.write`, `state.flush`, `state.checkpoint`, `state.restore`, `blob.put`, `blob.get`, `blob.delete`, `blob.list`, `*.rejected` variants | All `c.state` / `c.blob` operations and checkpoint commits |
 | **API** | `api.invoke.request`, `api.invoke.response`, `api.invoke.wire` | Every `c.api.invoke` round trip and its wire bytes |
-| **Compute** | `compute.budget`, `compute.budget.rejected`, `onCapacityWarning.sent`, `child.handlerComplete`, `child.handlerError` | Compute budget consumption + violations |
+| **Compute** | `compute.budget`, `compute.budget.rejected`, `onCapacityWarning.sent`, `handler.complete`, `handler.error` | Compute budget consumption + violations |
 | **Bundle** | `bundle.uploaded`, `bundle.loaded`, `bundle.flip.refused`, `bundle.flip.succeeded`, `bundle.coldWake.rejected`, `bundle.rollback.*` | Bundle lifecycle and gate decisions |
 | **Topology** | `placement.accepted`, `placement.refused`, `game.created`, `game.deleted`, `player.deleted`, `shard.registered`, `shard.drain.started`, `shard.drain.completed`, `onHostEvent.received`, `onHostEvent.delivered` | Cluster-level events |
 
@@ -72,7 +72,7 @@ History is tiered:
 
 | Tier | Storage | Use |
 |---|---|---|
-| **In-process** | Ring buffer of last N events per parent | `GET /admin/games/:id/snapshot` (cheap) |
+| **In-process** | Ring buffer of last N events per Broker | `GET /admin/games/:id/snapshot` (cheap) |
 | **Per-shard** | Append-only `var/history.jsonl` on the shard machine | Local oracle reads; smoke-bot tail |
 | **Cross-shard durable** | Tigris under `history/<shardId>/<runId or date>/<chunk>.jsonl.zst` | Long-term oracle replay; cross-machine queries |
 | **Live stream** | `GET /admin/history` from the control plane via Tigris-backed cursor pagination | Vercel-backend tail/poll |
@@ -92,8 +92,8 @@ per shard so there is no ambiguity within a shard.
 
 `traceId` provides cross-process ordering for events arising from the
 same request. `traceId` is set at the placement-router edge for any
-WS-originated flow and propagates through JWT claims, WS handshake,
-IPC envelope, and gateway envelope.
+WS-originated flow and propagates through JWT claims, WS handshake, the
+runtime bridge envelope, and the gateway envelope.
 
 ## What the bundle can emit into history
 
@@ -121,8 +121,7 @@ substrate-emitted events.
 - [`reference/event-schema.md`](../reference/event-schema.md) — full
   event name + required-fields catalog
 - [`vision/guarantees.md`](../vision/guarantees.md) #14
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — the
-  writer
+- [`subsystems/broker.md`](../subsystems/broker.md) — the writer
 - [`subsystems/observability.md`](../subsystems/observability.md) — how
   history fits the broader observability story
 - [`subsystems/scenario-runner.md`](../subsystems/scenario-runner.md) —

@@ -12,15 +12,16 @@ the same PR.
 | Prefix | Owner |
 |---|---|
 | `pax_router_*` | Placement router |
-| `pax_parent_*` | Parent actor |
+| `pax_broker_*` | Broker |
+| `pax_runner_*` | Runner (per-isolate cpu/mem sampling) |
 | `pax_gateway_*` | API gateway |
 | `pax_control_*` | Control plane |
 | `pax_urlsvc_<kind>_*` | Reference URL services (one per kind) |
 | `pax_driver_*` | Scenario-runner driver |
 | `pax_creator_*` | Bundle-emitted (via `c.metrics.*`) |
-| `rivet_*` | Vendored Rivet engine (untouched) |
 
-Other prefixes are not allowed.
+Other prefixes are not allowed. There is no vendored-engine pass-through
+namespace — the runtime is the substrate's own Broker + Runner pool.
 
 ## Bucket standards
 
@@ -50,8 +51,8 @@ Other prefixes are not allowed.
 
 **Forbidden as Prometheus labels** (unbounded):
 
-- raw `game_id`, `session_id`, `player_id`, `actor_id`, `trace_id`,
-  `request_id`, `bundle_name`, `database_id`
+- raw `game_id`, `session_id`, `player_id`, `trace_id`, `request_id`,
+  `bundle_name`
 
 Unbounded IDs go on OTel span attributes (sampled), log lines, and
 history events. Never on metric labels.
@@ -60,7 +61,7 @@ history events. Never on metric labels.
 
 | Metric | Type | Unit | Labels | Buckets |
 |---|---|---|---|---|
-| `pax_router_placement_actor_create_ms` | histogram | seconds | `shard_id` | FINE |
+| `pax_router_placement_assign_ms` | histogram | seconds | `shard_id` | FINE |
 | `pax_router_placement_decision_lock_wait_ms` | histogram | seconds | — | FINE |
 | `pax_router_placement_decision_lock_hold_ms` | histogram | seconds | — | FINE |
 | `pax_router_placement_decision_lock_contention_total` | counter | — | — | — |
@@ -72,29 +73,47 @@ history events. Never on metric labels.
 | `pax_router_jwt_errors_total` | counter | — | `reason` | — |
 | `pax_router_placement_duration_ms` | histogram | seconds | `result` | FINE |
 
-## Parent actor (`pax_parent_*`)
+## Broker (`pax_broker_*`)
 
 | Metric | Type | Unit | Labels | Buckets |
 |---|---|---|---|---|
-| `pax_parent_frame_age_seconds` | histogram | seconds | `game_id_bucket`, `session_count_bucket` | FINE |
-| `pax_parent_ipc_age_seconds` | histogram | seconds | `direction` | FINE |
-| `pax_parent_broadcast_call_duration_seconds` | histogram | seconds | — | FINE |
-| `pax_parent_broadcast_total_duration_seconds` | histogram | seconds | — | FINE |
-| `pax_parent_broadcast_payload_bytes` | histogram | bytes | — | BYTES |
-| `pax_parent_handler_duration_seconds` | histogram | seconds | `handler`, `result` | FINE |
-| `pax_parent_event_loop_lag_seconds` | histogram | seconds | — | FINE |
-| `pax_parent_compute_budget_consumed_ratio` | histogram | ratio | `budget` | RATIO |
-| `pax_parent_compute_budget_warnings_total` | counter | — | `budget` | — |
-| `pax_parent_child_pending_commands` | gauge | — | — | — |
-| `pax_parent_child_lifecycle_total` | counter | — | `reason`, `kind` | — |
-| `pax_parent_api_invoke_duration_seconds` | histogram | seconds | `kind`, `mode`, `result` | FINE |
-| `pax_parent_engine_pressure_age_seconds` | histogram | seconds | — | FINE |
-| `pax_parent_engine_tick_epoch_lag` | gauge | ticks | — | — |
-| `pax_parent_state_flush_duration_seconds` | histogram | seconds | `result` | FINE |
-| `pax_parent_state_flush_pending_writes` | gauge | — | — | — |
-| `pax_parent_blob_op_duration_seconds` | histogram | seconds | `op`, `result` | FINE |
-| `pax_parent_bundle_fetch_duration_seconds` | histogram | seconds | `cached` | COARSE |
-| `pax_parent_bundle_cache_hit_total` | counter | — | — | — |
+| `pax_broker_frame_age_seconds` | histogram | seconds | `game_id_bucket`, `session_count_bucket` | FINE |
+| `pax_broker_channel_age_seconds` | histogram | seconds | `direction` | FINE |
+| `pax_broker_broadcast_call_duration_seconds` | histogram | seconds | — | FINE |
+| `pax_broker_broadcast_total_duration_seconds` | histogram | seconds | — | FINE |
+| `pax_broker_broadcast_payload_bytes` | histogram | bytes | — | BYTES |
+| `pax_broker_handler_duration_seconds` | histogram | seconds | `handler`, `result` | FINE |
+| `pax_broker_event_loop_lag_seconds` | histogram | seconds | — | FINE |
+| `pax_broker_compute_budget_consumed_ratio` | histogram | ratio | `budget` | RATIO |
+| `pax_broker_compute_budget_warnings_total` | counter | — | `budget` | — |
+| `pax_broker_runner_pending_commands` | gauge | — | `runner_name` | — |
+| `pax_broker_runner_lifecycle_total` | counter | — | `reason` | — |
+| `pax_broker_isolate_lifecycle_total` | counter | — | `reason` | — |
+| `pax_broker_api_invoke_duration_seconds` | histogram | seconds | `kind`, `mode`, `result` | FINE |
+| `pax_broker_checkpoint_duration_seconds` | histogram | seconds | `result` | FINE |
+| `pax_broker_checkpoint_dirty_games` | gauge | games | — | — |
+| `pax_broker_checkpoint_skipped_clean_total` | counter | — | — | — |
+| `pax_broker_checkpoint_bytes` | histogram | bytes | — | BYTES |
+| `pax_broker_gc_versions_reaped_total` | counter | — | `reason` | — |
+| `pax_broker_state_materialize_seconds` | histogram | seconds | `codec` | COARSE |
+| `pax_broker_blob_op_duration_seconds` | histogram | seconds | `op`, `result` | FINE |
+| `pax_broker_capacity_watermark_state` | gauge | enum | `resource` | — |
+| `pax_broker_eviction_total` | counter | — | `resource` | — |
+| `pax_broker_bundle_fetch_duration_seconds` | histogram | seconds | `cached` | COARSE |
+| `pax_broker_bundle_cache_hit_total` | counter | — | — | — |
+
+## Runner (`pax_runner_*`)
+
+Per-isolate CPU/memory sampled in-process and reported to the Broker; raw
+per-game values go to history, only aggregates here.
+
+| Metric | Type | Unit | Labels | Buckets |
+|---|---|---|---|---|
+| `pax_runner_isolate_cpu_seconds_total` | counter | seconds | `runner_name`, `game_id_bucket` | — |
+| `pax_runner_isolate_heap_bytes` | histogram | bytes | `runner_name`, `game_id_bucket` | BYTES |
+| `pax_runner_process_rss_bytes` | gauge | bytes | `runner_name` | — |
+| `pax_runner_isolates_resident` | gauge | isolates | `runner_name`, `pool_name` | — |
+| `pax_runner_sample_duration_seconds` | histogram | seconds | `runner_name` | FINE |
 
 ## API gateway (`pax_gateway_*`)
 
@@ -149,13 +168,6 @@ at 16 distinct sets.
 
 Bundle-defined names are not catalogued here — each bundle is responsible
 for its own metrics documentation.
-
-## Vendored Rivet (`rivet_*`)
-
-Pass-through scrape from `:6430/metrics`. The substrate does not catalog
-these — Rivet's own documentation is the source of truth. The Vector
-sidecar cardinality-culls `actor_id_gen`, `database_id`, raw `game_id`
-labels before remote-write.
 
 ## Adding a new metric
 

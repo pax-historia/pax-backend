@@ -44,8 +44,9 @@ top of the substrate's contract:
   `player-management.ts`, `rounds.ts`, `round-timer.ts`, `map-state.ts`,
   `offline-cap.ts`, `permissions.ts`.
 - **Workflow runtime** — engine, executors, task tracker. The
-  sandbox-in-child pattern collapses because the whole bundle is
-  already in `isolated-vm`; workflow generator functions `eval` inline.
+  nested-sandbox pattern collapses because the whole bundle already runs
+  in its own `isolated-vm` isolate (one per game, inside a Runner);
+  workflow generator functions `eval` inline.
 - **5 default workflow strings** (chat, advisor, actions, jump-forward,
   moderation) ship verbatim as bundle defaults.
 - **`GameContext` adapter** rewritten on top of `c.*`:
@@ -55,11 +56,19 @@ top of the substrate's contract:
 - **WS routing + policy gates** from `routing/websocket.ts`. The WS
   transport itself is substrate-owned; the bundle dispatches from
   `body` inside `onPlayerMessage`.
-- **Blob schema + migrations** under `compatTagsAccepted: ["historia:v1",
+- **State schema + migrations** under `compatTagsAccepted: ["historia:v1",
   "historia:v2", "historia:v3", "historia:v4", "historia:v5"]`,
   `compatTagProduced: "historia:v5"`.
-- **Hydration + working state** onto `c.state` (working state ≤128 KB)
-  and `c.blob` (per-chapter, per-snapshot keys).
+- **Hydration + working state** onto the one `c.state` object (the running
+  summary, ≤128 KB, eagerly hydrated on wake), with completed chapters /
+  raw-detail snapshots kept either in version history (time travel) or in
+  the optional `c.blob` keyed tier (per-chapter, per-snapshot keys).
+- **Durability reconciliation.** Under unified checkpoint durability a
+  `c.blob.put` is durable at the next checkpoint, not on resolve. The
+  bundle therefore calls `await c.state.flush()` at chapter-commit
+  boundaries (forcing a checkpoint that commits the chapter and the
+  cleared working state together) instead of relying on a blob put having
+  resolved. See [`why/why-unified-durability.md`](../why/why-unified-durability.md).
 
 ## What goes away (because the substrate does it)
 
@@ -68,8 +77,8 @@ top of the substrate's contract:
 | Rivet `createState` / `createVars` / `onWake` / `onSleep` / `onConnect` / `onDisconnect` plumbing | Substrate lifecycle hooks |
 | Firebase JWT verification in `createConnState` | Substrate verifies at placement router; bundle receives `jwtClaims` in `onPlayerConnect` |
 | Direct R2 calls (`@aws-sdk/client-s3`) | `c.blob.put/get/delete/list` against substrate's Tigris namespace at `blob/<gameId>/` |
-| Redis ban cache + cross-actor RPC for `enforceBan` | Substrate's `DELETE /admin/players/:playerId` (cross-game force-disconnect) + host events for in-game notification |
-| `child_process` workflow sandbox | Not needed — bundle runs workflows inline in its own already-sandboxed isolate |
+| Redis ban cache + cross-game RPC for `enforceBan` | Substrate's `DELETE /admin/players/:playerId` (cross-game force-disconnect) + host events for in-game notification |
+| `child_process` workflow sandbox | Not needed — the bundle runs workflows inline in its own already-sandboxed isolate (one isolate per game inside a Runner) |
 | Postgres-sync fire-and-forget calls (`/api/live-games-db/*`) | Mix of substrate history tailing (category 1) and explicit `projection.sync.v1` calls (category 3); see [`operator-overlays/projection-sync.md`](../operator-overlays/projection-sync.md) |
 
 ## The five URL services
@@ -198,10 +207,10 @@ The scenario-runner provides every piece of this loop. See
   spec + scenario-fixture only.
 - **Pax-historia's preset-authoring UI**, billing pipeline source, frontend,
   presets schema. All stay in Pax-historia, unchanged.
-- **Substrate-internal work** (vendor Rivet, ship placement router,
-  build runtime SDK, build API gateway, etc.). That's the agents
-  working in parallel on the substrate track; the proof rides on top
-  of whatever they ship.
+- **Substrate-internal work** (ship the Broker + Runner runtime, the
+  placement router, the runtime SDK, the API gateway, etc.). That's the
+  agents working in parallel on the substrate track; the proof rides on
+  top of whatever they ship.
 
 ## Cross-references
 

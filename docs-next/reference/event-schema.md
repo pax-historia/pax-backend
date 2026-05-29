@@ -24,7 +24,7 @@ Every event carries at minimum:
 
 ### `onWake.sent`
 
-Parent → child. Bundle receives `onWake`.
+Broker → isolate. Bundle receives `onWake`.
 
 | Field | Notes |
 |---|---|
@@ -58,7 +58,7 @@ Bundle's `onWake` threw or timed out.
 
 ### `onSleep.sent`
 
-Parent → child. Bundle receives `onSleep`.
+Broker → isolate. Bundle receives `onSleep`.
 
 | Field | Notes |
 |---|---|
@@ -79,8 +79,8 @@ Bundle did not report `lifecycle.sleepComplete` before the deadline.
 
 ### `lifecycle.sleepComplete`
 
-Bundle signaled it is done with `onSleep`; the parent then flushed state
-and released the active game.
+Bundle signaled it is done with `onSleep`; the Broker then checkpointed
+state and released the active game.
 
 | Field | Notes |
 |---|---|
@@ -88,11 +88,11 @@ and released the active game.
 | `reason` | sleep reason |
 | `deadline` | ms since epoch |
 | `bundleName` | |
-| `blobCompatTag` | after the planned-transition flush |
+| `blobCompatTag` | after the planned-transition checkpoint |
 
 ### `lifecycle.sleepGrace.started`
 
-The last player disconnected and the parent started the idle grace timer.
+The last player disconnected and the Broker started the idle grace timer.
 
 | Field | Notes |
 |---|---|
@@ -111,7 +111,7 @@ A reconnect, explicit sleep, or release cancelled the pending idle grace.
 
 ### `lifecycle.sleepGrace.expired`
 
-The idle grace expired with no connected sessions; the parent will send
+The idle grace expired with no connected sessions; the Broker will send
 `onSleep` with `reason: 'idle'`.
 
 | Field | Notes |
@@ -121,7 +121,7 @@ The idle grace expired with no connected sessions; the parent will send
 
 ### `game.released`
 
-The parent released the game from the active-game directory after a
+The Broker released the game from the active-game directory after a
 planned sleep transition.
 
 | Field | Notes |
@@ -129,19 +129,38 @@ planned sleep transition.
 | `gameId` | |
 | `reason` | sleep reason |
 
-### `actor.start`
+### `broker.start`
 
-Parent actor process started for a game.
+A Broker process started on a shard. Shard-scoped (no `gameId`).
+
+| Field | Notes |
+|---|---|
+| `version` | |
+| `runtimeContractsSupported` | |
+
+### `broker.stop`
+
+A Broker process is stopping. Shard-scoped.
+
+| Field | Notes |
+|---|---|
+| `intentional` | bool |
+| `reason?` | |
+
+### `isolate.created`
+
+A game's isolate was created and its bundle eval'd (wake).
 
 | Field | Notes |
 |---|---|
 | `gameId` | |
 | `bundleName` | |
 | `runtimeContractRequired` | |
+| `runnerName` | which Runner hosts it |
 
-### `actor.stop`
+### `isolate.disposed`
 
-Parent actor process stopping.
+A game's isolate was disposed (sleep, eviction, or after a fatal error).
 
 | Field | Notes |
 |---|---|
@@ -149,41 +168,41 @@ Parent actor process stopping.
 | `intentional` | bool |
 | `reason?` | |
 
-### `child.exit`
+### `runner.crash`
 
-Child process exited.
+A Runner process died (native crash / segfault), taking its co-tenant
+isolates with it. Runner-scoped.
 
 | Field | Notes |
 |---|---|
-| `gameId` | |
-| `intentional` | bool |
-| `exitCode?` | |
+| `runnerName` | |
+| `affectedGameIds` | array (bounded by `K`) |
 | `signal?` | |
-| `stopReason?` | for intentional exits |
 
-### `child.restart`
+### `isolate.restart`
 
-Parent restarted the child after an unexpected exit.
+The Broker re-created an isolate after an unexpected disposal (per-isolate
+crash) or a `runner.crash`.
 
 | Field | Notes |
 |---|---|
 | `gameId` | |
-| `cause` | `'oom' \| 'crash' \| 'cpuTimeout' \| 'unknown'` |
+| `cause` | `'oom' \| 'crash' \| 'cpuTimeout' \| 'runnerCrash' \| 'unknown'` |
 
-### `child.restart.failed`
+### `isolate.restart.failed`
 
-Parent gave up restarting after repeated failures.
+The Broker gave up restarting after repeated failures.
 
-### `child.fatal`
+### `isolate.fatal`
 
-Child caught an uncaught error (before exit).
+A game's isolate hit a fatal error (before disposal).
 
 | Field | Notes |
 |---|---|
 | `gameId` | |
 | `message` | |
 
-### `child.handlerComplete`
+### `handler.complete`
 
 A bundle handler returned without error.
 
@@ -193,7 +212,7 @@ A bundle handler returned without error.
 | `handlerName` | `'onWake' \| 'onSleep' \| 'onPlayerConnect' \| ...` |
 | `durationMs` | |
 
-### `child.handlerError`
+### `handler.error`
 
 A bundle handler threw or timed out.
 
@@ -208,7 +227,7 @@ A bundle handler threw or timed out.
 
 ### `onCapacityWarning.sent`
 
-Parent → child. Best-effort budget warning.
+Broker → isolate. Best-effort budget warning.
 
 | Field | Notes |
 |---|---|
@@ -229,7 +248,7 @@ Control plane received a `POST /admin/games/:id/host-event`.
 
 ### `onHostEvent.delivered`
 
-Parent → child. The bundle's `onHostEvent` was called.
+Broker → isolate. The bundle's `onHostEvent` was called.
 
 | Field | Notes |
 |---|---|
@@ -282,7 +301,7 @@ WS handshake refused.
 
 | Field | Notes |
 |---|---|
-| `gameId?` | target game, when the parent has enough context |
+| `gameId?` | target game, when the Broker has enough context |
 | `playerId?` | from JWT, if parseable |
 | `reason` | `'notAllowed' \| 'wrongGame' \| 'wrongShard' \| 'gameDeleted'` |
 
@@ -290,7 +309,7 @@ WS handshake refused.
 
 ### `onPlayerMessage`
 
-Parent → child. Player message dispatched.
+Broker → isolate. Player message dispatched.
 
 | Field | Notes |
 |---|---|
@@ -325,12 +344,38 @@ Bundle's `c.ws.send` rejected by substrate.
 
 ### `state.read`, `state.write`, `state.flush`
 
-Storage tier operations.
+State object operations (cache-level; `state.flush` requests an immediate
+checkpoint).
 
 | Field | Notes |
 |---|---|
 | `gameId` | |
-| `byteSize` | for write/flush |
+| `byteSize` | for write |
+
+### `state.checkpoint`
+
+A game was atomically committed to Tigris (the root PUT). A clean game
+emits nothing.
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `checkpointSeq` | the new monotonic commit number |
+| `codec` | `'whole' \| 'json-delta' \| 'cdc'` |
+| `byteSize` | bytes written this checkpoint |
+| `trigger` | `'interval' \| 'flush' \| 'sleep'` |
+| `durationMs` | |
+
+### `state.restore`
+
+A time-travel restore advanced `head` to reference a prior root
+(revert-forward).
+
+| Field | Notes |
+|---|---|
+| `gameId` | |
+| `fromCheckpointSeq` | the root restored to |
+| `newCheckpointSeq` | the new head |
 
 ### `state.write.rejected`
 
@@ -365,7 +410,7 @@ Blob namespace operations.
 
 ### `api.invoke.request`
 
-Parent received a `c.api.invoke` IPC from the child.
+Broker received a `c.api.invoke` from a Runner (on behalf of its isolate).
 
 | Field | Notes |
 |---|---|
@@ -377,7 +422,7 @@ Parent received a `c.api.invoke` IPC from the child.
 
 ### `api.invoke.response`
 
-Parent returned the response to the child.
+Broker returned the response to the Runner.
 
 | Field | Notes |
 |---|---|
@@ -441,7 +486,7 @@ A budget enforcement fired.
 
 ### `bundle.loaded`
 
-Shard loaded a bundle into a child runner.
+A Runner eval'd a bundle into a game's isolate.
 
 | Field | Notes |
 |---|---|
@@ -620,7 +665,7 @@ The bundle's `c.metrics.emit` calls.
 ## Cross-references
 
 - [`contract/history-events.md`](../contract/history-events.md) — conceptual surface
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — most events emitted here
+- [`subsystems/broker.md`](../subsystems/broker.md) — most events emitted here
 - [`subsystems/control-plane-admin-api.md`](../subsystems/control-plane-admin-api.md) — control-plane-emitted events
 - [`subsystems/scenario-runner.md`](../subsystems/scenario-runner.md) — oracles read these
 - [`vision/guarantees.md`](../vision/guarantees.md) #14 (history completeness)

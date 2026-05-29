@@ -218,13 +218,15 @@ The bundle sees this via `c.compute.budget()` like any other budget. See
 
 ```mermaid
 sequenceDiagram
-  participant Child as "Child (bundle)"
-  participant Parent as "Parent actor"
+  participant Iso as "Isolate (bundle)"
+  participant Runner as "Runner"
+  participant Broker as "Broker"
   participant GW as "API gateway"
   participant Svc as "URL service"
 
-  Child->>Parent: "c.api.invoke(kind, args, options)"
-  Parent->>GW: "forward (shard-verified gameId, triggering sessionId)"
+  Iso->>Runner: "c.api.invoke(kind, args, options)"
+  Runner->>Broker: "relay over the bridge"
+  Broker->>GW: "forward (Broker-stamped gameId, triggering sessionId)"
   GW->>GW: "check api-invocations-per-min (fail apiRateExceeded if over)"
   GW->>GW: "lookup URL for kind (fail kindUnknown if absent)"
   GW->>GW: "build context envelope"
@@ -238,12 +240,19 @@ sequenceDiagram
     GW->>GW: "record (fingerprint, raw outbound, raw inbound) to history"
   end
   alt URL service error
-    GW-->>Parent: "{ ok: false, error: 'providerError' }"
+    GW-->>Broker: "{ ok: false, error: 'providerError' }"
   else success
-    GW-->>Parent: "{ ok: true, result }"
+    GW-->>Broker: "{ ok: true, result }"
   end
-  Parent-->>Child: "response"
+  Broker-->>Runner: "response"
+  Runner-->>Iso: "response"
 ```
+
+The bridge is **async**: while the isolate awaits its `c.api.invoke`, it
+yields the Runner's event loop so co-tenant games keep running (see
+[`subsystems/runner.md`](../subsystems/runner.md)). The Broker stamps
+`gameId` and the triggering `sessionId` from its own state — the Runner
+cannot forge them.
 
 No reservation, no commit, no ledger touch, no debit verification. The
 substrate hands off, records, and returns. Whatever the URL service does

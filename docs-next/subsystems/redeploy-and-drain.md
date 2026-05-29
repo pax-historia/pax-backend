@@ -15,7 +15,7 @@ so that mid-deploy traffic always has a correct execution path.
 | Surface | What ships | App | Cadence | Player-visible effect |
 |---|---|---|---|---|
 | **Orchestration** | Placement router, control plane, API gateway, first-party URL services | `pax-backend-control` | Multiple per day | None — orchestration isn't in the WS data path |
-| **Shard image** | Runtime + vendored Rivet + parent actor + child runners | `pax-backend-shards` | Daily to weekly | None on planned drain (zero loss); brief reconnect on unplanned shard loss |
+| **Shard image** | Runtime: Broker + Runner pool | `pax-backend-shards` | Daily to weekly | None on planned drain (zero loss); brief reconnect on unplanned shard loss |
 | **Creator bundle** | A new bundle binary uploaded via admin REST + bundle pointer flip per game | n/a (data, not code) | Multiple per minute per creator | Brief — game wakes onto new bundle on next reconnect or planned re-wake |
 
 The substrate **owns the safety properties of each redeploy path**. The
@@ -30,7 +30,7 @@ Behavior:
   gateway, reference URL services are co-located on `pax-backend-control`
   in v1).
 - No game's WS connection traverses orchestration — the WS path is
-  client → parent. So zero player-visible effect for in-flight games.
+  client → Broker. So zero player-visible effect for in-flight games.
 - In-flight admin REST requests are drained briefly; the vercel backend
   retries on transient 503.
 - Reference URL services drain in-flight HTTP requests; the gateway's
@@ -61,9 +61,9 @@ This is the substrate's most subtle deploy. Two patterns:
 4. Placement router stops sending new placements to shard-3.
 5. Each game on shard-3 sleeps naturally when its players disconnect (after the 60s sleep-grace).
 6. On wake (player reconnect), the router picks a different shard.
-   - The new shard reads c.state and c.blob from Tigris.
+   - The new shard's Broker materializes the game's state root from Tigris.
    - onWake fires with reason: 'cold-restart-from-storage'.
-   - Zero data loss (the previous sleep flushed before release).
+   - Zero data loss (the previous sleep checkpointed before release).
 7. When shard-3 reports zero active games, the substrate emits shard.drain.completed.
 8. The shard is replaced with the new image.
 9. Repeat for the next shard.
@@ -87,10 +87,10 @@ is invisible (the game was asleep at that moment).
 
 If a shard machine dies unexpectedly:
 
-- Games on that shard lose at most their flush-window of `c.state` writes.
+- Games on that shard lose at most one checkpoint interval of writes.
 - On reconnect, the placement router picks a different shard.
 - `onWake` fires with `cold-restart-from-storage`.
-- The bundle reads the last durable state and proceeds.
+- The bundle reads the last committed checkpoint and proceeds.
 
 Player-visible effect: **a brief reconnect plus possible loss of the
 last few seconds of game state**. Guarantee #11 sets the upper bound.
@@ -136,7 +136,7 @@ the control plane:
 1. Reads the rollback backup.
 2. Atomically restores the previous bundle pointer.
 3. Emits `bundle.rollback.thresholdReached` then `bundle.rollback`.
-4. Restarts the child on the previous bundle.
+4. Re-wakes the game's isolate on the previous bundle.
 
 Player-visible effect: **a brief reconnect; the game is back on the old
 bundle.** No data loss (the failed bundle's `onWake` would have aborted
@@ -184,13 +184,13 @@ bearer token.
 | Signal | Notes |
 |---|---|
 | History events: `shard.drain.started`, `shard.drain.completed`, `bundle.uploaded`, `bundle.flip.succeeded`, `bundle.flip.refused`, `bundle.rollback.*` | Control plane writer |
-| Metrics: `pax_control_shard_drain_duration_seconds`, `pax_control_bundle_flip_total{result}`, `pax_parent_cold_restart_from_storage_total` | Per-surface |
+| Metrics: `pax_control_shard_drain_duration_seconds`, `pax_control_bundle_flip_total{result}`, `pax_broker_cold_restart_from_storage_total` | Per-surface |
 
 ## End-state contract
 
 - **Orchestration redeploys never affect in-flight WS sessions.**
 - **Shard drains lose zero data** on planned drain (per guarantee #11).
-- **Shard machine loss loses ≤flush-window of writes** (per guarantee #11).
+- **Shard machine loss loses ≤ one checkpoint interval of writes** (per guarantee #11).
 - **Bundle flips are atomic** — the pointer is updated or not; partial
   states are impossible.
 - **Rollback fires within the threshold** after N consecutive
@@ -202,5 +202,5 @@ bearer token.
 - [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md) — flip gate
 - [`control-plane-admin-api.md`](control-plane-admin-api.md) — drain + flip endpoints
 - [`bundle-storage.md`](bundle-storage.md) — bundle upload pipeline
-- [`parent-actor.md`](parent-actor.md) — flush-before-release on drain
+- [`broker.md`](broker.md) — checkpoint-before-release on drain
 - [`placement-and-wake.md`](placement-and-wake.md) — placement under drain

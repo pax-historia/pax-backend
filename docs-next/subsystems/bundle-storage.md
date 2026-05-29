@@ -28,11 +28,11 @@ substrate will ever load.
 - The bundle's compile pipeline (`pax-bundle build`; bundle authors
   ship pre-built source via `POST /admin/bundles/:bundleName`).
 - Bundle signature verification (out of scope for v1; see
-  [`why/why-isolated-vm-in-child.md`](../why/why-isolated-vm-in-child.md)
-  for the security model).
-- Bundle execution (parent actor + child runner).
+  [`why/why-isolated-vm.md`](../why/why-isolated-vm.md) for the security
+  model).
+- Bundle execution (Broker + Runner isolate).
 - Bundle compatibility decisions (manifest gate at flip/wake — control
-  plane and parent enforce).
+  plane and Broker enforce).
 
 ## Tigris layout
 
@@ -182,19 +182,20 @@ for the equivalent latitude applied to `c.state` / `c.blob` writes.
 
 ## Shard-side bundle cache
 
-When a shard cold-wakes a game, the parent actor fetches the bundle
-source from Tigris **once per `(shardId, bundleName)` pair**:
+When a shard cold-wakes a game, the Broker fetches the bundle source
+from Tigris **once per `(shardId, bundleName)` pair**:
 
 1. Check local cache at `/data/bundle-cache/<bundleName>/source.js`.
 2. If present and `contentSha256` matches the Redis row: use it.
 3. Else: download from Tigris; write to local cache.
-4. Send to the child via the `bootstrap` IPC envelope.
+4. Deliver the source to the Runner via the `assign` bridge message; the
+   Runner evals it into the game's isolate.
 
-The cache lives on the shard's local Fly Volume. Cache TTL: indefinite,
-but the volume is treated as scratch space — anything in the cache is
-safe to lose; the shard re-downloads from Tigris on the next miss. The
-substrate makes no durability claim about cached bundle bytes on shard
-volumes.
+The cache lives on the shard's local scratch disk. Cache TTL: indefinite,
+but it is treated as scratch space — anything in the cache is safe to
+lose; the shard re-downloads from Tigris on the next miss. The substrate
+makes no durability claim about cached bundle bytes (and keeps no durable
+volume in the state path; state durability is Tigris-canonical).
 
 ## Garbage collection
 
@@ -215,15 +216,15 @@ The vercel backend's tooling runs a periodic GC sweep that lists
 candidate bundles and either deletes them or extends their retention.
 The substrate does not auto-GC.
 
-## Bundle fetch from the child runner
+## Bundle fetch into the Runner
 
-The child runner does **not** fetch from Tigris. The parent provides the
-source via `bootstrap`. This keeps:
+The Runner does **not** fetch from Tigris. The Broker delivers the source
+via the `assign` bridge message. This keeps:
 
-- The child's privilege set minimal (no S3 credentials).
-- The fetch path centralized (the parent's cache hits cover every game on
+- The Runner's privilege set minimal (credential-less; no S3 credentials).
+- The fetch path centralized (the Broker's cache hits cover every game on
   the shard).
-- Bundle source verification simple (the parent has already validated
+- Bundle source verification simple (the Broker has already validated
   `contentSha256` against the Redis row).
 
 ## Trust position
@@ -231,11 +232,12 @@ source via `bootstrap`. This keeps:
 **Platform-trusted** for the upload pipeline (the control plane writes
 to Tigris).
 
-**Shard-local-trusted** for the local cache (the parent reads from
-Tigris with shared shard creds, caches to a shared volume).
+**Shard-trusted** for the local cache (the Broker reads from Tigris with
+shard creds and caches to local scratch).
 
-**Untrusted from inside the child** — the child has no access to
-Tigris or the cache; it sees only the source string the parent gave it.
+**Untrusted from inside the isolate** — the isolate has no access to
+Tigris or the cache, the Runner is credential-less, and the isolate sees
+only the source the Broker delivered.
 
 ## Observability surface
 
@@ -246,7 +248,7 @@ Tigris or the cache; it sees only the source string the parent gave it.
 | `bundle.loaded.failed` history event | If shard-side fetch or eval fails |
 | `bundle.deleted` history event | On admin delete |
 | Metrics: `pax_control_bundle_upload_duration_seconds`, `pax_control_bundle_storage_bytes` | Control plane Prometheus |
-| Metrics: `pax_parent_bundle_fetch_duration_seconds`, `pax_parent_bundle_cache_hit_total` | Per-shard Prometheus |
+| Metrics: `pax_broker_bundle_fetch_duration_seconds`, `pax_broker_bundle_cache_hit_total` | Per-shard Prometheus |
 
 ## End-state contract
 
@@ -264,6 +266,6 @@ Tigris or the cache; it sees only the source string the parent gave it.
 
 - [`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md) — manifest contract
 - [`control-plane-admin-api.md`](control-plane-admin-api.md) — upload endpoint
-- [`parent-actor.md`](parent-actor.md) — shard-side fetch + cache
+- [`broker.md`](broker.md) — shard-side fetch + cache, delivery to Runners
 - [`reference/admin-api.md`](../reference/admin-api.md) — endpoint schemas
 - [`vision/non-goals.md`](../vision/non-goals.md) — bundle signing is not in scope

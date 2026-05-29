@@ -43,11 +43,9 @@ flowchart TB
 
     subgraph shard ["Shard machine"]
       direction TB
-      parent["Parent actor<br/>(shard-local-trusted)<br/>WS, sessions, IPC broker,<br/>compute budgets, history writer"]
-      child["Child process<br/>(untrusted creator JS)<br/>isolated-vm; no network; capped"]
-      rivet["Vendored Rivet engine<br/>(opaque infrastructure)"]
-      parent <-->|"IPC"| child
-      parent -.->|"vendored"| rivet
+      broker["Broker (1 per shard)<br/>(shard-trusted; all credentials)<br/>WS, sessions, identity stamping,<br/>compute budgets, state cache +<br/>atomic checkpoint, history writer"]
+      runners["Runner pool<br/>(credential-less; no network)<br/>many game isolates per Runner<br/>isolated-vm; capped"]
+      broker <-->|"async bridge"| runners
     end
 
     refsvc["First-party reference URL services<br/>(echo, delay, http.fetch, mock-ai.v1)"]
@@ -55,16 +53,16 @@ flowchart TB
 
   vbackend["Vercel backend<br/>(Pax-historia Next.js)<br/>Identity, billing, presets,<br/>URL service implementations,<br/>history tail consumer"]
 
-  tigris[("Tigris<br/>c.state · c.blob · bundles · history")]
+  tigris[("Tigris<br/>state root · c.blob · bundles · history")]
   redis[("Redis<br/>active-game directory + ephemeral")]
 
   frontend -->|"HTTP placement"| router
   router -->|"router-signed JWT + wsUrl"| frontend
-  frontend -->|"WS + JWT"| parent
-  parent <-->|"reads/writes"| tigris
-  parent -.->|"capacity push"| redis
+  frontend -->|"WS + JWT (Fly-proxy pinned)"| broker
+  broker <-->|"checkpoint reads/writes"| tigris
+  broker -.->|"capacity push"| redis
   router <-->|"directory + score"| redis
-  parent -->|"c.api.invoke"| gateway
+  broker -->|"c.api.invoke"| gateway
   gateway -->|"HTTP POST + envelope"| refsvc
   gateway -->|"HTTP POST + envelope"| vbackend
   vbackend -->|"POST /placement<br/>(authenticated; pass-through claims)"| router
@@ -76,13 +74,14 @@ flowchart TB
 Three points to notice in the diagram:
 
 - The substrate has **no WebSocket data path through the router**. The router
-  is HTTP-only. Clients connect WS directly to the parent actor on the shard
-  they were placed on. That keeps the router stateless and the data plane
-  short.
-- **All three substrate-internal storage tiers (`c.state`, `c.blob`, bundles,
-  history archives) sit in Tigris.** Redis is for ephemeral, low-value data
-  (directory rows, capacity push, sessions in-flight). Per-shard volumes
-  exist for Rivet engine internals only.
+  is HTTP-only. Clients connect WS directly to the Broker on the shard they
+  were placed on (the Fly proxy pins the connection to that machine). That
+  keeps the router stateless and the data plane short.
+- **All substrate-internal durable storage (the per-game state root,
+  optional `c.blob`, bundles, history archives) sits in Tigris.** Redis is
+  for ephemeral, low-value data (directory rows, capacity push, sessions
+  in-flight). There is no per-shard durable volume in the state path —
+  durability is Tigris-canonical and committed at checkpoints.
 - **The vercel backend hosts URL services**, but the substrate ships
   first-party reference services co-located with the gateway. From the
   gateway's perspective every URL service is the same: a `kindName → URL`
@@ -139,7 +138,7 @@ The contract surface is intentionally narrow:
 - 17 strong platform guarantees ([`vision/guarantees.md`](guarantees.md))
 - 3 versioning axes ([`contract/bundle-compatibility.md`](../contract/bundle-compatibility.md))
 - 1 external API channel ([`contract/external-api-channel.md`](../contract/external-api-channel.md))
-- 2 storage tiers ([`contract/storage.md`](../contract/storage.md))
+- 1 state object + an optional keyed-blob escape hatch ([`contract/storage.md`](../contract/storage.md))
 
 Every guarantee maps to an oracle that reads pure history. Every oracle is
 run by the scenario-runner on every release. See
@@ -147,17 +146,28 @@ run by the scenario-runner on every release. See
 
 ## Scale target
 
-**1k concurrent games across 10 Rivet shard machines** (100 games per shard).
+The proof milestone is **1k concurrent games across 10 shard machines**.
 The substrate's interesting properties (router throughput, per-shard
 hibernation, cross-shard migration, redeploy safety, history completeness
 under load) are all measurable at this size. If it works cleanly, we add
-shards.
+shards and density.
+
+Density is the headline of the runtime: collapsing per-game Node
+duplication into **many game isolates per credential-less Runner** is a
+~7-10× density win for typical games (a loaded game is ~1 MB of isolate vs
+~36 MB of Node process). Combined with the cost model of the storage
+design — idle games write nothing, mutating games cost one root PUT per
+checkpoint — this is what opens the path from ~10k toward ~100k concurrent
+without a central write head. See
+[`why/why-broker-runner.md`](../why/why-broker-runner.md) and
+[`why/why-tigris-canonical.md`](../why/why-tigris-canonical.md).
 
 Initial Fly footprint:
 
-- **10 Rivet shard machines** on `pax-backend-shards`. One Fly Volume per
-  shard for Rivet engine internals; 20 GB each in the current v1 proof.
-  Volume usage is bounded by working set, not by lifetime game count.
+- **10 shard machines** on `pax-backend-shards`, each running one Broker
+  plus a small Runner pool. No per-shard durable volume in the state path
+  — state is Tigris-canonical and committed at checkpoints; working set,
+  not lifetime game count, drives the resident footprint.
 - **1–2 control + gateway machines** on `pax-backend-control` co-locating
   the placement router, control plane, API gateway, and first-party
   reference URL services. Split out as evidence demands.

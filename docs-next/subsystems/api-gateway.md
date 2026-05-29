@@ -15,8 +15,8 @@ For every `c.api.invoke`:
 4. Either dispatch live HTTP (production) or look up a recorded
    response (replay).
 5. Record the wire-grain round trip to history.
-6. Return the response verbatim to the parent actor (which returns it
-   to the bundle).
+6. Return the response verbatim to the Broker (which returns it to the
+   bundle's isolate).
 
 ## Owns
 
@@ -48,7 +48,7 @@ For every `c.api.invoke`:
 
 | Source | What |
 |---|---|
-| Parent actor | `POST /invoke` internal API: `{ gameId, sessionId?, jwtClaims?, kind, args, idempotencyKey?, traceId?, runId? }` |
+| Broker | `POST /invoke` internal API: `{ gameId, sessionId?, jwtClaims?, kind, args, idempotencyKey?, traceId?, runId? }` |
 | Control plane | Kind registry updates (via Redis or cache invalidation) |
 | Scenario-runner (in replay mode) | `PAX_API_REPLAY_FIXTURES_PATH` pointing at a fixture directory keyed by fingerprint |
 
@@ -57,7 +57,7 @@ For every `c.api.invoke`:
 | Destination | What |
 |---|---|
 | URL services | HTTP POST with canonical envelope, `X-Gateway-Envelope-Version: 2` |
-| Parent actor | `{ ok: true, result }` or `{ ok: false, error, detail? }` |
+| Broker | `{ ok: true, result }` or `{ ok: false, error, detail? }` |
 | Tigris (via Vector) | Wire-grain records (`api.invoke.wire` history events) + raw outbound/inbound payloads |
 | Self (Prometheus) | `pax_gateway_*` metrics |
 
@@ -65,12 +65,12 @@ For every `c.api.invoke`:
 
 ```mermaid
 sequenceDiagram
-  participant Parent
+  participant Broker
   participant GW as Gateway
   participant Registry
   participant URL as URL Service
 
-  Parent->>GW: POST /invoke (kind, args, context)
+  Broker->>GW: POST /invoke (kind, args, context)
   GW->>GW: check api-invocations-per-min<br/>(fail apiRateExceeded if over)
   GW->>Registry: lookup kind → URL<br/>(fail kindUnknown if absent)
   GW->>GW: build envelope { args, context }
@@ -80,14 +80,14 @@ sequenceDiagram
     alt match found
       GW->>GW: return recorded { result } or { error }
     else miss
-      GW->>Parent: { ok: false, error: 'replayCoverageGap' }
+      GW->>Broker: { ok: false, error: 'replayCoverageGap' }
     end
   else mode == live
     GW->>URL: POST envelope + headers
     URL-->>GW: 200 OK { result } OR 4xx/5xx { error }
     GW->>GW: record (fingerprint, raw outbound, raw inbound) to history
   end
-  GW-->>Parent: { ok: true/false, result/error, detail? }
+  GW-->>Broker: { ok: true/false, result/error, detail? }
 ```
 
 ## Replay mode
@@ -191,7 +191,7 @@ If compromised, all `c.api.invoke` traffic on the cluster is compromised.
 |---|---|
 | Metrics: `pax_gateway_invoke_duration_seconds{kind, mode, result}`, `pax_gateway_url_service_http_duration_seconds`, `pax_gateway_invoke_replay_coverage_gap_total`, `pax_gateway_api_rate_exceeded_total`, `pax_gateway_kind_unknown_total`, `pax_gateway_envelope_bytes{direction}` | Self; `:9081/metrics` |
 | Logs: structured JSON | Self → stdout |
-| Traces: OTel spans `gateway.invoke` (parent), `gateway.url_service.http` (child) | Self → OTLP |
+| Traces: OTel spans `gateway.invoke` (outer), `gateway.url_service.http` (nested) | Self → OTLP |
 | History events: `api.invoke.wire` and the thin `api.invoke.request`/`.response` pair | Self |
 
 ## End-state contract
@@ -201,7 +201,7 @@ If compromised, all `c.api.invoke` traffic on the cluster is compromised.
 - **`replayCoverageGap` returns within 10 ms** (just a fingerprint
   lookup).
 - **Every live-mode call records to history before the response returns
-  to the parent** (so oracle reads from history reflect the response
+  to the Broker** (so oracle reads from history reflect the response
   the bundle saw).
 - **The envelope version is `X-Gateway-Envelope-Version: 2`** for all
   outbound HTTP. URL services that need to parse different envelope

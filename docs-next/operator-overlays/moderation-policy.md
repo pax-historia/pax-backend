@@ -72,7 +72,7 @@ The substrate:
 
 1. Lists every game where the player is allowed (`Redis lookup`).
 2. For each game, removes the player from `allowedPlayers`.
-3. Notifies each game's parent actor to force-disconnect any live
+3. Notifies each game's Broker to force-disconnect any live
    sessions for this player on this game.
 4. Emits `player.deleted` to history; `session.forceDisconnect` for
    each affected session.

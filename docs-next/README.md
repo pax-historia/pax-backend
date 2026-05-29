@@ -61,13 +61,14 @@ docs-next/
     why-no-async-games.md
     why-no-scheduled-wakeups.md
     why-opaque-compat-tags.md
-    why-keyed-blob-not-snapshot.md
+    why-one-state-object.md
+    why-unified-durability.md
     why-tigris-canonical.md
     why-url-per-kind.md
-    why-isolated-vm-in-child.md
+    why-isolated-vm.md
     why-no-audience-axis.md
     why-no-role-units.md
-    why-rivet-vendored.md
+    why-broker-runner.md
   contract/                              ← creator-facing surface
     creator-runtime.md
     lifecycle-and-wake.md
@@ -80,8 +81,9 @@ docs-next/
     placement-and-wake.md
     control-plane-admin-api.md
     api-gateway.md
-    parent-actor.md
-    child-runner-sandbox.md
+    broker.md
+    runner.md
+    state-store.md
     bundle-storage.md
     scenario-runner.md
     observability.md
@@ -122,5 +124,5 @@ docs-next/
   we considered, why we said no, what would change our mind.
 - **Subsystem pages follow the template.** Purpose, owns, doesn't own,
   inputs, outputs, failure model, trust position, observability surface,
-  end-state contract. See [`subsystems/parent-actor.md`](subsystems/parent-actor.md)
+  end-state contract. See [`subsystems/broker.md`](subsystems/broker.md)
   for the canonical example.

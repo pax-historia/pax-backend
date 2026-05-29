@@ -22,7 +22,7 @@ This page is the map. Every other doc in `docs-next/` is consistent with it.
                               ▼
 ┌────────────────────────────────────────────────────────────────────┐
 │ 3. Substrate (this repo)                                           │
-│    Core: parent, child, gateway, control plane, router.            │
+│    Core: Broker, Runner pool, gateway, control plane, router.      │
 │    Owns: compute plane, sessions, transport, history, bundles.     │
 │    Knows nothing about business semantics.                         │
 └────────────────────────────────────────────────────────────────────┘
@@ -82,11 +82,11 @@ Bottom edge — substrate ↔ vercel backend (admin REST + history pull):
 |---|---|
 | Admin REST surface (games, allowed players, bundles, shards, API kinds, history, sessions, compat tags), bundle upload pipeline, history stream, host-event delivery (`wakeOnDelivery`) | Who issues admin calls when, what triggers bundle uploads, the host's own ledger / projection tables / moderation workflows |
 
-Internal — substrate ↔ creator JS (IPC):
+Internal — substrate ↔ creator JS (the runtime bridge):
 
 | Owns | Does not own |
 |---|---|
-| IPC channel set, lifecycle hook contract, payload schemas, compute budget enforcement, error code taxonomy | The bundle's logic, the bundle's choice of state shape, the bundle's choice of `c.api.invoke` kinds |
+| Bridge channel set (isolate ↔ Runner ↔ Broker), lifecycle hook contract, payload schemas, compute budget enforcement, error code taxonomy | The bundle's logic, the bundle's choice of state shape, the bundle's choice of `c.api.invoke` kinds |
 
 ## The boundary in one sentence (per layer pair)
 

@@ -44,8 +44,8 @@ are out**. The bundle pattern for long-duration deadlines is:
 > player handler. If the threshold has been crossed, do the work.
 
 This works because:
-- `c.state` is Tigris-canonical with flush-window durability, so the
-  timestamp survives any sleep/wake.
+- `c.state` is Tigris-canonical, committed atomically at each checkpoint,
+  so the timestamp survives any sleep/wake.
 - The check is free (one comparison per handler tick).
 - The deadline fires the next time **a player reconnects** or **a
   host-driven wake delivers a host event**.

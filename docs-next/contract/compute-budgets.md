@@ -12,13 +12,13 @@ business resource (those don't exist in the substrate at all — see
 
 | Budget | Window | Default | Enforcement |
 |---|---|---|---|
-| `cpu-ms-per-tick` | Per lifecycle/player handler invocation | 1000 ms | Handler killed if exceeded; child stays alive |
-| `memory-bytes` | Steady-state child RSS | 128 MiB | Child killed (OOM); restart with `cold-restart-after-crash`, `errorClass: 'oom'` |
-| `bandwidth-bytes-per-sec` | Sliding 1-second window | 64 KiB/s | `c.ws.send` returns `bandwidthExceeded`; child stays alive |
-| `ws-messages-per-sec` | Sliding 1-second window | 50/s | `c.ws.send` returns `rateExceeded`; child stays alive |
-| `state-bytes` | Total `c.state` CBOR size | 128 KiB | `c.state.write` returns `sizeExceeded` |
-| `blob-bytes` | Sum of all keys in `c.blob` namespace | 100 MiB | `c.blob.put` returns `sizeExceeded` |
-| `blob-keys` | Distinct key count in `c.blob` namespace | 1024 | `c.blob.put` returns `keyCountExceeded` |
+| `cpu-ms-per-tick` | Per lifecycle/player handler invocation | 1000 ms | Handler killed if exceeded; isolate stays alive |
+| `memory-bytes` | Per-isolate cap (generous per preset); admission reserves player-scaled actual | 128 MiB | Isolate disposed on cap hit; restart `cold-restart-after-crash`, `errorClass: 'oom'`; co-tenants unaffected |
+| `bandwidth-bytes-per-sec` | Sliding 1-second window | 64 KiB/s | `c.ws.send` returns `bandwidthExceeded`; isolate stays alive |
+| `ws-messages-per-sec` | Sliding 1-second window | 50/s | `c.ws.send` returns `rateExceeded`; isolate stays alive |
+| `state-bytes` | Size of the `c.state` object | 128 KiB | `c.state.write` returns `sizeExceeded` |
+| `blob-bytes` | Sum of all keys in the optional `c.blob` namespace | 100 MiB | `c.blob.put` returns `sizeExceeded` |
+| `blob-keys` | Distinct key count in the optional `c.blob` namespace | 1024 | `c.blob.put` returns `keyCountExceeded` |
 | `api-invocations-per-min` | Sliding 1-minute window | 60/min | `c.api.invoke` returns `apiRateExceeded`; URL service not contacted |
 
 ## Why exactly these eight
@@ -79,38 +79,43 @@ Values outside these envelopes are rejected at game create.
 
 ### Handler-tick CPU
 
-The parent gives the child a per-handler-invocation timeout (the
+The Runner wraps each handler invocation with a per-handler timeout (the
 `cpu-ms-per-tick` value). If the handler doesn't return within that
-window, the parent emits `child.handlerError` with `code: 'handlerTimeout'`
-and `compute.budget.rejected` for `cpu-ms-per-tick`. The handler's promise
-is rejected with a typed error; the child stays alive for the next
-handler.
+window, the Runner emits a handler-timeout (`handler.error`,
+`code: 'handlerTimeout'`) and the Broker records
+`compute.budget.rejected` for `cpu-ms-per-tick`. The handler's promise is
+rejected with a typed error; the isolate stays alive for the next handler.
 
 The bundle author can call `c.compute.budget()` mid-handler to see how
 much CPU they've burned and decide whether to early-return.
 
 ### Memory
 
-`isolated-vm` enforces a per-isolate memory cap. The child process's
-total RSS is monitored by the parent; if the child OOMs, the parent
-restarts it (guarantee #8: blast radius = 1 game) and the next `onWake`
-carries `cold-restart-after-crash` with `errorClass: 'oom'`.
+`isolated-vm` enforces a per-isolate memory cap, fixed at isolate
+creation and set generously per preset. The Runner samples per-isolate
+heap and its own process RSS and reports to the Broker; admission counts
+the **player-scaled reservation**, not the cap (see
+[`subsystems/broker.md`](../subsystems/broker.md) §Resource model). If a
+game hits its cap, the Runner disposes that one isolate and the Broker
+re-wakes it (`cold-restart-after-crash`, `errorClass: 'oom'`) **without
+disturbing co-tenants** (guarantee #8).
 
 ### Bandwidth and message rate
 
-Both are sliding 1-second windows tracked by the parent on outbound
-`c.ws.send` calls. The parent rejects an over-budget send with the
-appropriate typed error code; the bundle's send promise resolves to
-`{ ok: false, error: 'bandwidthExceeded' | 'rateExceeded' }`.
+Both are sliding 1-second windows tracked by the Broker on outbound
+`c.ws.send` calls (where fan-out also happens). The Broker rejects an
+over-budget send with the appropriate typed error code; the bundle's send
+promise resolves to `{ ok: false, error: 'bandwidthExceeded' |
+'rateExceeded' }`.
 
 A rejected send is **not** retried by the substrate. The bundle decides
 whether to retry, drop, or batch.
 
 ### State, blob bytes, blob keys
 
-All three are checked by the parent before forwarding the write to
-Tigris. An over-budget write is rejected before any Tigris call;
-`{ ok: false, error: ... }` is returned synchronously.
+All three are checked by the Broker on `c.state.write` / `c.blob.put`,
+before the write enters the cache. An over-budget write is rejected
+immediately; `{ ok: false, error: ... }` is returned synchronously.
 
 ### API invocations per minute
 
@@ -118,9 +123,9 @@ Sliding 1-minute window per game tracked at the gateway. Over-budget
 invokes never contact the URL service — the gateway returns
 `{ ok: false, error: 'apiRateExceeded' }` immediately.
 
-This is the only budget where the parent (which sees the IPC) and the
-gateway (which sees the dispatch) both participate. The gateway is the
-authoritative counter; the parent's `c.compute.budget()` snapshot
+This is the only budget where the Broker (which sees the bridge request)
+and the gateway (which sees the dispatch) both participate. The gateway is
+the authoritative counter; the Broker's `c.compute.budget()` snapshot
 queries the gateway for the live value.
 
 ## Capacity warnings
@@ -144,21 +149,23 @@ budget at 50% will not warn.
 
 ## Cross-budget interactions
 
-- `state-bytes` and `blob-bytes` are independent (separate storage tiers).
+- `state-bytes` caps the single state object; `blob-bytes` caps the
+  optional keyed tier. They are independent.
 - `bandwidth-bytes-per-sec` is **outbound only**; inbound (from clients)
   is constrained by WS frame size + frame rate, not a separate budget.
 - `api-invocations-per-min` is independent of any URL service's own rate
   limits — a `c.api.invoke` that passes the substrate's budget but is
   rate-limited by the URL service returns `providerError`, not
   `apiRateExceeded`.
-- `memory-bytes` is measured at the child process level; it includes
-  isolate memory and Node-process overhead.
+- `memory-bytes` is the per-isolate cap; the Runner's process RSS is
+  shared across co-tenants and reconciled separately. Admission accounts
+  for the player-scaled reservation, not the (oversubscribed) caps.
 
 ## Cross-references
 
 - [`reference/error-codes.md`](../reference/error-codes.md) — full taxonomy
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — most
-  enforcement lives here
+- [`subsystems/broker.md`](../subsystems/broker.md) — most enforcement
+  lives here
 - [`subsystems/api-gateway.md`](../subsystems/api-gateway.md) —
   `api-invocations-per-min` enforcement
 - [`vision/guarantees.md`](../vision/guarantees.md) #7

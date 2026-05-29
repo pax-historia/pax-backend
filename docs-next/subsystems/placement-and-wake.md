@@ -10,8 +10,8 @@ end-to-end.
 
 Decide, on every wake, which shard a game runs on. Enforce the runtime
 contract placement gate (guarantee #16). Issue signed JWTs so the
-vercel platform frontend wrapper can connect WS directly to the parent
-actor on the chosen shard.
+vercel platform frontend wrapper can connect WS directly to the Broker
+on the chosen shard.
 
 ## Owns
 
@@ -28,7 +28,7 @@ actor on the chosen shard.
 ## Doesn't own
 
 - The WS data path. The router is **HTTP-only**. Clients connect WS
-  directly to the parent actor.
+  directly to the Broker (the Fly proxy pins the socket to the shard).
 - The bundle store. The router knows nothing about bundle binaries; it
   consults the control plane's bundle metadata for `runtimeContractRequired`.
 - Per-game state. The router doesn't read or write `c.state`/`c.blob`.
@@ -96,11 +96,11 @@ Any violation is a release blocker.
 
 ### #2 — Allowed-only connection (partial)
 
-The router does not check `allowedPlayers`. That's the parent actor's
-job at WS-accept (the substrate is defense-in-depth: even a stolen JWT
-won't let an unauthorized player connect). The router signs JWTs for
-any `(gameId, playerId)` pair the vercel-backend-proxied request asks
-for; the parent rejects at handshake.
+The router does not check `allowedPlayers`. That's the Broker's job at
+WS-accept (the substrate is defense-in-depth: even a stolen JWT won't let
+an unauthorized player connect). The router signs JWTs for any
+`(gameId, playerId)` pair the vercel-backend-proxied request asks for; the
+Broker rejects at handshake.
 
 The substrate accepts this layering: the router stays stateless about
 who can play what game.
@@ -109,11 +109,12 @@ who can play what game.
 
 - **Player reconnect** during sleep-grace → no new placement; existing
   shard already hosts the game.
-- **Player reconnect** after grace expired → new placement; child
-  process boots; wake reason is `cold-restart-from-storage`.
+- **Player reconnect** after grace expired → new placement; the Broker
+  creates the isolate; wake reason is `cold-restart-from-storage`.
 - **Host event with `wakeOnDelivery: true` to sleeping game** → control
-  plane triggers a placement-router call; child boots; wake reason is
-  `cold-restart-from-storage` followed by an `onHostEvent` delivery.
+  plane triggers a placement-router call; the Broker creates the isolate;
+  wake reason is `cold-restart-from-storage` followed by an `onHostEvent`
+  delivery.
 - **Cross-shard migration** (planned, e.g. drain) → control plane
   initiates; placement happens via the same code path; wake reason is
   `cold-restart-from-storage`.
@@ -141,7 +142,8 @@ placement.
 ## Stickiness
 
 A game's previous shard is preferred on re-placement if still healthy
-and accepting. Stickiness reduces cold-load churn on `c.state`.
+and accepting. Stickiness reduces cold-load churn (re-materializing the
+game's state root from Tigris).
 
 If the previous shard is unhealthy/draining/full, the router picks a
 fresh shard; the next `onWake` sees `cold-restart-from-storage` and
@@ -160,7 +162,7 @@ hydrates from Tigris.
 ## Trust position
 
 **Platform-trusted.** The router holds `PAX_JWT_SECRET` and signs JWTs the
-parent actor will trust. If the router is compromised, the substrate's
+Broker will trust. If the router is compromised, the substrate's
 WS-handshake authentication is compromised.
 
 ## Observability surface
@@ -190,8 +192,8 @@ in the host-event case) can rely on:
   — the placement gate's contract side
 - [`reference/placement-api.md`](../reference/placement-api.md) — placement HTTP wire reference
 - [`reference/jwt-claims.md`](../reference/jwt-claims.md) — JWT shape
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — what
-  the parent does on WS-accept
+- [`subsystems/broker.md`](../subsystems/broker.md) — what the Broker
+  does on WS-accept
 - [`vision/guarantees.md`](../vision/guarantees.md) #16
 - [`subsystems/control-plane-admin-api.md`](../subsystems/control-plane-admin-api.md)
   — host-event wake handoff

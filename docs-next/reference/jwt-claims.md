@@ -4,8 +4,8 @@
 
 The substrate's JWT is the trust bearer for every WebSocket connection.
 It is signed by the placement router (with `PAX_JWT_SECRET`, HS256)
-after a successful `POST /placement` call. The parent actor verifies on
-WS handshake.
+after a successful `POST /placement` call. The Broker verifies on the WS
+handshake.
 
 This page is the canonical JWT shape contract.
 
@@ -13,8 +13,7 @@ This page is the canonical JWT shape contract.
 
 The placement router signs every JWT. The router gets the
 `PAX_JWT_SECRET` from Infisical (synced to both `pax-backend-control`
-and `pax-backend-shards` so the parent actor can verify with the same
-key).
+and `pax-backend-shards` so the Broker can verify with the same key).
 
 In production the vercel backend never signs JWTs — it relies on the
 substrate's placement router for that. This keeps the JWT signing key
@@ -52,15 +51,15 @@ interface SubstrateJwt {
 
 | Claim | Set by | Verified by | Notes |
 |---|---|---|---|
-| `iss` | Router | Parent | Always `pax-backend-router` |
-| `aud` | Router | Parent | Always `pax-backend-shards` |
-| `sub` | Router (from placement request) | Parent | The `playerId` |
-| `iat` | Router | Parent | Issued-at |
-| `exp` | Router | Parent | Typically 5 minutes after `iat` |
+| `iss` | Router | Broker | Always `pax-backend-router` |
+| `aud` | Router | Broker | Always `pax-backend-shards` |
+| `sub` | Router (from placement request) | Broker | The `playerId` |
+| `iat` | Router | Broker | Issued-at |
+| `exp` | Router | Broker | Typically 5 minutes after `iat` |
 | `jti` | Router | (not enforced; for vercel backend audit) | Unique per JWT |
-| `gameId` | Router (from placement request) | Parent | Used to scope WS endpoint |
-| `shardId` | Router | Parent | Cross-checks the WS URL is on the right shard |
-| `traceId` | Router (from `traceparent` header on placement request) | Parent + every downstream span | W3C 16-byte hex |
+| `gameId` | Router (from placement request) | Broker | Used to scope WS endpoint |
+| `shardId` | Router | Broker | Cross-checks the WS URL is on the right shard |
+| `traceId` | Router (from `traceparent` header on placement request) | Broker + every downstream span | W3C 16-byte hex |
 | `runId` | Router (from placement request body) | Substrate-internal; for scenario-runner | Scenario-only; `null` in production |
 | `passthrough` | Vercel backend (proxied through placement request body) | Bundle (in `onPlayerConnect.jwtClaims`) | Opaque |
 
@@ -84,8 +83,8 @@ POST /placement
 }
 ```
 
-The router embeds `passthrough` verbatim in the JWT. The parent actor
-forwards the JWT claims (including `passthrough`) to the bundle's
+The router embeds `passthrough` verbatim in the JWT. The Broker forwards
+the JWT claims (including `passthrough`) to the bundle's
 `onPlayerConnect` handler as `jwtClaims`.
 
 The substrate **does not interpret** `passthrough`. It's a vercel
@@ -105,7 +104,7 @@ A valid JWT means:
 - The JWT is not expired.
 
 A valid JWT does **not** by itself authorize the WS connection. The
-parent actor ALSO checks:
+Broker ALSO checks:
 
 - `gameId` in JWT matches the URL path.
 - `shardId` in JWT matches this shard.
@@ -184,6 +183,6 @@ last line of defense.
 - [`ws-subprotocol.md`](ws-subprotocol.md) — handshake and frame format
 - [`placement-api.md`](placement-api.md) — `POST /placement` wire reference
 - [`subsystems/placement-and-wake.md`](../subsystems/placement-and-wake.md) — placement flow
-- [`subsystems/parent-actor.md`](../subsystems/parent-actor.md) — JWT verification on WS accept
+- [`subsystems/broker.md`](../subsystems/broker.md) — JWT verification on WS accept
 - [`vision/trust-model.md`](../vision/trust-model.md)
 - [`vision/guarantees.md`](../vision/guarantees.md) #2

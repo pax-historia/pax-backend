@@ -14,9 +14,9 @@ These map to strong platform guarantees #15 and #16.
 
 ### Bundle ↔ blob (Axis C / data-shape)
 
-Each game carries a single opaque `blobCompatTag: string` (namespace-level
-— one tag per game's blob namespace, not per-key). Each bundle declares
-in its manifest:
+Each game carries a single opaque `blobCompatTag: string` (one tag per
+game, covering the state object and the optional blob namespace as a
+whole, not per-key). Each bundle declares in its manifest:
 
 ```ts
 {
@@ -41,8 +41,9 @@ See [`why/why-opaque-compat-tags.md`](../why/why-opaque-compat-tags.md).
 ### Bundle ↔ shard (runtime contract)
 
 Each bundle declares `runtimeContractRequired: number` — a single
-integer naming the substrate-runtime surface (channels, IPC, lifecycle
-hooks, gateway envelope) it compiled against. Each shard ships
+integer naming the substrate-runtime surface (channels, the runtime
+bridge, lifecycle hooks, gateway envelope) it compiled against. Each shard
+ships
 `runtimeContractsSupported: [min, max]` integer range baked into its
 image.
 
@@ -136,7 +137,7 @@ The substrate carries exactly three independent version identifiers:
 
 | Axis | Boundary | Mechanism | Substrate opinion |
 |---|---|---|---|
-| **A. Substrate ↔ bundle** | Child (bundle JS) ↔ parent actor | `runtimeContractRequired: int` (bundle) + `runtimeContractsSupported: [min,max]` (shard); placement gate | Single linear evolution |
+| **A. Substrate ↔ bundle** | Isolate (bundle JS) ↔ Broker (via Runner) | `runtimeContractRequired: int` (bundle) + `runtimeContractsSupported: [min,max]` (shard); placement gate | Single linear evolution |
 | **B. Substrate ↔ URL service** | Gateway ↔ URL service | `X-Gateway-Envelope-Version: 2` HTTP header | Single linear evolution |
 | **C. Bundle ↔ URL service application** | Bundle code ↔ URL service application logic | Version baked into kind name (`ai.chat.v1`, `ai.chat.v2`) | Opaque (substrate just looks up the string) |
 

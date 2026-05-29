@@ -80,12 +80,12 @@ Content-Type: application/json
 
 | Field | Notes |
 |---|---|
-| `webSocketUrl` | The fully-qualified WS endpoint on the chosen shard. It already includes `placementToken` and Rivet routing parameters in the query string |
+| `webSocketUrl` | The fully-qualified WS endpoint on the chosen shard. It already includes `placementToken` and the Fly machine-routing parameters (so the Fly proxy can pin the socket to the target machine) in the query string |
 | `placementToken` | HS256-signed substrate JWT. Default TTL 5 minutes from `iat`. See [`jwt-claims.md`](jwt-claims.md) for the full claim set |
 
-The JWT contains the chosen `shardId`; the parent actor on the receiving
-shard cross-checks it against its own shard identity at handshake time
-(see [`ws-subprotocol.md`](ws-subprotocol.md)).
+The JWT contains the chosen `shardId`; the Broker on the receiving shard
+cross-checks it against its own shard identity at handshake time (see
+[`ws-subprotocol.md`](ws-subprotocol.md)).
 
 ## Response — refusal
 
@@ -115,7 +115,7 @@ The placement endpoint is also called substrate-internally — by the
 control plane — to wake sleeping games for delivery of host events with
 `wakeOnDelivery: true`. Internal callers use the same wire shape; the
 control plane authenticates over the Fly internal network the same way
-parents push capacity rows to Redis. See
+Brokers push capacity rows to Redis. See
 [`subsystems/control-plane-admin-api.md`](../subsystems/control-plane-admin-api.md)
 §"Host events".
 
@@ -123,7 +123,8 @@ parents push capacity rows to Redis. See
 
 The router prefers the game's previous shard if the directory shows a
 healthy, fresh, accepting-wakes shard already hosting this `gameId`. This
-reduces `c.state` cold-load churn. If the previous shard fails any of
+reduces cold-load churn (re-materializing the game's state root from
+Tigris). If the previous shard fails any of
 the gating predicates, a fresh shard is picked; the resulting wake reason
 on the new shard is `cold-restart-from-storage` (see
 [`contract/lifecycle-and-wake.md`](../contract/lifecycle-and-wake.md)).
@@ -142,9 +143,9 @@ A caller of `POST /placement` can rely on:
 - **A successful placement is recorded to history** before the response
   returns (`placement.accepted`).
 - **A refusal cites the specific gate** that failed via `error` code.
-- **The JWT is signed with `PAX_JWT_SECRET`** which the parent actor on
-  the chosen shard verifies with the same key. The vercel backend does
-  not hold this key.
+- **The JWT is signed with `PAX_JWT_SECRET`** which the Broker on the
+  chosen shard verifies with the same key. The vercel backend does not
+  hold this key.
 
 ## Cross-references
 
