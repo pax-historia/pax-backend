@@ -293,7 +293,7 @@ function asDispatchInput(raw: unknown): ApiGatewayDispatchInput {
   return {
     kind,
     args: body["args"],
-    idempotencyKey: readOptionalString(body, "idempotencyKey"),
+    idempotencyKey: readOptionalNullableString(body, "idempotencyKey"),
     gameId: readString(body, "gameId"),
     traceId: readNullableString(body, "traceId"),
     triggeringSessionId: readNullableString(body, "triggeringSessionId"),
@@ -301,7 +301,7 @@ function asDispatchInput(raw: unknown): ApiGatewayDispatchInput {
     connectedSessions: readConnectedSessions(body["connectedSessions"]),
     bundleName: readString(body, "bundleName"),
     bundleCompatTag: readString(body, "bundleCompatTag"),
-    runId: readString(body, "runId"),
+    runId: readNullableString(body, "runId"),
     replayMode: body["replayMode"] === true,
   };
 }
@@ -354,14 +354,14 @@ function readString(record: Readonly<Record<string, unknown>>, field: string): s
   return value;
 }
 
-function readOptionalString(
+function readOptionalNullableString(
   record: Readonly<Record<string, unknown>>,
   field: string,
 ): string | undefined {
   const value = record[field];
-  if (value === undefined) return undefined;
+  if (value === null || value === undefined) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new HttpError(400, "badRequest", { field, expected: "non-empty string" });
+    throw new HttpError(400, "badRequest", { field, expected: "string or null" });
   }
   return value;
 }
