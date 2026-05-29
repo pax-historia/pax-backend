@@ -40,6 +40,7 @@ export interface BridgeEnvelope<T extends string = string, P = unknown> {
   readonly requestId?: string;
   readonly traceId?: string;
   readonly spanId?: string;
+  readonly timeoutMs?: number;
   readonly ts_ns?: number;
 }
 
@@ -50,6 +51,7 @@ export interface RunnerControlEnvelope<T extends string = string, P = unknown> {
   readonly requestId?: string;
   readonly traceId?: string;
   readonly spanId?: string;
+  readonly timeoutMs?: number;
   readonly ts_ns?: number;
 }
 
@@ -57,6 +59,7 @@ export interface BridgeEnvelopeOptions {
   readonly requestId?: string;
   readonly traceId?: string;
   readonly spanId?: string;
+  readonly timeoutMs?: number;
   readonly ts_ns?: number;
 }
 

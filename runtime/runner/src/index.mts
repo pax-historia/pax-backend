@@ -72,3 +72,4 @@ export class RunnerPool {
 
 export * from "./noivm.mjs";
 export * from "./ivm.mjs";
+export * from "./child-process.mjs";

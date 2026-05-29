@@ -150,3 +150,20 @@ telemetry back through the Broker bridge.
 The Runner still needs a child-process wrapper so a real Broker process can
 talk to Runner processes over the shared request-id IPC envelope rather than an
 in-process `BrokerBridge`.
+
+## 2026-05-29 02:25 PDT
+
+Closed the credential-less Runner pool task by adding the process-level IPC
+wrapper. `ChildProcessRunnerProcess` now gives the Broker a normal
+`RunnerProcess` facade over a forked worker, sends assign/release/handler
+envelopes to the child, correlates assign and invoke completion through
+request IDs, and forwards every Runner-to-Broker envelope back to the Broker's
+handler.
+
+The child host starts either an isolated-vm or no-ivm multi-game Runner, emits
+`runner.ready`, resolves Broker responses for async `c.*` calls, and attaches
+the parent request ID to `isolate.ready` and handler complete/error responses
+without giving the Runner direct credentials, network, storage, or filesystem
+adapters. A small bridge-envelope timeout metadata field now carries the
+Broker-selected handler deadline across process IPC without changing bundle
+payloads.
