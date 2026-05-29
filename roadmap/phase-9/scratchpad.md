@@ -403,3 +403,28 @@ Evidence in `t527589_pax_backend_v1_soak_2_logs`:
 
 The continuous placement-through-URL-service exemplar is visible in the
 production observability sink.
+
+## 2026-05-29 06:59 PDT
+
+Phase 9 verification is complete. Re-read the Phase 9 directive and exit
+signal in `roadmap/README.md`: the required exit is a fresh Fly topology on the
+Broker/Runner shard image, roughly 100 games sustained for 30 minutes under
+both no-fault and shard-death-every-five-minutes profiles with all guarantee
+oracles green, plus one continuous placement-through-URL-service trace exemplar
+visible in the observability sink.
+
+The exit signal is met:
+
+- Fly is running the fresh control, shard, and driver topology with three
+  no-volume Broker shard machines.
+- Topology run `ivm-20260529T122658Z` passed both Phase 9 cases and exited `0`.
+- Each case placed 100 games across all three shard machines.
+- `send-json` held for 1,770,276 ms under `no-faults` and 1,770,280 ms under
+  `shard-death-every-5m`.
+- Both cases completed all workload phases, closed all 100 sessions normally,
+  and had no failing scenario oracles.
+- The trace exemplar `f40d0b0e10154668cf9e84793f3e8c25` is visible in Better
+  Stack with `router.placement`, Broker API history, `gateway.invoke`, and
+  `urlsvc.mock-ai.v1.invoke` records.
+
+No additional Phase 9 work remains.
