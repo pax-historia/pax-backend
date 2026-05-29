@@ -14,6 +14,8 @@ MACHINE_ID="${PAX_FLY_DRIVER_MACHINE_ID:-}"
 REMOTE_DIR="${1:-}"
 LOCAL_DIR="${2:-}"
 EXEC_TIMEOUT="${PAX_FLY_EXEC_TIMEOUT:-120}"
+CHUNK_BYTES="${PAX_FLY_PULL_CHUNK_BYTES:-4194304}"
+REMOTE_ARCHIVE=""
 
 say() { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 ok() { printf "    \033[32m✓\033[0m %s\n" "$*"; }
@@ -55,20 +57,40 @@ cleanup() {
   rm -f "$tmp_encoded"
   rm -f "$tmp_archive"
   rm -rf "$tmp_extract"
+  if [[ -n "$REMOTE_ARCHIVE" ]]; then
+    quoted_remote_archive="$(quote_sh "$REMOTE_ARCHIVE")"
+    fly machine exec "$MACHINE_ID" -a "$APP" --timeout "$EXEC_TIMEOUT" \
+      "/bin/sh -lc $(quote_sh "rm -f $quoted_remote_archive")" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
 quoted_remote_dir="$(quote_sh "$REMOTE_DIR")"
-remote_cmd="set -eu; remote_dir=$quoted_remote_dir; test -d \"\$remote_dir\"; parent=\$(dirname \"\$remote_dir\"); base=\$(basename \"\$remote_dir\"); tar -C \"\$parent\" -czf - \"\$base\" | base64"
+remote_cmd="set -eu; remote_dir=$quoted_remote_dir; test -d \"\$remote_dir\"; tmp=\$(mktemp /tmp/pax-soak-artifacts.XXXXXX.tar.gz); parent=\$(dirname \"\$remote_dir\"); base=\$(basename \"\$remote_dir\"); tar -C \"\$parent\" -czf \"\$tmp\" \"\$base\"; size=\$(wc -c < \"\$tmp\" | tr -d \" \"); printf \"%s %s\\n\" \"\$tmp\" \"\$size\""
 remote_shell="/bin/sh -lc $(quote_sh "$remote_cmd")"
 
 say "Pull remote soak artifacts"
-fly machine exec "$MACHINE_ID" -a "$APP" --timeout "$EXEC_TIMEOUT" "$remote_shell" > "$tmp_encoded"
-base64 -d < "$tmp_encoded" > "$tmp_archive"
+archive_info="$(fly machine exec "$MACHINE_ID" -a "$APP" --timeout "$EXEC_TIMEOUT" "$remote_shell")"
+REMOTE_ARCHIVE="$(awk '{print $1}' <<<"$archive_info")"
+remote_size="$(awk '{print $2}' <<<"$archive_info")"
+[[ -n "$REMOTE_ARCHIVE" && "$remote_size" =~ ^[0-9]+$ ]] \
+  || err "remote archive setup failed: $archive_info"
+[[ "$CHUNK_BYTES" =~ ^[0-9]+$ && "$CHUNK_BYTES" -gt 0 ]] \
+  || err "PAX_FLY_PULL_CHUNK_BYTES must be a positive integer"
+
+: > "$tmp_archive"
+chunk_count=$(( (remote_size + CHUNK_BYTES - 1) / CHUNK_BYTES ))
+quoted_remote_archive="$(quote_sh "$REMOTE_ARCHIVE")"
+for ((chunk_index = 0; chunk_index < chunk_count; chunk_index += 1)); do
+  chunk_cmd="set -eu; dd if=$quoted_remote_archive bs=$CHUNK_BYTES skip=$chunk_index count=1 2>/dev/null | base64"
+  fly machine exec "$MACHINE_ID" -a "$APP" --timeout "$EXEC_TIMEOUT" \
+    "/bin/sh -lc $(quote_sh "$chunk_cmd")" > "$tmp_encoded"
+  base64 -d < "$tmp_encoded" >> "$tmp_archive"
+done
 if [[ ! -s "$tmp_archive" ]]; then
   err "downloaded archive is empty"
 fi
-ok "downloaded archive from $APP/$MACHINE_ID:$REMOTE_DIR"
+ok "downloaded archive from $APP/$MACHINE_ID:$REMOTE_DIR ($remote_size bytes, $chunk_count chunks)"
 
 mkdir -p "$LOCAL_DIR"
 tar -xzf "$tmp_archive" -C "$tmp_extract"

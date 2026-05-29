@@ -620,3 +620,13 @@ per-shard metric URLs as the previous validation, plus
 `PAX_SCENARIO_CONTROL_HISTORY_CONCURRENCY=16`. Initial check found the wrapper
 alive, the no-fault history file created, first monitor line written, no
 placements yet, and no `exit.code`.
+
+Patched `scripts/fly/pull-soak-artifacts.sh` to stage the remote tarball on the
+driver and download it in base64 chunks (`PAX_FLY_PULL_CHUNK_BYTES`, default 4
+MiB), because the failed 275 MB validation directory exceeded Fly exec's
+one-shot response limit. Verification: `bash -n
+scripts/fly/pull-soak-artifacts.sh`, `git diff --check`, and a successful
+chunked pull of the new validation directory. The older failed directory was no
+longer present after the driver redeploy, so its preserved evidence is the
+recorded remote OOM log line, monitor status, history size, and event-count
+attribution above.
