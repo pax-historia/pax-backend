@@ -21,3 +21,37 @@ First task is a surface audit before touching Fly state: re-read the deploy and
 bootstrap scripts, `fly.*.toml`, the observability pipeline, Fly-proxy WebSocket
 machine-routing assumptions, and the scenario/scale commands that will produce
 the 100-game proof.
+
+## 2026-05-29 04:05 PDT
+
+Surface audit is complete and produced the concrete Phase 9 task list in
+`task-tracker.md`.
+
+Findings:
+
+- `scripts/bootstrap/spin-up.sh` still matches the new architecture shape:
+  three Fly apps, one Tigris bucket, one Upstash Redis directory, no Postgres,
+  and no shard volume provisioning. It syncs Better Stack credentials from
+  Infisical when present. `scripts/bootstrap/tear-down.sh` remains hard-coded;
+  do not touch its allowlist.
+- `fly.shards.toml` and `scripts/fly/scale-shards.sh` removed the old RocksDB
+  mount path and use Broker env (`PAX_BROKER_BIND`, `PAX_BROKER_WS_PATH`,
+  `PAX_RUNNER_KIND`). `scale-shards.sh` is still scale-up-only.
+- The existing scale plan is still named Phase 5. The 100-game rung exists, but
+  it is single-shard; Phase 9 should add/adapt a topology-specific 100-game
+  multi-shard rung so the proof exercises the new Fly machine-routing path.
+- The important transport gap is WS machine routing. The router currently
+  appends `fly-prefer-instance-id` / `fly-force-instance-id` as query params.
+  Fly's current docs describe those as request headers, and browser WebSocket
+  clients cannot set custom headers. The documented server-side path is
+  `fly-replay: instance=<machine>`, with the caveat that the replaying instance
+  must not negotiate the WebSocket upgrade itself:
+  https://fly.io/docs/networking/dynamic-request-routing/
+  https://fly.io/docs/networking/services/
+  https://fly.io/docs/blueprints/sticky-sessions/
+
+Decision: before deploying the topology proof, add or validate a Broker-side
+Fly-Replay handoff for wrong-shard WS upgrade requests and make the router
+return the public shard app hostname for Fly proof URLs. Private `.internal`
+Broker URLs are still useful for admin-to-Broker calls but do not validate the
+public Fly-proxy WS path required by the Phase 9 exit signal.
