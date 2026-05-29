@@ -64,3 +64,18 @@ Second, the `historia-default` scenario catalog exists under
 `examples/bundles/historia-default/scenarios`, but the CI release gate currently
 sets `PAX_SCENARIO_SUITE_CATALOGS=testing/scenarios`, so Phase 10 still needs a
 checkpoint-durability revalidation pass for the historia proof bundle.
+
+## 2026-05-29 07:08 PDT
+
+Started Task 2 with the credential boundary fix. The Runner child spawn path no
+longer spreads `process.env`; it builds a small bootstrap environment from
+non-secret process necessities (`PATH`, home/temp/color/CI style keys) and then
+overlays the explicit `PAX_RUNNER_*` values the child host needs to start.
+Caller-provided env values go through the same bootstrap allowlist, so accidental
+`AWS_*`, `REDIS_URL`, `PAX_JWT_SECRET`, Tigris bucket/key, or Better Stack
+values cannot be smuggled through `options.env`.
+
+Verification so far: `pnpm --filter @pax-backend/runner check-types` passed, and
+a direct `buildRunnerChildEnv` probe with fake JWT/S3/Redis/Tigris keys confirmed
+the forbidden names were not present while `PAX_RUNNER_CHILD`,
+`PAX_RUNNER_ID`, and `PAX_RUNNER_KIND` were still set.

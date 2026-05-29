@@ -61,6 +61,21 @@ export interface RunnerChildProcessOptions {
   readonly defaultHandlerTimeoutMs?: number;
 }
 
+const RUNNER_CHILD_BOOTSTRAP_ENV_KEYS = [
+  "CI",
+  "FORCE_COLOR",
+  "HOME",
+  "NO_COLOR",
+  "PATH",
+  "SystemRoot",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "USERPROFILE",
+  "WINDIR",
+] as const;
+
 interface PendingOperation {
   readonly label: string;
   readonly gameId?: string;
@@ -289,18 +304,7 @@ export function spawnRunnerChildProcess(options: SpawnRunnerChildProcessOptions)
     RUNTIME_CONTRACT_VERSION,
   ] as const;
   const child = fork(modulePath, [...(options.argv ?? [])], {
-    env: {
-      ...process.env,
-      ...options.env,
-      PAX_RUNNER_CHILD: "1",
-      PAX_RUNNER_ID: options.id,
-      PAX_RUNNER_KIND: options.kind,
-      PAX_RUNNER_MAX_ASSIGNED_GAMES: String(options.maxAssignedGames ?? 128),
-      PAX_RUNNER_CONTRACT_MIN: String(runtimeContractsSupported[0]),
-      PAX_RUNNER_CONTRACT_MAX: String(runtimeContractsSupported[1]),
-      PAX_RUNNER_REQUEST_TIMEOUT_MS: String(options.bridgeRequestTimeoutMs ?? 30_000),
-      PAX_RUNNER_DEFAULT_HANDLER_TIMEOUT_MS: String(options.defaultHandlerTimeoutMs ?? 1_000),
-    },
+    env: buildRunnerChildEnv(options, runtimeContractsSupported),
     execArgv: options.execArgv ? [...options.execArgv] : process.execArgv,
     stdio: ["ignore", "inherit", "inherit", "ipc"],
   });
@@ -312,6 +316,47 @@ export function spawnRunnerChildProcess(options: SpawnRunnerChildProcessOptions)
     assignTimeoutMs: options.assignTimeoutMs,
     stopTimeoutMs: options.stopTimeoutMs,
   });
+}
+
+export function buildRunnerChildEnv(
+  options: Pick<
+    SpawnRunnerChildProcessOptions,
+    | "id"
+    | "kind"
+    | "env"
+    | "maxAssignedGames"
+    | "bridgeRequestTimeoutMs"
+    | "defaultHandlerTimeoutMs"
+  >,
+  runtimeContractsSupported: readonly [number, number] = [
+    RUNTIME_CONTRACT_VERSION,
+    RUNTIME_CONTRACT_VERSION,
+  ],
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  copyRunnerBootstrapEnv(env, process.env);
+  copyRunnerBootstrapEnv(env, options.env ?? {});
+  return {
+    ...env,
+    PAX_RUNNER_CHILD: "1",
+    PAX_RUNNER_ID: options.id,
+    PAX_RUNNER_KIND: options.kind,
+    PAX_RUNNER_MAX_ASSIGNED_GAMES: String(options.maxAssignedGames ?? 128),
+    PAX_RUNNER_CONTRACT_MIN: String(runtimeContractsSupported[0]),
+    PAX_RUNNER_CONTRACT_MAX: String(runtimeContractsSupported[1]),
+    PAX_RUNNER_REQUEST_TIMEOUT_MS: String(options.bridgeRequestTimeoutMs ?? 30_000),
+    PAX_RUNNER_DEFAULT_HANDLER_TIMEOUT_MS: String(options.defaultHandlerTimeoutMs ?? 1_000),
+  };
+}
+
+function copyRunnerBootstrapEnv(
+  target: NodeJS.ProcessEnv,
+  source: NodeJS.ProcessEnv,
+): void {
+  for (const key of RUNNER_CHILD_BOOTSTRAP_ENV_KEYS) {
+    const value = source[key];
+    if (value !== undefined) target[key] = value;
+  }
 }
 
 export class RunnerChildHost {
