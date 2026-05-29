@@ -404,3 +404,51 @@ The `03:30Z` 15-minute checkpoint stayed green. Monitor snapshots 30, 31, and 32
 ## 2026-05-28 20:47 PDT
 
 The `03:45Z` 15-minute checkpoint stayed green. Monitor snapshots 33, 34, and 35 landed at `2026-05-29T03:35:35.511Z`, `2026-05-29T03:40:35.545Z`, and `2026-05-29T03:45:35.603Z`. All three showed the run alive with no `exit.code`, no-faults in `send-json`, 1000 placements, 1000 active games, all 10 shards healthy and accepting wakes, zero workload failures, zero session closes, zero session errors, and no monitor parse errors. The pulled local summary reported 35 clean monitor snapshots and `gates_ok=true`, putting the retry roughly 144 minutes into the 1000-game no-faults hold.
+
+## 2026-05-28 21:28 PDT
+
+The Better Stack-backed `ivm` retry at
+`/data/phase-5/soak/ivm-20260529T005416Z` failed during the no-fault
+`send-json` hold, roughly 159 minutes after hold entry. The final pulled
+summary now records `run_exit_code=134`, forty monitor snapshots, one workload
+failure, 1000 placements, and `gates_ok=false`. The verifier also fails, as
+expected, because only the no-fault case started, no result file was written,
+`send-json` never completed, and the shard-death/API-partition cases were never
+reached.
+
+The immediate workload failure was at `2026-05-29T04:00:32.807Z`: session
+`ses_d37f9f1726774b6fb4767ea48ddc3465` for game `...-215/player-a` was already
+closing (`readyState=2`) when the runner tried to send the next steady-state
+message. Monitor snapshot `04:00:35.952Z` still saw the runner process alive,
+but `/admin/shards` had dropped to nine rows and 899 active games; the missing
+row was `shard-fly-iad-9`. By `04:05:36.066Z`, cleanup had restored all ten
+shard rows with zero active games; by `04:10:36.190Z`, the runner had exited
+with code `134`.
+
+This is not the previous local-buffer disk-fill failure. Shard 9 machine
+`48e64d3c0401d8` stayed `started`, Fly reported no restart event, `/data` was
+only 4% used, `/data/observability` was 4096 bytes, and there were zero local
+observability JSONL files. The placement and close mapping is exact: shard 9
+owned 101 placements, and all 101 non-abort client closes mapped to those shard
+9 placements (`57` code `1011/guard.websocket_service_timeout`, `44` code
+`1006`). The other 899 sessions were normal `scenarioRunnerAbort` cleanup.
+
+Tigris history archive evidence narrows the failure to the IVM child/actor
+resource path on shard 9. In the `03:58Z-04:02Z` window, shard 9 emitted 237
+`onCapacityWarning.sent` memory warnings, rising from about 136.4 MB to 144.3 MB
+against the 128 MiB limit. It then emitted 52 `child.handlerError` events and
+52 matching `compute.budget.rejected` events for `cpu-ms-per-tick`; the common
+current usage was about 12.34s against a 10s tick limit, with four cases around
+56.9s. The first error was at `2026-05-29T04:00:44.938Z` for game `...-398`:
+`ws.send timed out after 30000ms`. Shard history then recorded 101
+`actor.stop`, 101 `onSleep.sent`, and 101 `session.closed` events as the shard
+drained. Game `...-215` last completed a message at `03:59:32.812Z`; it had no
+successful `04:00Z` message, then stopped at `04:01:33.565Z` and recorded its
+shard-side session close at `04:01:43.581Z`.
+
+The next retry should not start until the shard 9 resource-saturation path is
+addressed. Better Stack shipping and local buffer control are now working, but
+the 100-games-per-shard IVM steady-state profile can still push the child path
+past memory warning and CPU tick limits, stall websocket sends, trip gateway
+service timeouts, and temporarily remove the shard from the control-plane
+registry.
