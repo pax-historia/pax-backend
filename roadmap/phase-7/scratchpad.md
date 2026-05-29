@@ -248,3 +248,16 @@ child-process Runner pool, and the placement router. It no longer checks for,
 builds, or starts `rivet-engine`, vendor Rivet TypeScript, or `parent-actor`.
 `local-down.sh` now stops Broker and Runner child processes instead of the old
 engine/parent processes. Both scripts pass `bash -n`.
+
+## 2026-05-29 02:48 PDT
+
+Closed the dev/Fly packaging and observability task. `fly.shards.toml` now
+routes the shard service to Broker port 7700 and uses Broker/Runner env names
+instead of Rivet guard/engine/parent settings. Vector production, shard, and
+local profiles scrape `PAX_BROKER_METRICS_URL` and no longer scrape parent or
+Rivet metrics, with gateway/control defaults aligned to the actual local ports.
+
+The stale local `scripts/dev/spawn-engine.mts` helper is removed, and an audit
+over `fly.shards.toml`, `runtime/shard-image`, `scripts/dev`, and
+`scripts/observability` found no remaining Rivet/parent runtime references
+except the word "parents" in a process-sweep safety comment.

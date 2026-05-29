@@ -28,19 +28,19 @@ type = "opentelemetry"
   address = "${PAX_VECTOR_OTLP_HTTP_ADDRESS:-0.0.0.0:4318}"
   headers = []
 
-[sources.parent_metrics]
+[sources.broker_metrics]
 type = "prometheus_scrape"
-endpoints = ["${PAX_PARENT_METRICS_URL:-http://127.0.0.1:7700/metrics}"]
+endpoints = ["${PAX_BROKER_METRICS_URL:-http://127.0.0.1:7700/metrics}"]
 scrape_interval_secs = 15
 
 [sources.gateway_metrics]
 type = "prometheus_scrape"
-endpoints = ["${PAX_GATEWAY_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
+endpoints = ["${PAX_GATEWAY_METRICS_URL:-http://127.0.0.1:9081/metrics}"]
 scrape_interval_secs = 15
 
 [sources.control_metrics]
 type = "prometheus_scrape"
-endpoints = ["${PAX_CONTROL_METRICS_URL:-http://127.0.0.1:7900/metrics}"]
+endpoints = ["${PAX_CONTROL_METRICS_URL:-http://127.0.0.1:9070/metrics}"]
 scrape_interval_secs = 15
 
 [sources.router_metrics]
@@ -50,12 +50,7 @@ scrape_interval_secs = 15
 
 [sources.url_service_metrics]
 type = "prometheus_scrape"
-endpoints = ["${PAX_URL_SERVICE_METRICS_URL:-http://127.0.0.1:7800/metrics}"]
-scrape_interval_secs = 15
-
-[sources.rivet_metrics]
-type = "prometheus_scrape"
-endpoints = ["${PAX_RIVET_METRICS_URL:-http://127.0.0.1:6430/metrics}"]
+endpoints = ["${PAX_URL_SERVICE_METRICS_URL:-http://127.0.0.1:9081/metrics}"]
 scrape_interval_secs = 15
 
 [sources.vector_internal_metrics]
@@ -109,12 +104,11 @@ if !exists(.event) { .event = "history.line" }
 [transforms.metric_cardinality_firewall]
 type = "remap"
 inputs = [
-  "parent_metrics",
+  "broker_metrics",
   "gateway_metrics",
   "control_metrics",
   "router_metrics",
   "url_service_metrics",
-  "rivet_metrics",
   "vector_internal_metrics",
   "otlp.metrics",
 ]

@@ -13,25 +13,21 @@ kill_timeout = "60s"
   PAX_VECTOR_PROFILE = "shards"
   PAX_SHARD_ID = "shard-fly-iad-1"
   PAX_SHARD_PUBLIC_URL = "https://pax-backend-shards.fly.dev"
-  RIVET_PUBLIC_URL = "https://pax-backend-shards.fly.dev"
-  RIVET_VALID_HOSTS = "pax-backend-shards.fly.dev,127.0.0.1,localhost"
-  RIVET_GUARD_HOST = "::"
-  RIVET_API_PEER_HOST = "::"
-  RIVET_METRICS_HOST = "::"
-  PAX_PARENT_METRICS_BIND = ":::7700"
-  RIVET_TOTAL_SLOTS = "1000"
-  RIVET_ACTOR_READY_TIMEOUT_MS = "120000"
-  RIVET_ROUTE_TIMEOUT_MS = "120000"
+  PAX_BROKER_BIND = ":::7700"
+  PAX_BROKER_WS_PATH = "/gateway"
+  PAX_RUNNER_KIND = "ivm"
+  PAX_RUNNER_PROCESS_COUNT = "4"
+  PAX_BROKER_MAX_ACTIVE_GAMES = "1000"
   PAX_CPU_MS_PER_TICK_LIMIT = "10000"
   PAX_API_GATEWAY_URL = "http://pax-backend-control.internal:9081/invoke"
 
 [mounts]
-  source = "pax_backend_rocks"
+  source = "pax_backend_runtime"
   destination = "/data"
 
 [[services]]
   protocol = "tcp"
-  internal_port = 6420
+  internal_port = 7700
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1

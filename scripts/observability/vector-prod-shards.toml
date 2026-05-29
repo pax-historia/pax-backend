@@ -1,7 +1,6 @@
 [sources.app_metrics]
 type = "prometheus_scrape"
 endpoints = [
-  "${PAX_PARENT_METRICS_URL:-http://127.0.0.1:7700/metrics}",
-  "${PAX_RIVET_METRICS_URL:-http://127.0.0.1:6430/metrics}",
+  "${PAX_BROKER_METRICS_URL:-http://127.0.0.1:7700/metrics}",
 ]
 scrape_interval_secs = 15
