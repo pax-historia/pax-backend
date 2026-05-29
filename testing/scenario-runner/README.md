@@ -129,3 +129,9 @@ the full raw history remains in the observability archive.
 By default the collector uses one Broker endpoint. For multi-shard rungs, set
 `PAX_BROKER_METRICS_URLS` to comma-separated `label=url` entries so
 `metrics.per_surface` keeps each shard's samples separate.
+
+Phase 9's Fly topology proof uses
+`testing/scale-ladders/phase9-topology.mts`, specifically rung
+`100g-3shards-30m-topology`. It keeps the exit target at 100 concurrent games
+while requiring three shard machines so the proof exercises placement
+distribution, Fly-Replay WebSocket pinning, and shard-death recovery.

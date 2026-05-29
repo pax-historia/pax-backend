@@ -78,3 +78,26 @@ Verification so far: `cargo fmt --check`, `cargo check --manifest-path
 orchestration/placement-router/Cargo.toml`, `pnpm typecheck`,
 `git diff --check`, and local `pnpm smoke` all passed. The Phase 9 task remains
 open until deployed Fly machines prove the public URL and replay handoff.
+
+## 2026-05-29 04:22 PDT
+
+Added the Phase 9 topology scale plan at
+`testing/scale-ladders/phase9-topology.mts`. It declares ladder
+`phase-9-topology-proof` with one rung:
+
+- `100g-3shards-30m-topology`
+- 100 concurrent games
+- three shard machines
+- 30-minute target duration
+- two-minute ramp
+- one session per game
+- one-minute heartbeat spread over 30 seconds
+- nemeses: `no-faults`, `shard-death-every-5m`
+
+The three-shard shape is intentional: Phase 9 is a topology proof, not a
+single-machine smoke, and the public Fly-Replay WebSocket path only becomes
+meaningful when more than one shard machine can receive an initial upgrade.
+
+Validation: scenario-runner's `loadScaleLadderPlan` successfully loaded the new
+plan, `pnpm --filter @pax-backend/scenario-runner check-types` passed, and
+`git diff --check` passed.
