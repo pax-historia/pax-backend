@@ -264,3 +264,7 @@ Added session-close distributions to `scripts/fly/summarize-soak.mts` so failure
 ## 2026-05-28 17:26 PDT
 
 Second monitor snapshot for the fresh retry landed at `2026-05-29T00:24:43.871Z`. The run remained alive with no `exit.code`, zero workload failures/session closes/session errors, and 10 healthy accepting shards. The monitor saw 172 placements and 170 active games during `open-sessions`; the subsequent local pull caught the ramp at 217 placements across all 10 shards, still with no session closes and `gates_ok=true` for the non-final default gates.
+
+## 2026-05-28 17:31 PDT
+
+Third monitor snapshot for the fresh retry landed at `2026-05-29T00:29:43.992Z`. The run remained alive with no `exit.code`, zero workload failures/session closes/session errors, and 10 healthy accepting shards. The monitor saw 360 placements and 358 active games during `open-sessions`; the subsequent local pull caught the ramp at 407 placements across all 10 shards, still with no session closes and `gates_ok=true` for the non-final default gates.
