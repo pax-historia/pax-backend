@@ -200,3 +200,13 @@ The control plane now queues both active and wake-on-delivery host events, uses
 the active shard row or a fresh `POST /placement` response to find the Broker,
 and asks that Broker to drain the queue. This removes the synthetic WebSocket
 wake path and the old Rivet subprotocols from control-plane host-event wake.
+
+## 2026-05-29 02:38 PDT
+
+Wired shard drain and un-drain to Broker admin instead of treating drain as
+only a Redis flag. The Broker now exposes `DELETE /admin/drain` to resume wake
+acceptance after an operator clears drain, and the control plane calls
+`POST /admin/drain` / `DELETE /admin/drain` on the shard's Broker URL when its
+admin drain endpoints mutate the shard drain flag. Shard views now prefer
+`currentGameCount` when present so Broker capacity rows and drain-completion
+logic report the same count.

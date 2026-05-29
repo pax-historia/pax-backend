@@ -881,6 +881,7 @@ async function handleShardResource(
   if (parts.length === 4 && parts[3] === "drain" && req.method === "POST") {
     const shard = await store.setShardDrain(shardId, true);
     if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
+    await setBrokerDrain(shard, true);
     appendControlHistory(config, "shard.drain.started", {
       shardId,
       activeGames: shard.activeGames,
@@ -893,11 +894,25 @@ async function handleShardResource(
   if (parts.length === 4 && parts[3] === "drain" && req.method === "DELETE") {
     const shard = await store.setShardDrain(shardId, false);
     if (!shard) throw new HttpError(404, "shardNotFound", { shardId });
+    await setBrokerDrain(shard, false);
     writeJson(res, 200, { ok: true, draining: false, shard: shardView(shard) });
     return;
   }
 
   throw new HttpError(404, "notFound", { path: "/" + parts.join("/") });
+}
+
+async function setBrokerDrain(shard: ShardRegistration, draining: boolean): Promise<void> {
+  const drainUrl = new URL("/admin/drain", shard.url);
+  const response = await fetch(drainUrl, { method: draining ? "POST" : "DELETE" });
+  if (!response.ok) {
+    throw new HttpError(503, "brokerDrainRequestFailed", {
+      shardId: shard.shardId,
+      url: drainUrl.toString(),
+      status: response.status,
+      body: await response.text(),
+    });
+  }
 }
 
 async function maybeEmitDrainCompleted(
@@ -910,7 +925,7 @@ async function maybeEmitDrainCompleted(
   if (!(await store.markShardDrainCompletedOnce(shard.shardId))) return;
   appendControlHistory(config, "shard.drain.completed", {
     shardId: shard.shardId,
-    activeGames: shard.activeGames,
+    activeGames: shardGameCount(shard),
   });
 }
 
@@ -929,7 +944,7 @@ function shardStatus(shard: ShardRegistrationLike): ShardStatus {
     return shard.status;
   }
   if (!shard.healthy) return "unhealthy";
-  if (!shard.acceptingWakes) return shard.activeGames === 0 ? "drained" : "draining";
+  if (!shard.acceptingWakes) return shardGameCount(shard) === 0 ? "drained" : "draining";
   return "healthy";
 }
 
@@ -937,8 +952,12 @@ function shardView(shard: ShardRegistrationLike): Record<string, unknown> {
   return {
     ...shard,
     status: shardStatus(shard),
-    currentGameCount: shard.activeGames,
+    currentGameCount: shardGameCount(shard),
   };
+}
+
+function shardGameCount(shard: ShardRegistrationLike): number {
+  return shard.currentGameCount ?? shard.activeGames;
 }
 
 function handleHistory(

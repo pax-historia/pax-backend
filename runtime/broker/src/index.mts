@@ -255,6 +255,13 @@ export class Broker {
     await this.writeHistory({ event: "broker.drain.completed", reason });
   }
 
+  async resumeWakes(reason = "admin"): Promise<void> {
+    this.ensureStarted();
+    this.acceptingWakes = true;
+    await this.publishCapacity();
+    await this.writeHistory({ event: "broker.drain.cancelled", reason });
+  }
+
   async evictGame(gameId: string, reason: OnSleepPayload["reason"] = "evicted"): Promise<boolean> {
     const game = this.games.get(gameId);
     if (!game) return false;
@@ -1160,6 +1167,11 @@ async function handleBrokerAdminRequest(
   if (method === "POST" && url.pathname === "/admin/drain") {
     await broker.requestDrain("admin-http");
     writeJson(res, 202, broker.healthSnapshot());
+    return;
+  }
+  if (method === "DELETE" && url.pathname === "/admin/drain") {
+    await broker.resumeWakes("admin-http");
+    writeJson(res, 200, broker.healthSnapshot());
     return;
   }
   const hostEventsDrainMatch = /^\/admin\/games\/([^/]+)\/host-events\/drain$/.exec(url.pathname);
