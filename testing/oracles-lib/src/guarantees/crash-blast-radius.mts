@@ -1,4 +1,4 @@
-import { booleanField, finding, result, stringField } from "../helpers.mjs";
+import { booleanField, finding, numberField, result, stringField } from "../helpers.mjs";
 import type { HistoryEvent, OracleFinding, OracleResult } from "../types.mjs";
 
 const ORACLE = "crash-blast-radius";
@@ -59,6 +59,22 @@ export function crashBlastRadius(history: readonly HistoryEvent[]): OracleResult
           finding("unscoped-runner-crash", "runner.crash must include affectedGameIds", event),
         );
         continue;
+      }
+      const maxAssignedGames = numberField(event, "maxAssignedGames");
+      if (
+        maxAssignedGames !== undefined &&
+        Number.isInteger(maxAssignedGames) &&
+        maxAssignedGames > 0 &&
+        affected.length > maxAssignedGames
+      ) {
+        findings.push(
+          finding(
+            "runner-crash-exceeds-k",
+            "runner.crash affected more games than the Runner K bound",
+            event,
+            { affected: affected.length, maxAssignedGames },
+          ),
+        );
       }
       for (const gameId of affected) {
         if (typeof gameId === "string" && gameId.length > 0) {

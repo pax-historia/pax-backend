@@ -177,6 +177,7 @@ isolates with it. Runner-scoped.
 |---|---|
 | `runnerId` | |
 | `affectedGameIds` | array (bounded by `K`) |
+| `maxAssignedGames` | configured `K` bound for this Runner slot |
 | `code?` | process exit code, if any |
 | `signal?` | |
 

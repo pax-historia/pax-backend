@@ -104,3 +104,27 @@ Verification: `pnpm --filter @pax-backend/runner check-types`,
 passed. Running the actual nemesis/oracle proof is still pending; the next
 Task 2 slice should add a runner-crash nemesis or workload phase and assert the
 K-bound explicitly.
+
+## 2026-05-29 07:26 PDT
+
+Completed the Task 2 proof loop. Added the `runner-crash-on-await` nemesis and
+`runner-crash-blast-radius` scenario, with a local oracle that requires
+`runner.crash`, nonempty `affectedGameIds`, a bounded affected set, and
+`isolate.restart` for every affected game. The shared `crash-blast-radius`
+oracle now checks `affectedGameIds.length <= maxAssignedGames` for Runner
+crashes.
+
+The Broker now coalesces concurrent wake attempts per game so reconnects cannot
+race the post-crash restart path. The scenario history collector also preserves
+runner-scoped `runner.crash` records by matching `affectedGameIds` against the
+scenario games and appending control-plane history as one sorted batch, so
+streaming oracles see crash-before-restart ordering.
+
+Verification:
+
+- `pnpm typecheck`
+- `pnpm build:bundles`
+- `PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=runner-crash-blast-radius PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+- `PAX_RUNNER_PROCESS_COUNT=2 PAX_RUNNER_MAX_ASSIGNED_GAMES=1 PAX_SCENARIO_SUITE_RUNTIMES=noivm PAX_SCENARIO_SUITE_SCENARIOS=runner-crash-blast-radius PAX_SCENARIO_SUITE_NEMESES=runner-crash-on-await PAX_SCENARIO_SUITE_PHASE_TIMEOUT_MS=60000 ./scripts/test/scenario-suite-local.sh`
+
+The strict K run recorded `maxAssignedGames: 1` and exactly one affected game.

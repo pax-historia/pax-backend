@@ -78,6 +78,7 @@ interface LiveExecutorContext {
   readonly apiGatewayUrl: string;
   readonly routerUrl: string;
   readonly phaseTimeoutMs: number;
+  readonly startedAtMs: number;
   readonly sessions: ScenarioSession[];
   readonly historyWriter: HistoryWriter;
   readonly nemesisRuntime: NemesisRuntime;
@@ -104,6 +105,7 @@ export async function executeLiveWorkload(
       DEFAULT_API_GATEWAY_URL,
   );
   const historyWriter = new HistoryWriter(input.historyPath);
+  const startedAtMs = Date.now();
   const ctx: LiveExecutorContext = {
     input,
     scenario,
@@ -118,6 +120,7 @@ export async function executeLiveWorkload(
     phaseTimeoutMs:
       input.phaseTimeoutMs ??
       parsePositiveInt(process.env["PAX_SCENARIO_PHASE_TIMEOUT_MS"], DEFAULT_PHASE_TIMEOUT_MS),
+    startedAtMs,
     sessions: [],
     historyWriter,
     nemesisRuntime: new NemesisRuntime(
@@ -788,6 +791,7 @@ async function countHistoryEvents(
   const url = new URL(`${ctx.controlPlaneUrl}/admin/history`);
   url.searchParams.set("gameId", gameId);
   url.searchParams.set("event", event);
+  url.searchParams.set("from", new Date(ctx.startedAtMs - 1_000).toISOString());
   url.searchParams.set("limit", "1000");
   const body = await requestJson<{ readonly events?: readonly unknown[] }>(url.toString());
   return Array.isArray(body.events) ? body.events.length : 0;

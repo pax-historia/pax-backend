@@ -30,6 +30,7 @@ export type RunnerEnvelopeHandler = (
 export interface RunnerCrashEvent {
   readonly runnerId: string;
   readonly affectedGameIds: readonly string[];
+  readonly maxAssignedGames: number;
   readonly code: number | null;
   readonly signal: string | null;
 }
@@ -42,6 +43,7 @@ export type RunnerCrashHandler = (
 export interface ChildProcessRunnerProcessOptions {
   readonly id: string;
   readonly kind: RunnerKind;
+  readonly maxAssignedGames: number;
   readonly child: ChildProcess;
   readonly onEnvelope: RunnerEnvelopeHandler;
   readonly onCrash?: RunnerCrashHandler;
@@ -107,6 +109,7 @@ interface ResponseRequestContext {
 export class ChildProcessRunnerProcess implements RunnerProcess {
   readonly id: string;
   readonly kind: RunnerKind;
+  readonly maxAssignedGames: number;
   readonly assignedGames = new Set<string>();
 
   private readonly child: ChildProcess;
@@ -121,6 +124,7 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
   constructor(options: ChildProcessRunnerProcessOptions) {
     this.id = options.id;
     this.kind = options.kind;
+    this.maxAssignedGames = options.maxAssignedGames;
     this.child = options.child;
     this.onEnvelope = options.onEnvelope;
     this.onCrash = options.onCrash;
@@ -145,6 +149,7 @@ export class ChildProcessRunnerProcess implements RunnerProcess {
           {
             runnerId: this.id,
             affectedGameIds,
+            maxAssignedGames: this.maxAssignedGames,
             code: code ?? null,
             signal: signal ?? null,
           },
@@ -346,6 +351,7 @@ export function spawnRunnerChildProcess(options: SpawnRunnerChildProcessOptions)
   return new ChildProcessRunnerProcess({
     id: options.id,
     kind: options.kind,
+    maxAssignedGames: options.maxAssignedGames ?? 128,
     child,
     onEnvelope: options.onEnvelope,
     onCrash: options.onCrash,
@@ -464,6 +470,9 @@ export class RunnerChildHost {
   private async assign(envelope: Extract<BrokerToRunnerEnvelope, { type: "assign" }>): Promise<void> {
     const assignment = toRunnerAssignment(envelope);
     try {
+      if (this.assignments.size >= this.maxAssignedGames) {
+        throw new Error(`runner ${this.id} assignment capacity exceeded`);
+      }
       await this.bridge.withResponseRequestId(
         envelope.gameId,
         envelope.requestId,

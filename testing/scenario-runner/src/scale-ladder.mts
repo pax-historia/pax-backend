@@ -20,6 +20,7 @@ const NEMESES = [
   "no-faults",
   "shard-death-every-5m",
   "api-kind-partition-burst",
+  "runner-crash-on-await",
 ] as const;
 const SAMPLING_PROFILES = ["ramp", "cliff_hold", "replay"] as const;
 

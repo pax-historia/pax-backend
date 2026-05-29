@@ -9,7 +9,8 @@ export type SamplingProfile = "ramp" | "cliff_hold" | "replay";
 export type NemesisKind =
   | "no-faults"
   | "shard-death-every-5m"
-  | "api-kind-partition-burst";
+  | "api-kind-partition-burst"
+  | "runner-crash-on-await";
 export type WorkloadFixtureKind =
   | "allowed-players"
   | "initial-state"
@@ -49,6 +50,12 @@ export type NemesisAction =
       readonly durationMs: number;
       readonly kindName: string;
       readonly partitionUrl: string;
+    }
+  | {
+      readonly type: "crash-runner";
+      readonly trigger: "on-await";
+      readonly selection: "most-active" | "round-robin";
+      readonly runnerIndex: number;
     };
 
 export interface ScenarioWorkloadPlan {
@@ -151,7 +158,7 @@ export type ScenarioWorkloadPhase =
     }
   | {
       readonly type: "await-nemesis";
-      readonly action: "kill-shard" | "api-kind-partition";
+      readonly action: "kill-shard" | "api-kind-partition" | "crash-runner";
       readonly minimumOccurrences: number;
     }
   | {

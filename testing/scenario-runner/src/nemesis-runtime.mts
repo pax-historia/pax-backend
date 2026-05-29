@@ -5,8 +5,11 @@ import type { NemesisAction, NemesisManifest } from "./types.mjs";
 
 interface ShardRecord {
   readonly shardId: string;
+  readonly url?: string;
   readonly acceptingWakes?: boolean;
   readonly healthy?: boolean;
+  readonly activeGames?: number;
+  readonly currentGameCount?: number;
 }
 
 interface ShardsResponse {
@@ -37,6 +40,12 @@ interface ApiKindPartitionRuntime {
   occurrences: number;
 }
 
+interface CrashRunnerRuntime {
+  readonly action: Extract<NemesisAction, { readonly type: "crash-runner" }>;
+  readonly actionIndex: number;
+  occurrences: number;
+}
+
 interface ReplacementReadyTimer {
   readonly runtime: KillShardRuntime;
   readonly shardId: string;
@@ -52,11 +61,12 @@ interface ApiKindPartitionRestoreTimer {
   readonly timer: NodeJS.Timeout;
 }
 
-type AwaitableNemesisAction = "kill-shard" | "api-kind-partition";
+type AwaitableNemesisAction = "kill-shard" | "api-kind-partition" | "crash-runner";
 
 export class NemesisRuntime {
   readonly #killShardRuntimes: KillShardRuntime[];
   readonly #apiKindPartitionRuntimes: ApiKindPartitionRuntime[];
+  readonly #crashRunnerRuntimes: CrashRunnerRuntime[];
   readonly #killedAtByShard = new Map<string, number>();
   readonly #replacementTimersByShard = new Map<string, ReplacementReadyTimer>();
   readonly #apiKindPartitionTimersByKind = new Map<string, ApiKindPartitionRestoreTimer>();
@@ -82,6 +92,11 @@ export class NemesisRuntime {
     this.#apiKindPartitionRuntimes = manifest.actions.flatMap((action, actionIndex) =>
       action.type === "api-kind-partition"
         ? [{ action, actionIndex, occurrences: 0 } satisfies ApiKindPartitionRuntime]
+        : [],
+    );
+    this.#crashRunnerRuntimes = manifest.actions.flatMap((action, actionIndex) =>
+      action.type === "crash-runner"
+        ? [{ action, actionIndex, occurrences: 0 } satisfies CrashRunnerRuntime]
         : [],
     );
   }
@@ -179,6 +194,7 @@ export class NemesisRuntime {
     const deadline = performance.now() + timeoutMs;
     while (performance.now() <= deadline) {
       this.throwIfFailed();
+      if (action === "crash-runner") await this.#injectCrashRunnerUntil(minimumOccurrences);
       const count = this.#occurrences(action);
       if (count >= minimumOccurrences) return;
       await sleep(250);
@@ -275,6 +291,37 @@ export class NemesisRuntime {
       adminAction: "POST /admin/api-kinds",
     });
     this.#scheduleApiKindPartitionRestore(runtime, kindName, occurrence, previousRegistration);
+  }
+
+  async #injectCrashRunnerUntil(minimumOccurrences: number): Promise<void> {
+    for (const runtime of this.#crashRunnerRuntimes) {
+      while (runtime.occurrences < minimumOccurrences) {
+        await this.#injectCrashRunner(runtime);
+      }
+    }
+  }
+
+  async #injectCrashRunner(runtime: CrashRunnerRuntime): Promise<void> {
+    if (this.#stopped) return;
+    const shard = await this.#selectRunnerCrashShard(runtime.action);
+    if (!shard.url) throw new Error(`runner crash target shard ${shard.shardId} is missing url`);
+    const runnerId = `${shard.shardId}-runner-${runtime.action.runnerIndex}`;
+    await requestJson(
+      `${shard.url.replace(/\/+$/, "")}/admin/runners/${encodeURIComponent(runnerId)}/crash`,
+      { method: "POST" },
+    );
+    runtime.occurrences += 1;
+    this.historyWriter.append("nemesis.runner-crash.injected", {
+      nemesisId: this.manifest.nemesisId,
+      runId: this.runId ?? null,
+      actionIndex: runtime.actionIndex,
+      occurrence: runtime.occurrences,
+      targetShardId: shard.shardId,
+      targetRunnerId: runnerId,
+      selection: runtime.action.selection,
+      activeGames: shard.currentGameCount ?? shard.activeGames ?? 0,
+      adminAction: "POST /admin/runners/:id/crash",
+    });
   }
 
   #scheduleReplacementReady(runtime: KillShardRuntime, shardId: string): void {
@@ -438,15 +485,46 @@ export class NemesisRuntime {
     });
   }
 
+  async #selectRunnerCrashShard(
+    action: Extract<NemesisAction, { readonly type: "crash-runner" }>,
+  ): Promise<ShardRecord> {
+    const response = await requestJson<ShardsResponse>(`${this.controlPlaneUrl}/admin/shards`);
+    const shards = (response.shards ?? []).filter(
+      (shard) =>
+        shard.healthy !== false &&
+        shard.acceptingWakes !== false &&
+        (shard.currentGameCount ?? shard.activeGames ?? 0) > 0,
+    );
+    if (shards.length === 0) throw new Error("nemesis crash-runner found no shard with active games");
+    const sorted = Array.from(shards).sort((a, b) => a.shardId.localeCompare(b.shardId));
+    if (action.selection === "round-robin") {
+      const selected = sorted[this.#roundRobinCursor % sorted.length];
+      this.#roundRobinCursor += 1;
+      if (!selected) throw new Error("round-robin runner-crash shard selection failed");
+      return selected;
+    }
+    return sorted.reduce((best, shard) => {
+      const bestCount = best.currentGameCount ?? best.activeGames ?? 0;
+      const shardCount = shard.currentGameCount ?? shard.activeGames ?? 0;
+      if (shardCount > bestCount) return shard;
+      if (shardCount === bestCount && shard.shardId < best.shardId) return shard;
+      return best;
+    });
+  }
+
   #occurrences(action: AwaitableNemesisAction): number {
     if (action === "kill-shard") {
       return this.#killShardRuntimes.reduce((sum, runtime) => sum + runtime.occurrences, 0);
+    }
+    if (action === "crash-runner") {
+      return this.#crashRunnerRuntimes.reduce((sum, runtime) => sum + runtime.occurrences, 0);
     }
     return this.#apiKindPartitionRuntimes.reduce((sum, runtime) => sum + runtime.occurrences, 0);
   }
 
   #hasAction(action: AwaitableNemesisAction): boolean {
     if (action === "kill-shard") return this.#killShardRuntimes.length > 0;
+    if (action === "crash-runner") return this.#crashRunnerRuntimes.length > 0;
     return this.#apiKindPartitionRuntimes.length > 0;
   }
 }

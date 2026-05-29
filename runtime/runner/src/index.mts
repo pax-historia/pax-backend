@@ -24,6 +24,7 @@ export interface RunnerProcess {
   readonly id: string;
   readonly kind: RunnerKind;
   readonly assignedGames: ReadonlySet<string>;
+  readonly maxAssignedGames?: number;
   assign(input: RunnerAssignment): Promise<void>;
   send(envelope: BrokerToRunnerEnvelope): Promise<void>;
   invoke(input: RunnerInvoke): Promise<unknown>;
@@ -81,7 +82,13 @@ export class RunnerPool {
   }
 
   private pickRunner(): RunnerProcess {
-    return [...this.runners].sort((left, right) => left.assignedGames.size - right.assignedGames.size)[0]!;
+    const available = this.runners.filter(
+      (runner) =>
+        runner.maxAssignedGames === undefined ||
+        runner.assignedGames.size < runner.maxAssignedGames,
+    );
+    if (available.length === 0) throw new Error("no Runner has assignment capacity");
+    return [...available].sort((left, right) => left.assignedGames.size - right.assignedGames.size)[0]!;
   }
 }
 

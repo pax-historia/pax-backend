@@ -238,6 +238,7 @@ export class Broker {
   private drainRequested = false;
   private drainCompleted = false;
   private readonly games = new Map<string, BrokerGame>();
+  private readonly wakingGames = new Map<string, Promise<void>>();
   private readonly budgetLimits: BrokerBudgetLimits;
   private capacityHeartbeat?: NodeJS.Timeout;
 
@@ -319,6 +320,7 @@ export class Broker {
       event: "runner.crash",
       runnerId: input.runnerId,
       affectedGameIds,
+      maxAssignedGames: input.maxAssignedGames,
       code: input.code,
       signal: input.signal,
     });
@@ -331,6 +333,20 @@ export class Broker {
 
   async wakeGame(input: BrokerWakeInput): Promise<void> {
     this.ensureStarted();
+    if (this.games.has(input.gameId)) return;
+    const existingWake = this.wakingGames.get(input.gameId);
+    if (existingWake) {
+      await existingWake;
+      return;
+    }
+    const wake = this.wakeGameExclusive(input).finally(() => {
+      this.wakingGames.delete(input.gameId);
+    });
+    this.wakingGames.set(input.gameId, wake);
+    await wake;
+  }
+
+  private async wakeGameExclusive(input: BrokerWakeInput): Promise<void> {
     if (this.games.has(input.gameId)) return;
     this.ensureRuntimeContract(input.runtimeContractRequired);
     this.ensureCapacity();
@@ -528,6 +544,7 @@ export class Broker {
         event: "runner.ready",
         runnerId,
         kind: envelope.payload.kind,
+        maxAssignedGames: envelope.payload.maxAssignedGames,
         pid: envelope.payload.pid,
       });
       return;

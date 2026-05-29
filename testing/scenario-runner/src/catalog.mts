@@ -172,6 +172,7 @@ function validateScenarioManifest(value: unknown, path: string): ScenarioManifes
     "no-faults",
     "shard-death-every-5m",
     "api-kind-partition-burst",
+    "runner-crash-on-await",
   ]);
   if (!Array.isArray(manifest.oracleNames) || manifest.oracleNames.length === 0) {
     throw new Error(`${path} field oracleNames must be a non-empty array`);
@@ -189,6 +190,7 @@ function validateNemesisManifest(value: unknown, path: string): NemesisManifest 
     "no-faults",
     "shard-death-every-5m",
     "api-kind-partition-burst",
+    "runner-crash-on-await",
   ]);
   requireString(manifest.description, path, "description");
   if (!Array.isArray(manifest.actions) || manifest.actions.length === 0) {
@@ -210,6 +212,15 @@ function validateNemesisManifest(value: unknown, path: string): NemesisManifest 
       requirePositiveNumber(action["durationMs"], path, `actions[${index}].durationMs`);
       requireString(action["kindName"], path, `actions[${index}].kindName`);
       requireString(action["partitionUrl"], path, `actions[${index}].partitionUrl`);
+      continue;
+    }
+    if (action["type"] === "crash-runner") {
+      requireOneOf(action["trigger"], path, `actions[${index}].trigger`, ["on-await"]);
+      requireOneOf(action["selection"], path, `actions[${index}].selection`, [
+        "most-active",
+        "round-robin",
+      ]);
+      requirePositiveNumber(action["runnerIndex"], path, `actions[${index}].runnerIndex`);
       continue;
     }
     throw new Error(`${path} field actions[${index}].type is unsupported`);
@@ -395,6 +406,7 @@ function validateScenarioWorkloadPhase(value: unknown, path: string, index: numb
       requireOneOf(value["action"], path, `${prefix}.action`, [
         "kill-shard",
         "api-kind-partition",
+        "crash-runner",
       ]);
       requirePositiveNumber(value["minimumOccurrences"], path, `${prefix}.minimumOccurrences`);
       return normalized;

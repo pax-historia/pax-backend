@@ -8,6 +8,7 @@ the broader rules about the `testing/` zone.
 |---|---|
 | `api-kind-partition-burst/` | Temporarily rewires `mock-ai.v1` to an unroutable URL and restores the prior registration. Used to force typed URL-service/provider partition failures. |
 | `no-faults/` | The control. Same scenario, no injection. Reference for the others. |
+| `runner-crash-on-await/` | Kills one Runner child process only when a scenario waits for `crash-runner`, then relies on the Broker replacement path to re-wake affected games. |
 | `shard-death-every-5m/` | Kills a random shard every 5 minutes. Used with `shard-death-resilience` (and as a soak overlay on the other scenarios). |
 
 The scenario-runner now executes these manifests during live runs. `no-faults`
@@ -18,3 +19,7 @@ shard while later orchestration work supplies actual machine replacement.
 `api-kind-partition-burst` schedules a one-shot `api-kind-partition`, writes
 the temporary registration through `POST /admin/api-kinds`, and restores the
 previous registration after the configured duration.
+`runner-crash-on-await` is intentionally inert until a workload phase calls
+`await-nemesis` for `crash-runner`, so it can stay in the global `--nemeses all`
+matrix without disrupting scenarios that are not written to reconnect after a
+Runner process death.

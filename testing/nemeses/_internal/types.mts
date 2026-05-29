@@ -1,7 +1,8 @@
 export type NemesisKind =
   | "no-faults"
   | "shard-death-every-5m"
-  | "api-kind-partition-burst";
+  | "api-kind-partition-burst"
+  | "runner-crash-on-await";
 
 export interface NemesisManifest {
   readonly nemesisId: NemesisKind;
@@ -25,4 +26,10 @@ export type NemesisAction =
       readonly durationMs: number;
       readonly kindName: string;
       readonly partitionUrl: string;
+    }
+  | {
+      readonly type: "crash-runner";
+      readonly trigger: "on-await";
+      readonly selection: "most-active" | "round-robin";
+      readonly runnerIndex: number;
     };

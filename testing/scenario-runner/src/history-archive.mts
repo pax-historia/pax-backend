@@ -119,18 +119,24 @@ export async function appendControlPlaneHistory(
   const to = new Date(input.finishedAtMs + paddingMs).toISOString();
   const existing = loadExistingEventKeys(input.historyPath);
   const filter = historyEventFilter(env);
+  const gameIdFilter = new Set(input.gameIds);
+  const collectedEvents: HistoryEvent[] = [];
   let appendedEvents = 0;
   let scannedEvents = 0;
   try {
     await forEachConcurrent(input.gameIds, concurrency, async (gameId) => {
-      const events = await fetchControlPlaneHistory(controlPlaneUrl, gameId, from, to);
+      const events = await fetchControlPlaneHistory(controlPlaneUrl, { gameId }, from, to);
       scannedEvents += events.length;
-      appendedEvents += appendUniqueEvents(
-        input.historyPath,
-        events.filter((event) => filter(event)),
-        existing,
-      );
+      collectedEvents.push(...events.filter((event) => filter(event)));
     });
+    for (const eventName of CONTROL_PLANE_SCOPED_EVENTS) {
+      const events = await fetchControlPlaneHistory(controlPlaneUrl, { event: eventName }, from, to);
+      scannedEvents += events.length;
+      collectedEvents.push(
+        ...events.filter((event) => eventMatchesGameFilter(event, gameIdFilter) && filter(event)),
+      );
+    }
+    appendedEvents += appendUniqueEvents(input.historyPath, collectedEvents, existing);
   } catch (err) {
     return controlPlaneDisabled(err instanceof Error ? err.message : String(err));
   }
@@ -164,7 +170,7 @@ function controlPlaneDisabled(reason: string): ControlPlaneHistoryCollection {
 
 async function fetchControlPlaneHistory(
   controlPlaneUrl: string,
-  gameId: string,
+  query: { readonly gameId?: string; readonly event?: string },
   from: string,
   to: string,
 ): Promise<readonly HistoryEvent[]> {
@@ -172,7 +178,8 @@ async function fetchControlPlaneHistory(
   let cursor: number | null | undefined;
   do {
     const url = new URL("/admin/history", trimTrailingSlash(controlPlaneUrl));
-    url.searchParams.set("gameId", gameId);
+    if (query.gameId) url.searchParams.set("gameId", query.gameId);
+    if (query.event) url.searchParams.set("event", query.event);
     url.searchParams.set("from", from);
     url.searchParams.set("to", to);
     url.searchParams.set("limit", "1000");
@@ -182,15 +189,21 @@ async function fetchControlPlaneHistory(
     const response = await fetch(url);
     const body = (await response.json()) as unknown;
     if (!response.ok) {
-      throw new Error(`control-plane history failed for ${gameId}: HTTP ${response.status}`);
+      throw new Error(`control-plane history failed for ${historyQueryLabel(query)}: HTTP ${response.status}`);
     }
     if (!isRecord(body) || !Array.isArray(body["events"])) {
-      throw new Error(`control-plane history returned an invalid response for ${gameId}`);
+      throw new Error(`control-plane history returned an invalid response for ${historyQueryLabel(query)}`);
     }
     events.push(...(body["events"] as HistoryEvent[]));
     cursor = typeof body["nextCursor"] === "number" ? body["nextCursor"] : null;
   } while (cursor !== null);
   return events;
+}
+
+const CONTROL_PLANE_SCOPED_EVENTS = ["runner.crash"] as const;
+
+function historyQueryLabel(query: { readonly gameId?: string; readonly event?: string }): string {
+  return query.gameId ?? query.event ?? "all events";
 }
 
 async function forEachConcurrent<T>(
@@ -395,7 +408,17 @@ function eventMatchesGameFilter(
 ): boolean {
   if (!gameIdFilter) return true;
   const gameId = (event as { readonly gameId?: unknown }).gameId;
-  return typeof gameId === "string" && gameIdFilter.has(gameId);
+  if (typeof gameId === "string" && gameIdFilter.has(gameId)) return true;
+  return eventFieldIntersectsGameFilter(event, "affectedGameIds", gameIdFilter);
+}
+
+function eventFieldIntersectsGameFilter(
+  event: HistoryEvent,
+  field: string,
+  gameIdFilter: ReadonlySet<string>,
+): boolean {
+  const value = (event as Record<string, unknown>)[field];
+  return Array.isArray(value) && value.some((entry) => typeof entry === "string" && gameIdFilter.has(entry));
 }
 
 function loadExistingEventKeys(path: string): Set<string> {
